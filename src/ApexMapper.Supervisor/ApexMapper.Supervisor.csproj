@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>ApexMapper.Supervisor</RootNamespace>
+    <AssemblyName>ApexMapper.Supervisor</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
+    <ProjectReference Include="..\ApexMapper.Logging\ApexMapper.Logging.csproj" />
+  </ItemGroup>
+</Project>

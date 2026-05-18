@@ -1,0 +1,8 @@
+<Window x:Class="ApexMapper.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Apex Mapper" Height="200" Width="320">
+    <Grid>
+        <TextBlock Text="Apex Pro Mapper — Phase 1 stub" HorizontalAlignment="Center" VerticalAlignment="Center" />
+    </Grid>
+</Window>

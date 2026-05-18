@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>ApexMapper.App</RootNamespace>
+    <AssemblyName>ApexMapper</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
+    <ProjectReference Include="..\ApexMapper.Persistence\ApexMapper.Persistence.csproj" />
+    <ProjectReference Include="..\ApexMapper.Logging\ApexMapper.Logging.csproj" />
+  </ItemGroup>
+</Project>
