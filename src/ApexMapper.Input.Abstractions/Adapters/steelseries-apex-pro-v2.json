@@ -1,0 +1,21 @@
+{
+  "schema_version": "1",
+  "id": "steelseries.apex-pro.v2",
+  "display_name": "SteelSeries Apex Pro (Gen 2)",
+  "match": {
+    "vendor_id": 4152,
+    "product_id": 5660
+  },
+  "interface_selector": {
+    "usage_page": 65472
+  },
+  "report_id": 0,
+  "report_type": "feature",
+  "key_map": [],
+  "noise_floor": 0.02,
+  "rest_window": 0.05,
+  "capabilities": {
+    "analog": true,
+    "per_key_travel": true
+  }
+}

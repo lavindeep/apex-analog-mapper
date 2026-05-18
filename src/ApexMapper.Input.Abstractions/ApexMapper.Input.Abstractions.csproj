@@ -2,6 +2,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
+    <ProjectReference Include="..\ApexMapper.Persistence\ApexMapper.Persistence.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Adapters\steelseries-apex-pro-v2.json">
+      <LogicalName>ApexMapper.Input.Abstractions.adapters.steelseries-apex-pro-v2.json</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <PropertyGroup>
