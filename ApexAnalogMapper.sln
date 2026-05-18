@@ -3,6 +3,22 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{4EA88FDF-A2A7-4BB7-A367-B554CD585A2B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApexMapper.Core", "src\ApexMapper.Core\ApexMapper.Core.csproj", "{F31F2AE9-4EBA-4C92-BB3F-A81911B2C170}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApexMapper.Persistence", "src\ApexMapper.Persistence\ApexMapper.Persistence.csproj", "{4A9796EF-DC21-48C0-AC33-DE30876E61E6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApexMapper.Logging", "src\ApexMapper.Logging\ApexMapper.Logging.csproj", "{D003D9F9-C0CE-40DF-9D1E-CA9B1C882995}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{BDC32AEA-9DC0-44AE-845C-9CD56CB0550F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApexMapper.Core.Tests", "tests\ApexMapper.Core.Tests\ApexMapper.Core.Tests.csproj", "{5385C1A0-4DE7-4D2A-B4EC-C44E67E857D4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApexMapper.Persistence.Tests", "tests\ApexMapper.Persistence.Tests\ApexMapper.Persistence.Tests.csproj", "{1F2BD2A4-CF12-414A-8172-15C785756E6A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApexMapper.Logging.Tests", "tests\ApexMapper.Logging.Tests\ApexMapper.Logging.Tests.csproj", "{38084D20-E117-4C0F-9802-D22EB61EEC3B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -10,5 +26,39 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F31F2AE9-4EBA-4C92-BB3F-A81911B2C170}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F31F2AE9-4EBA-4C92-BB3F-A81911B2C170}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F31F2AE9-4EBA-4C92-BB3F-A81911B2C170}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F31F2AE9-4EBA-4C92-BB3F-A81911B2C170}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4A9796EF-DC21-48C0-AC33-DE30876E61E6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4A9796EF-DC21-48C0-AC33-DE30876E61E6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4A9796EF-DC21-48C0-AC33-DE30876E61E6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4A9796EF-DC21-48C0-AC33-DE30876E61E6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D003D9F9-C0CE-40DF-9D1E-CA9B1C882995}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D003D9F9-C0CE-40DF-9D1E-CA9B1C882995}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D003D9F9-C0CE-40DF-9D1E-CA9B1C882995}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D003D9F9-C0CE-40DF-9D1E-CA9B1C882995}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5385C1A0-4DE7-4D2A-B4EC-C44E67E857D4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5385C1A0-4DE7-4D2A-B4EC-C44E67E857D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5385C1A0-4DE7-4D2A-B4EC-C44E67E857D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5385C1A0-4DE7-4D2A-B4EC-C44E67E857D4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1F2BD2A4-CF12-414A-8172-15C785756E6A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1F2BD2A4-CF12-414A-8172-15C785756E6A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1F2BD2A4-CF12-414A-8172-15C785756E6A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1F2BD2A4-CF12-414A-8172-15C785756E6A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{38084D20-E117-4C0F-9802-D22EB61EEC3B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{38084D20-E117-4C0F-9802-D22EB61EEC3B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{38084D20-E117-4C0F-9802-D22EB61EEC3B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{38084D20-E117-4C0F-9802-D22EB61EEC3B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{F31F2AE9-4EBA-4C92-BB3F-A81911B2C170} = {4EA88FDF-A2A7-4BB7-A367-B554CD585A2B}
+		{4A9796EF-DC21-48C0-AC33-DE30876E61E6} = {4EA88FDF-A2A7-4BB7-A367-B554CD585A2B}
+		{D003D9F9-C0CE-40DF-9D1E-CA9B1C882995} = {4EA88FDF-A2A7-4BB7-A367-B554CD585A2B}
+		{5385C1A0-4DE7-4D2A-B4EC-C44E67E857D4} = {BDC32AEA-9DC0-44AE-845C-9CD56CB0550F}
+		{1F2BD2A4-CF12-414A-8172-15C785756E6A} = {BDC32AEA-9DC0-44AE-845C-9CD56CB0550F}
+		{38084D20-E117-4C0F-9802-D22EB61EEC3B} = {BDC32AEA-9DC0-44AE-845C-9CD56CB0550F}
 	EndGlobalSection
 EndGlobal
