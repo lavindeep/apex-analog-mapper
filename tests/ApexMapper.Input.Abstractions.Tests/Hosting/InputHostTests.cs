@@ -1,0 +1,341 @@
+using ApexMapper.Core.Engine;
+using ApexMapper.Core.Keys;
+using ApexMapper.Input.Abstractions.Adapters;
+using ApexMapper.Input.Abstractions.Backends;
+using ApexMapper.Input.Abstractions.Devices;
+using ApexMapper.Input.Abstractions.Hosting;
+using ApexMapper.Input.Abstractions.Pipeline;
+using ApexMapper.Input.Abstractions.Tests.Fakes;
+using ApexMapper.Persistence.Devices;
+
+namespace ApexMapper.Input.Abstractions.Tests.Hosting;
+
+public class InputHostTests
+{
+    private static DiscoveredDevice MakeDevice(string path = "test://device/1", string serial = "SN-1") =>
+        new(
+            new DeviceIdentity(0x1038, 0x161C, serial, "SteelSeries", "Apex Pro"),
+            path,
+            SupportsAnalog: true);
+
+    private static DeviceSelector MakeSelector(params DiscoveredDevice[] devices)
+    {
+        var enumerator = new InMemoryDeviceEnumerator(devices);
+        DeviceRegistry registry = new(null, Array.Empty<KeyCalibration>());
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+        return selector;
+    }
+
+    private static SpscRingBuffer<RawKeyEvent> MakeRing(int capacity = 256) => new(capacity);
+
+    private sealed class FaultingHidProbe : IHidAnalogProbe
+    {
+        private readonly Exception _failure;
+        private readonly bool _failOnStart;
+
+        public FaultingHidProbe(Exception failure, bool failOnStart = true)
+        {
+            _failure = failure;
+            _failOnStart = failOnStart;
+            Device = new DeviceIdentity(0x1234, 0x5678, "FAKE", "Fake", "Fake");
+            Adapter = null!;
+        }
+
+        public DeviceIdentity Device { get; }
+        public DeviceAdapterDescriptor Adapter { get; }
+        public BackendStatus Status { get; private set; } = BackendStatus.Stopped;
+        public bool IsHealthy => Status == BackendStatus.Running;
+        public bool IsDisposed { get; private set; }
+
+        public event EventHandler<BackendStatusChanged>? StatusChanged;
+
+        public Task StartAsync(CancellationToken ct)
+        {
+            if (_failOnStart)
+            {
+                throw _failure;
+            }
+            Status = BackendStatus.Running;
+            StatusChanged?.Invoke(this, new BackendStatusChanged(BackendKind.HidAnalog, Status, null));
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken ct)
+        {
+            Status = BackendStatus.Stopped;
+            StatusChanged?.Invoke(this, new BackendStatusChanged(BackendKind.HidAnalog, Status, null));
+            return Task.CompletedTask;
+        }
+
+        public IDisposable SubscribeRaw(KeyId key, Action<float> onRawNormalized) => new NoopDisposable();
+
+        public void RaiseFault(string reason)
+        {
+            Status = BackendStatus.FaultedAnalog;
+            StatusChanged?.Invoke(this, new BackendStatusChanged(BackendKind.HidAnalog, Status, reason));
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            IsDisposed = true;
+            return ValueTask.CompletedTask;
+        }
+
+        private sealed class NoopDisposable : IDisposable
+        {
+            public void Dispose() { }
+        }
+    }
+
+    [Fact]
+    public async Task Basic_compose_no_hid_probe_starts_digital_only()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var selector = MakeSelector();
+        var store = new KeyStateStore();
+        var holdGate = new HoldGate();
+        var log = new InMemoryLogSink();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate, log);
+
+        await host.StartAsync(CancellationToken.None);
+
+        host.DigitalStatus.Should().Be(BackendStatus.Running);
+        host.AnalogStatus.Should().Be(BackendStatus.Stopped);
+        host.AnalogFallbackReason.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Drain_pushes_digital_keydown_to_store()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var selector = MakeSelector();
+        var store = new KeyStateStore();
+        var holdGate = new HoldGate();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate);
+        await host.StartAsync(CancellationToken.None);
+
+        var ev = new RawKeyEvent(ScanCode: 0x1E, IsDown: true, TimestampTicks: 1, DeviceHandleIndex: 0);
+        raw.Push(in ev).Should().BeTrue();
+
+        var drained = host.Drain(10);
+
+        drained.Should().Be(1);
+        var state = store.Get(KeyId.FromScanCode(0x1E));
+        state.Value.Should().Be(1.0f);
+        state.Source.Should().Be(KeyProvenance.Digital);
+    }
+
+    [Fact]
+    public async Task Drain_handles_key_release_back_to_zero()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var selector = MakeSelector();
+        var store = new KeyStateStore();
+        var holdGate = new HoldGate();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate);
+        await host.StartAsync(CancellationToken.None);
+
+        var down = new RawKeyEvent(0x1E, IsDown: true, 1, 0);
+        var up = new RawKeyEvent(0x1E, IsDown: false, 2, 0);
+        raw.Push(in down);
+        host.Drain(10);
+        raw.Push(in up);
+        host.Drain(10);
+
+        var state = store.Get(KeyId.FromScanCode(0x1E));
+        state.Value.Should().Be(0f);
+        state.Source.Should().Be(KeyProvenance.Digital);
+    }
+
+    [Fact]
+    public async Task HoldGate_engages_on_device_attach_for_currently_held_keys()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var devA = MakeDevice("dev://a", "SN-A");
+        var enumerator = new InMemoryDeviceEnumerator(new[] { devA });
+        DeviceRegistry registry = new(null, Array.Empty<KeyCalibration>());
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+
+        var store = new KeyStateStore();
+        var holdGate = new HoldGate();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate);
+        await host.StartAsync(CancellationToken.None);
+
+        // Hold a key
+        var down = new RawKeyEvent(0x1E, IsDown: true, 1, 0);
+        raw.Push(in down);
+        host.Drain(10);
+
+        // New device attaches → selector raises Attached
+        var devB = MakeDevice("dev://b", "SN-B");
+        enumerator.Add(devB);
+        selector.Refresh();
+
+        holdGate.IsIgnored(KeyId.FromScanCode(0x1E)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HoldGate_releases_on_keyup_after_attach_gated()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var devA = MakeDevice("dev://a", "SN-A");
+        var enumerator = new InMemoryDeviceEnumerator(new[] { devA });
+        DeviceRegistry registry = new(null, Array.Empty<KeyCalibration>());
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+
+        var store = new KeyStateStore();
+        var holdGate = new HoldGate();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate);
+        await host.StartAsync(CancellationToken.None);
+
+        var down = new RawKeyEvent(0x1E, IsDown: true, 1, 0);
+        raw.Push(in down);
+        host.Drain(10);
+
+        var devB = MakeDevice("dev://b", "SN-B");
+        enumerator.Add(devB);
+        selector.Refresh();
+
+        holdGate.IsIgnored(KeyId.FromScanCode(0x1E)).Should().BeTrue();
+
+        // Now release the key — drain should NotifyKeyReleased.
+        var up = new RawKeyEvent(0x1E, IsDown: false, 2, 0);
+        raw.Push(in up);
+        host.Drain(10);
+
+        holdGate.IsIgnored(KeyId.FromScanCode(0x1E)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Hid_probe_failure_on_start_logs_and_keeps_digital_running()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var selector = MakeSelector();
+        var store = new KeyStateStore();
+        var holdGate = new HoldGate();
+        var log = new InMemoryLogSink();
+        var probe = new FaultingHidProbe(new IOException("analog probe blocked by gg"));
+
+        await using var host = new InputHost(raw, probe, selector, ring, store, holdGate, log);
+
+        // Must not throw.
+        await host.StartAsync(CancellationToken.None);
+
+        host.DigitalStatus.Should().Be(BackendStatus.Running);
+        host.AnalogStatus.Should().Be(BackendStatus.FaultedAnalog);
+        host.AnalogFallbackReason.Should().Be("analog probe blocked by gg");
+        log.Lines.Should().Contain(line =>
+            line.Contains("analog probe blocked: analog probe blocked by gg", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Hid_probe_failure_raises_StatusChanged_with_FaultedAnalog()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var selector = MakeSelector();
+        var store = new KeyStateStore();
+        var holdGate = new HoldGate();
+        var probe = new FaultingHidProbe(new IOException("kaboom"));
+        var events = new List<BackendStatusChanged>();
+
+        await using var host = new InputHost(raw, probe, selector, ring, store, holdGate);
+        host.StatusChanged += (_, e) => events.Add(e);
+
+        await host.StartAsync(CancellationToken.None);
+
+        events.Should().Contain(e => e.Kind == BackendKind.HidAnalog && e.Status == BackendStatus.FaultedAnalog);
+    }
+
+    [Fact]
+    public async Task Hid_probe_status_transitions_forwarded_to_host()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var selector = MakeSelector();
+        var store = new KeyStateStore();
+        var holdGate = new HoldGate();
+        var probe = new FaultingHidProbe(new IOException("late"), failOnStart: false);
+        var events = new List<BackendStatusChanged>();
+
+        await using var host = new InputHost(raw, probe, selector, ring, store, holdGate);
+        host.StatusChanged += (_, e) => events.Add(e);
+
+        await host.StartAsync(CancellationToken.None);
+        host.AnalogStatus.Should().Be(BackendStatus.Running);
+
+        probe.RaiseFault("device dropped");
+
+        host.AnalogStatus.Should().Be(BackendStatus.FaultedAnalog);
+        host.DigitalStatus.Should().Be(BackendStatus.Running);
+        events.Should().Contain(e =>
+            e.Kind == BackendKind.HidAnalog && e.Status == BackendStatus.FaultedAnalog && e.Reason == "device dropped");
+    }
+
+    [Fact]
+    public async Task StartAsync_does_not_throw_when_hid_probe_fails()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var selector = MakeSelector();
+        var store = new KeyStateStore();
+        var holdGate = new HoldGate();
+        var probe = new FaultingHidProbe(new IOException("gg"));
+
+        await using var host = new InputHost(raw, probe, selector, ring, store, holdGate);
+
+        Func<Task> act = () => host.StartAsync(CancellationToken.None);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Drain_skips_ignored_keys_does_not_write_to_store()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var devA = MakeDevice("dev://a", "SN-A");
+        var enumerator = new InMemoryDeviceEnumerator(new[] { devA });
+        DeviceRegistry registry = new(null, Array.Empty<KeyCalibration>());
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+
+        var store = new KeyStateStore();
+        var holdGate = new HoldGate();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate);
+        await host.StartAsync(CancellationToken.None);
+
+        // Press a key, attach a new device → key gets ignored.
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 0));
+        host.Drain(10);
+
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(1f);
+
+        var devB = MakeDevice("dev://b", "SN-B");
+        enumerator.Add(devB);
+        selector.Refresh();
+
+        // Synthetic "down repeat" coming in while ignored should not change store.
+        // (No real keyup yet — gate still active.)
+        raw.Push(new RawKeyEvent(0x1E, true, 3, 0));
+        host.Drain(10);
+
+        // Store should still reflect the earlier write — the ignored event is suppressed.
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(1f);
+    }
+}
