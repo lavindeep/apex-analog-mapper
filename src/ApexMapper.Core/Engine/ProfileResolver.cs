@@ -34,13 +34,17 @@ public sealed class ProfileResolver
         var g = p.Game;
         var hasAny = g.ExecutableName is not null || g.WindowTitlePattern is not null || g.SteamAppId is not null;
 
+        var executableName = string.IsNullOrEmpty(ctx.ExecutablePath)
+            ? null
+            : Path.GetFileName(ctx.ExecutablePath);
+
         var exeMatch = g.ExecutableName is not null
-            && ctx.ExecutableName is not null
-            && string.Equals(g.ExecutableName, ctx.ExecutableName, StringComparison.OrdinalIgnoreCase);
+            && executableName is not null
+            && string.Equals(g.ExecutableName, executableName, StringComparison.OrdinalIgnoreCase);
         var appIdMatch = g.SteamAppId is not null && ctx.SteamAppId is not null && g.SteamAppId == ctx.SteamAppId;
         if (exeMatch || appIdMatch) return ProfilePrecedence.ExactExecutableOrAppId;
 
-        if (g.WindowTitlePattern is not null && ctx.WindowTitle is not null)
+        if (g.WindowTitlePattern is not null && !string.IsNullOrEmpty(ctx.WindowTitle))
         {
             // Spec: exact (case-insensitive) window-title equality — never a substring or regex
             // match, which would misfire on unrelated windows and could throw on a malformed

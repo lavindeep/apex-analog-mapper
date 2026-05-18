@@ -1,0 +1,14 @@
+SetWinEventHook
+UnhookWinEvent
+GetForegroundWindow
+GetWindowThreadProcessId
+GetWindowTextW
+GetWindowTextLengthW
+QueryFullProcessImageNameW
+OpenProcess
+CloseHandle
+EVENT_SYSTEM_FOREGROUND
+EVENT_OBJECT_NAMECHANGE
+WINEVENT_OUTOFCONTEXT
+WINEVENT_SKIPOWNPROCESS
+PROCESS_QUERY_LIMITED_INFORMATION

@@ -1,19 +1,35 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>ApexMapper.App</RootNamespace>
     <AssemblyName>ApexMapper</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="H.NotifyIcon.Wpf" />
+    <PackageReference Include="NHotkey.Wpf" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Win32.TaskScheduler" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Windows.CsWin32" PrivateAssets="all" />
+    <PackageReference Include="OxyPlot.Wpf" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
     <ProjectReference Include="..\ApexMapper.Persistence\ApexMapper.Persistence.csproj" />
     <ProjectReference Include="..\ApexMapper.Logging\ApexMapper.Logging.csproj" />
+    <ProjectReference Include="..\ApexMapper.Input\ApexMapper.Input.csproj" />
+    <ProjectReference Include="..\ApexMapper.Output\ApexMapper.Output.csproj" />
     <ProjectReference Include="..\ApexMapper.Input.Abstractions\ApexMapper.Input.Abstractions.csproj" />
     <ProjectReference Include="..\ApexMapper.Profiles\ApexMapper.Profiles.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="OxyPlot.Wpf" />
-  </ItemGroup>
+
 </Project>

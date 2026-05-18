@@ -7,8 +7,3 @@ public enum ProfilePrecedence
     ExactExecutableOrAppId = 2,
     ManualPin = 3,
 }
-
-public readonly record struct ForegroundContext(
-    string? ExecutableName,
-    string? WindowTitle,
-    string? SteamAppId);

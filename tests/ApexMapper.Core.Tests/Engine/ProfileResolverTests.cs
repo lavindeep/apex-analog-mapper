@@ -1,3 +1,4 @@
+using ApexMapper.Core;
 using ApexMapper.Core.Engine;
 using ApexMapper.Core.Pipeline;
 using FluentAssertions;
@@ -16,6 +17,9 @@ public class ProfileResolverTests
         AxisBindings: Array.Empty<AxisPairBinding>(),
         Notes: null);
 
+    private static ForegroundContext Ctx(string executablePath, string windowTitle, string? steamAppId = null) =>
+        new(executablePath, windowTitle, 0u, steamAppId, System.DateTimeOffset.MinValue);
+
     [Fact]
     public void Manual_pin_overrides_everything()
     {
@@ -24,7 +28,7 @@ public class ProfileResolverTests
         var pinned = MakeProfile("pinned", new GameMatcher(null, null, null));
         var resolver = new ProfileResolver(new[] { generic, exact, pinned });
 
-        var ctx = new ForegroundContext("forza.exe", "Forza", null);
+        var ctx = Ctx("forza.exe", "Forza");
         resolver.Resolve(ctx, manualPinId: "pinned").Should().Be(pinned);
     }
 
@@ -36,7 +40,7 @@ public class ProfileResolverTests
         var exe = MakeProfile("exe", new GameMatcher("forza.exe", null, null));
         var resolver = new ProfileResolver(new[] { generic, titled, exe });
 
-        var ctx = new ForegroundContext("forza.exe", "Forza Horizon 5", null);
+        var ctx = Ctx("forza.exe", "Forza Horizon 5");
         resolver.Resolve(ctx, manualPinId: null).Should().Be(exe);
     }
 
@@ -47,7 +51,7 @@ public class ProfileResolverTests
         var titled = MakeProfile("titled", new GameMatcher(null, "Forza Horizon 5", null));
         var resolver = new ProfileResolver(new[] { generic, titled });
 
-        var ctx = new ForegroundContext("game.exe", "Forza Horizon 5", null);
+        var ctx = Ctx("game.exe", "Forza Horizon 5");
         resolver.Resolve(ctx, manualPinId: null).Should().Be(titled);
     }
 
@@ -58,7 +62,7 @@ public class ProfileResolverTests
         var titled = MakeProfile("titled", new GameMatcher(null, "Forza Horizon 5", null));
         var resolver = new ProfileResolver(new[] { generic, titled });
 
-        var ctx = new ForegroundContext("game.exe", "forza horizon 5", null);
+        var ctx = Ctx("game.exe", "forza horizon 5");
         resolver.Resolve(ctx, manualPinId: null).Should().Be(titled);
     }
 
@@ -71,7 +75,7 @@ public class ProfileResolverTests
         var titled = MakeProfile("titled", new GameMatcher(null, "Forza", null));
         var resolver = new ProfileResolver(new[] { generic, titled });
 
-        var ctx = new ForegroundContext("game.exe", "Forza Horizon 5", null);
+        var ctx = Ctx("game.exe", "Forza Horizon 5");
         resolver.Resolve(ctx, manualPinId: null).Should().Be(generic);
     }
 
@@ -84,7 +88,7 @@ public class ProfileResolverTests
         var titled = MakeProfile("titled", new GameMatcher(null, "[unclosed(group", null));
         var resolver = new ProfileResolver(new[] { generic, titled });
 
-        var ctx = new ForegroundContext("game.exe", "Some Window", null);
+        var ctx = Ctx("game.exe", "Some Window");
         resolver.Resolve(ctx, manualPinId: null).Should().Be(generic);
     }
 
@@ -94,7 +98,7 @@ public class ProfileResolverTests
         var generic = MakeProfile("generic", new GameMatcher(null, null, null));
         var resolver = new ProfileResolver(new[] { generic });
 
-        var ctx = new ForegroundContext("random.exe", "Random Window", null);
+        var ctx = Ctx("random.exe", "Random Window");
         resolver.Resolve(ctx, manualPinId: null).Should().Be(generic);
     }
 
@@ -102,7 +106,7 @@ public class ProfileResolverTests
     public void Returns_null_when_no_profile_matches()
     {
         var resolver = new ProfileResolver(Array.Empty<Profile>());
-        var ctx = new ForegroundContext("random.exe", "Random", null);
+        var ctx = Ctx("random.exe", "Random");
         resolver.Resolve(ctx, manualPinId: null).Should().BeNull();
     }
 
@@ -113,7 +117,7 @@ public class ProfileResolverTests
         var steam = MakeProfile("steam", new GameMatcher(null, null, "1551360"));
         var resolver = new ProfileResolver(new[] { generic, steam });
 
-        var ctx = new ForegroundContext("ForzaHorizon5.exe", "Forza Horizon 5", "1551360");
+        var ctx = Ctx("ForzaHorizon5.exe", "Forza Horizon 5", "1551360");
         resolver.Resolve(ctx, manualPinId: null).Should().Be(steam);
     }
 }
