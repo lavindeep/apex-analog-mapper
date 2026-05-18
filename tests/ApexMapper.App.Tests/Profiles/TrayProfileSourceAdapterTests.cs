@@ -143,4 +143,56 @@ public sealed class TrayProfileSourceAdapterTests : IDisposable
 
         raised.Should().BeTrue();
     }
+
+    [Fact]
+    public void Dispose_unsubscribes_from_vm_events()
+    {
+        var (vm, adapter) = Build(null, MakeProfile("p1", "One"));
+
+        bool raised = false;
+        adapter.ProfilesChanged += (_, _) => raised = true;
+
+        adapter.Dispose();
+
+        // After dispose, mutating the collection should NOT fire ProfilesChanged.
+        Directory.CreateDirectory(_storeDir);
+        var store = new ProfileStore(new ProfileStoreOptions(_storeDir));
+        store.Save(MakeProfile("p1", "One"));
+        store.Save(MakeProfile("p2", "Two"));
+
+        // Trigger a Profiles property change on the VM by refreshing
+        vm.RefreshCommand.Execute(null);
+
+        raised.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Profiles_property_change_does_not_accumulate_handlers()
+    {
+        Directory.CreateDirectory(_storeDir);
+        var store = new ProfileStore(new ProfileStoreOptions(_storeDir));
+        store.Save(MakeProfile("p1", "One"));
+
+        var pinStore = new FakePinStore();
+        var vm = new ProfileSelectorViewModel(store, pinStore, () => null);
+        var adapter = new TrayProfileSourceAdapter(vm);
+
+        int eventCount = 0;
+        adapter.ProfilesChanged += (_, _) => eventCount++;
+
+        // Replace the Profiles collection twice via refresh
+        store.Save(MakeProfile("p2", "Two"));
+        vm.RefreshCommand.Execute(null);   // first Profiles replacement
+
+        store.Save(MakeProfile("p3", "Three"));
+        vm.RefreshCommand.Execute(null);   // second Profiles replacement
+
+        // Reset counter — now mutate only the latest collection
+        eventCount = 0;
+        store.Save(MakeProfile("p4", "Four"));
+        vm.RefreshCommand.Execute(null);
+
+        // Exactly one event should fire, not two (no handler accumulation)
+        eventCount.Should().Be(1);
+    }
 }

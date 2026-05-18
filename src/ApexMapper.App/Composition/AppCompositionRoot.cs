@@ -111,6 +111,8 @@ public static class AppCompositionRoot
         services.AddSingleton<IPanicPolicyStore>(sp =>
             new JsonPanicPolicyStore(sp.GetRequiredService<PanicPolicyOptions>()));
 
+        services.AddSingleton<PanicCoordinator>();
+
         services.AddSingleton<IProfileManualPinStore>(sp =>
         {
             var paths = sp.GetRequiredService<IAppPaths>();
@@ -190,7 +192,8 @@ public static class AppCompositionRoot
             new TrayMenuViewModel(
                 sp.GetRequiredService<ITrayServiceInternal>(),
                 sp.GetRequiredService<ITrayProfileSource>(),
-                sp.GetRequiredService<ISupervisorChannel>()));
+                sp.GetRequiredService<ISupervisorChannel>(),
+                sp.GetRequiredService<PanicCoordinator>()));
 
         services.AddSingleton<DevicePickerViewModel>(sp =>
             new DevicePickerViewModel(

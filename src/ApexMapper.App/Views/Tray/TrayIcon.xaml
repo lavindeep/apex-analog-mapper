@@ -14,7 +14,7 @@
                 <MenuItem
                     Header="Enabled"
                     IsCheckable="True"
-                    IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                    IsChecked="{Binding IsEnabled, Mode=OneWay}"
                     Command="{Binding ToggleEnabledCommand}" />
                 <Separator />
                 <!--

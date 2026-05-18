@@ -1,9 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
 using ApexMapper.App.Services;
 using ApexMapper.App.ViewModels.Tray;
+using ApexMapper.Core;
 using FluentAssertions;
 using Xunit;
 
@@ -92,6 +94,33 @@ public sealed class TrayMenuViewModelTests
         public void Dispose() { }
     }
 
+    private sealed class FakeHotkeyService : IHotkeyService
+    {
+        public void Register(string id, HotkeyGesture gesture, Action callback) { }
+        public void Unregister(string id) { }
+        public bool IsRegistered(string id) => false;
+        public void Dispose() { }
+    }
+
+    private sealed class FakeForegroundWatcher : IForegroundWatcher
+    {
+        public ForegroundContext Current => ForegroundContext.Empty;
+#pragma warning disable CS0067
+        public event EventHandler<ForegroundChangedEventArgs>? ForegroundChanged;
+#pragma warning restore CS0067
+        public void Start() { }
+        public void Stop() { }
+        public void Dispose() { }
+    }
+
+    private sealed class FakePanicPolicyStore : IPanicPolicyStore
+    {
+        public bool IsAutoEnableDisabled(string executablePath) => false;
+        public void DisableAutoEnable(string executablePath) { }
+        public void EnableAutoEnable(string executablePath) { }
+        public IReadOnlyCollection<string> ListDisabled() => Array.Empty<string>();
+    }
+
     // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
@@ -99,14 +128,19 @@ public sealed class TrayMenuViewModelTests
     private static readonly TrayProfileEntry Profile1 = new("p1", "Profile One");
     private static readonly TrayProfileEntry Profile2 = new("p2", "Profile Two");
 
-    private static (TrayMenuViewModel vm, FakeTrayService tray, FakeTrayProfileSource source, FakeSupervisorChannel channel)
+    private static (TrayMenuViewModel vm, FakeTrayService tray, FakeTrayProfileSource source, FakeSupervisorChannel channel, PanicCoordinator coordinator)
         Build(string currentId = "p1")
     {
         var tray = new FakeTrayService();
         var source = new FakeTrayProfileSource([Profile1, Profile2], currentId);
         var channel = new FakeSupervisorChannel();
-        var vm = new TrayMenuViewModel(tray, source, channel);
-        return (vm, tray, source, channel);
+        var coordinator = new PanicCoordinator(
+            new FakeHotkeyService(),
+            channel,
+            new FakeForegroundWatcher(),
+            new FakePanicPolicyStore());
+        var vm = new TrayMenuViewModel(tray, source, channel, coordinator);
+        return (vm, tray, source, channel, coordinator);
     }
 
     // ---------------------------------------------------------------------------
@@ -116,14 +150,14 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void NewVm_IsEnabled_is_false()
     {
-        var (vm, _, _, _) = Build();
+        var (vm, _, _, _, _) = Build();
         vm.IsEnabled.Should().BeFalse();
     }
 
     [Fact]
     public void NewVm_Profiles_reflects_source()
     {
-        var (vm, _, _, _) = Build();
+        var (vm, _, _, _, _) = Build();
         vm.Profiles.Should().HaveCount(2)
             .And.Contain(p => p.ProfileId == "p1")
             .And.Contain(p => p.ProfileId == "p2");
@@ -132,7 +166,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void NewVm_CurrentProfileName_matches_source_current_id()
     {
-        var (vm, _, _, _) = Build("p1");
+        var (vm, _, _, _, _) = Build("p1");
         vm.CurrentProfileName.Should().Be("Profile One");
     }
 
@@ -143,7 +177,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void ToggleEnabledCommand_flips_IsEnabled_to_true()
     {
-        var (vm, _, _, _) = Build();
+        var (vm, _, _, _, _) = Build();
         vm.ToggleEnabledCommand.Execute(null);
         vm.IsEnabled.Should().BeTrue();
     }
@@ -151,7 +185,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void ToggleEnabledCommand_calls_tray_SetEnabled_with_new_value()
     {
-        var (vm, tray, _, _) = Build();
+        var (vm, tray, _, _, _) = Build();
         vm.ToggleEnabledCommand.Execute(null);
         tray.SetEnabledCalled.Should().BeTrue();
         tray.IsEnabled.Should().BeTrue();
@@ -160,7 +194,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void ToggleEnabledCommand_flips_back_to_false_on_second_call()
     {
-        var (vm, tray, _, _) = Build();
+        var (vm, tray, _, _, _) = Build();
         vm.ToggleEnabledCommand.Execute(null);
         vm.ToggleEnabledCommand.Execute(null);
         vm.IsEnabled.Should().BeFalse();
@@ -174,7 +208,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void SwitchProfileCommand_calls_source_Switch()
     {
-        var (vm, _, source, _) = Build("p1");
+        var (vm, _, source, _, _) = Build("p1");
         vm.SwitchProfileCommand.Execute("p2");
         source.CurrentProfileId.Should().Be("p2");
     }
@@ -182,7 +216,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void SwitchProfileCommand_refreshes_CurrentProfileName()
     {
-        var (vm, _, _, _) = Build("p1");
+        var (vm, _, _, _, _) = Build("p1");
         vm.SwitchProfileCommand.Execute("p2");
         vm.CurrentProfileName.Should().Be("Profile Two");
     }
@@ -192,10 +226,18 @@ public sealed class TrayMenuViewModelTests
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public void PanicCommand_submits_panic_to_supervisor_channel()
+    public async Task PanicCommand_routes_through_coordinator_and_calls_supervisor_channel()
     {
-        var (vm, _, _, channel) = Build();
+        var (vm, _, _, channel, coordinator) = Build();
+
+        // Use PanicCompleted event to await the fire-and-forget task
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.PanicCompleted += (_, _) => tcs.TrySetResult(true);
+
         vm.PanicCommand.Execute(null);
+
+        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
         channel.PanicSubmitted.Should().BeTrue();
     }
 
@@ -206,7 +248,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void ExitCommand_fires_ExitRequested_event_on_tray_service()
     {
-        var (vm, tray, _, _) = Build();
+        var (vm, tray, _, _, _) = Build();
         bool raised = false;
         tray.ExitRequested += (_, _) => raised = true;
         vm.ExitCommand.Execute(null);
@@ -220,7 +262,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void OpenMainWindowCommand_fires_OpenMainWindowRequested_event_on_tray_service()
     {
-        var (vm, tray, _, _) = Build();
+        var (vm, tray, _, _, _) = Build();
         bool raised = false;
         tray.OpenMainWindowRequested += (_, _) => raised = true;
         vm.OpenMainWindowCommand.Execute(null);
@@ -234,7 +276,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void ProfilesChanged_event_raises_PropertyChanged_for_Profiles()
     {
-        var (vm, _, source, _) = Build();
+        var (vm, _, source, _, _) = Build();
         var changed = new List<string?>();
         ((INotifyPropertyChanged)vm).PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
@@ -246,7 +288,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void ProfilesChanged_event_raises_PropertyChanged_for_CurrentProfileName()
     {
-        var (vm, _, source, _) = Build();
+        var (vm, _, source, _, _) = Build();
         var changed = new List<string?>();
         ((INotifyPropertyChanged)vm).PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 

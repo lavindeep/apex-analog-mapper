@@ -9,6 +9,7 @@ public sealed class TrayMenuViewModel : ObservableViewModel
     private readonly ITrayServiceInternal _trayService;
     private readonly ITrayProfileSource _profileSource;
     private readonly ISupervisorChannel _supervisorChannel;
+    private readonly PanicCoordinator _panicCoordinator;
 
     private bool _isEnabled;
     private IReadOnlyList<TrayProfileEntry> _profiles;
@@ -17,11 +18,13 @@ public sealed class TrayMenuViewModel : ObservableViewModel
     public TrayMenuViewModel(
         ITrayServiceInternal trayService,
         ITrayProfileSource profileSource,
-        ISupervisorChannel supervisorChannel)
+        ISupervisorChannel supervisorChannel,
+        PanicCoordinator panicCoordinator)
     {
         _trayService = trayService;
         _profileSource = profileSource;
         _supervisorChannel = supervisorChannel;
+        _panicCoordinator = panicCoordinator;
 
         _profiles = _profileSource.ListProfiles();
         _currentProfileName = ResolveCurrentProfileName();
@@ -74,7 +77,7 @@ public sealed class TrayMenuViewModel : ObservableViewModel
 
     private void ExecutePanic()
     {
-        _ = _supervisorChannel.SubmitPanicAsync(CancellationToken.None);
+        _ = _panicCoordinator.PanicAsync(CancellationToken.None);
     }
 
     private void ExecuteOpenMainWindow()

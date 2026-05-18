@@ -97,6 +97,24 @@ public sealed class CalibrationWizardViewModelTests
     }
 
     // -----------------------------------------------------------------------
+    // 1b. StartCommand disabled when DeviceId is Guid.Empty
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public void StartCommand_disabled_when_DeviceId_is_empty()
+    {
+        var vm = Build(options: new CalibrationWizardOptions(Guid.Empty));
+        vm.StartCommand.CanExecute(null).Should().BeFalse();
+    }
+
+    [Fact]
+    public void StartCommand_enabled_when_DeviceId_is_non_empty()
+    {
+        var vm = Build(options: new CalibrationWizardOptions(Guid.NewGuid()));
+        vm.StartCommand.CanExecute(null).Should().BeTrue();
+    }
+
+    // -----------------------------------------------------------------------
     // 2. StartCommand advances to Rest
     // -----------------------------------------------------------------------
 

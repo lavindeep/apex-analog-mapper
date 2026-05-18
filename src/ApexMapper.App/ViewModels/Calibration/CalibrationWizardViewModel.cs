@@ -25,7 +25,7 @@ public sealed class CalibrationWizardViewModel : ApexMapper.App.ViewModels.Obser
     private readonly CalibrationWizardOptions _options;
 
     private CalibrationWizardStep _current = CalibrationWizardStep.Idle;
-    private string _statusMessage = "Press Start to begin calibration.";
+    private string _statusMessage;
     private double _progress = 0.0;
 
     // Accumulated snapshots — cleared on cancel.
@@ -41,6 +41,10 @@ public sealed class CalibrationWizardViewModel : ApexMapper.App.ViewModels.Obser
     {
         _service = service ?? throw new ArgumentNullException(nameof(service));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+
+        _statusMessage = _options.DeviceId == Guid.Empty
+            ? "Select a device to calibrate."
+            : "Press Start to begin calibration.";
 
         StartCommand = new AsyncRelayCommand(ExecuteStartAsync, CanStart);
         NextCommand = new AsyncRelayCommand(ExecuteNextAsync, CanNext);
@@ -90,7 +94,7 @@ public sealed class CalibrationWizardViewModel : ApexMapper.App.ViewModels.Obser
     // Command implementations
     // -----------------------------------------------------------------------
 
-    private bool CanStart() => Current == CalibrationWizardStep.Idle;
+    private bool CanStart() => Current == CalibrationWizardStep.Idle && _options.DeviceId != Guid.Empty;
 
     private async Task ExecuteStartAsync()
     {

@@ -69,6 +69,12 @@ public partial class App : Application
         var trayMenuVm = _host.Services.GetRequiredService<ViewModels.Tray.TrayMenuViewModel>();
         trayIcon.DataContext = trayMenuVm;
 
+        // Start the global panic hotkey (Ctrl+Alt+F12 by default).
+        var coordinator = _host.Services.GetRequiredService<PanicCoordinator>();
+        coordinator.Start(new HotkeyGesture(
+            System.Windows.Input.Key.F12,
+            System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Alt));
+
         // Set the DataContext on the main window from DI.
         var mainWindowVm = _host.Services.GetRequiredService<ViewModels.MainWindowViewModel>();
         if (MainWindow is not null)
@@ -103,8 +109,9 @@ public partial class App : Application
     {
         try
         {
-            var coordinator = _host?.Services.GetService<PanicCoordinator>();
-            coordinator?.PanicAsync(CancellationToken.None).GetAwaiter().GetResult();
+            if (_host is not null)
+                _host.Services.GetRequiredService<PanicCoordinator>()
+                     .PanicAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
         catch
         {
@@ -117,8 +124,9 @@ public partial class App : Application
     {
         try
         {
-            var coordinator = _host?.Services.GetService<PanicCoordinator>();
-            coordinator?.PanicAsync(CancellationToken.None).GetAwaiter().GetResult();
+            if (_host is not null)
+                _host.Services.GetRequiredService<PanicCoordinator>()
+                     .PanicAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
         catch
         {
