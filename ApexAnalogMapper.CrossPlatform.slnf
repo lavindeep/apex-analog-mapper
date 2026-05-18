@@ -3,6 +3,7 @@
     "path": "ApexAnalogMapper.sln",
     "projects": [
       "src\\ApexMapper.Core\\ApexMapper.Core.csproj",
+      "src\\ApexMapper.Input.Abstractions\\ApexMapper.Input.Abstractions.csproj",
       "src\\ApexMapper.Persistence\\ApexMapper.Persistence.csproj",
       "src\\ApexMapper.Logging\\ApexMapper.Logging.csproj",
       "src\\ApexMapper.Profiles\\ApexMapper.Profiles.csproj",
