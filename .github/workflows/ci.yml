@@ -8,6 +8,7 @@ on:
 jobs:
   build-and-test-windows:
     runs-on: windows-latest
+    name: Windows (full solution + Win-only tests)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -17,7 +18,7 @@ jobs:
         run: dotnet restore ApexAnalogMapper.sln
       - name: Build
         run: dotnet build ApexAnalogMapper.sln --configuration Release --no-restore
-      - name: Test
+      - name: Test (all)
         run: dotnet test ApexAnalogMapper.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage"
       - name: Upload test results
         if: always()
@@ -28,6 +29,7 @@ jobs:
 
   build-and-test-macos:
     runs-on: macos-latest
+    name: macOS (cross-platform subset)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -37,5 +39,11 @@ jobs:
         run: dotnet restore ApexAnalogMapper.CrossPlatform.slnf
       - name: Build
         run: dotnet build ApexAnalogMapper.CrossPlatform.slnf --configuration Release --no-restore
-      - name: Test
-        run: dotnet test ApexAnalogMapper.CrossPlatform.slnf --configuration Release --no-build
+      - name: Test (cross-platform suites)
+        run: dotnet test ApexAnalogMapper.CrossPlatform.slnf --configuration Release --no-build --logger "trx;LogFileName=test-results-macos.trx"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-macos
+          path: "**/TestResults/**/*.trx"
