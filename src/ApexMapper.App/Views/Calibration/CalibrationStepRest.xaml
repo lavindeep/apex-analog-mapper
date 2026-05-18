@@ -1,0 +1,22 @@
+<UserControl
+    x:Class="ApexMapper.App.Views.Calibration.CalibrationStepRest"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Margin="8">
+        <TextBlock FontWeight="Bold" Text="Step 1: Rest Position" />
+        <TextBlock TextWrapping="Wrap">
+            Release all keys and keep them at rest. The wizard will measure the
+            resting analog value for each key during the sampling window.
+        </TextBlock>
+        <ProgressBar
+            Height="12"
+            Minimum="0" Maximum="1"
+            Value="{Binding Progress, Mode=OneWay}" />
+        <TextBlock
+            Text="{Binding StatusMessage}"
+            TextWrapping="Wrap"
+            Foreground="DimGray"
+            FontSize="11" />
+    </StackPanel>
+</UserControl>

@@ -1,0 +1,22 @@
+<UserControl
+    x:Class="ApexMapper.App.Views.Calibration.CalibrationStepNoise"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel Margin="8">
+        <TextBlock FontWeight="Bold" Text="Step 3: Noise Measurement" />
+        <TextBlock TextWrapping="Wrap">
+            Release all keys again. The wizard will measure the ambient noise band
+            (jitter) at rest so actuation thresholds can be set accurately.
+        </TextBlock>
+        <ProgressBar
+            Height="12"
+            Minimum="0" Maximum="1"
+            Value="{Binding Progress, Mode=OneWay}" />
+        <TextBlock
+            Text="{Binding StatusMessage}"
+            TextWrapping="Wrap"
+            Foreground="DimGray"
+            FontSize="11" />
+    </StackPanel>
+</UserControl>
