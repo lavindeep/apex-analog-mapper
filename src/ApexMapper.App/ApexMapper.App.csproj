@@ -14,7 +14,7 @@
     <PackageReference Include="H.NotifyIcon.Wpf" />
     <PackageReference Include="NHotkey.Wpf" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
-    <PackageReference Include="Microsoft.Win32.TaskScheduler" />
+    <PackageReference Include="TaskScheduler" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
