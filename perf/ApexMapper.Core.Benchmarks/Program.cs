@@ -6,7 +6,11 @@ public static class Program
 {
     public static int Main(string[] args)
     {
-        BenchmarkRunner.Run<MappingTickBenchmark>(args: args);
+        BenchmarkSwitcher.FromTypes(new[]
+        {
+            typeof(MappingTickBenchmark),
+            typeof(KeyStateStoreBenchmark),
+        }).Run(args);
         return 0;
     }
 }
