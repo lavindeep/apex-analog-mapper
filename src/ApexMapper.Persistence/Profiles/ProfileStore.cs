@@ -30,10 +30,33 @@ public sealed class ProfileStore
 
     public void Save(Profile profile)
     {
-        var doc = new VersionedDocument<Profile>(CurrentSchemaVersion, profile);
+        System.IO.Directory.CreateDirectory(_options.Directory);
         var path = Path.Combine(_options.Directory, profile.Id + ".json");
+        if (File.Exists(path)) RotateBackups(path);
+
+        var doc = new VersionedDocument<Profile>(CurrentSchemaVersion, profile);
         var json = JsonSerializer.Serialize(doc, Options);
         AtomicFile.WriteAllText(path, json);
+    }
+
+    private void RotateBackups(string path)
+    {
+        for (var i = _options.BackupCount; i >= 2; i--)
+        {
+            var src = path + ".bak." + (i - 1);
+            var dst = path + ".bak." + i;
+            if (File.Exists(src))
+            {
+                if (File.Exists(dst)) File.Delete(dst);
+                File.Move(src, dst);
+            }
+        }
+        var firstBackup = path + ".bak.1";
+        if (File.Exists(firstBackup)) File.Delete(firstBackup);
+        File.Copy(path, firstBackup);
+
+        var overflow = path + ".bak." + (_options.BackupCount + 1);
+        if (File.Exists(overflow)) File.Delete(overflow);
     }
 
     private static bool TryLoad(string path, out Profile profile)
