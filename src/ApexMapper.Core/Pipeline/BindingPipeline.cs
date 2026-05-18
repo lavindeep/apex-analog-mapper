@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using ApexMapper.Core.Diagnostics;
 using ApexMapper.Core.Keys;
 using ApexMapper.Core.Ramps;
 using ApexMapper.Core.Socd;
@@ -6,6 +8,8 @@ namespace ApexMapper.Core.Pipeline;
 
 public sealed class BindingPipeline
 {
+    private static readonly double TicksToMicros = 1_000_000.0 / Stopwatch.Frequency;
+
     private readonly SingleKeyBinding[] _singles;
     private readonly AxisPairBinding[] _axes;
     private readonly Ramp[] _singleRamps;
@@ -25,8 +29,15 @@ public sealed class BindingPipeline
         _axisSocd = new SocdState[_axes.Length];
     }
 
+    /// <summary>
+    /// Latency recorder for diagnostics. Defaults to the zero-overhead null
+    /// recorder; replace via initializer when Phase 5 diagnostics are wired up.
+    /// </summary>
+    public LatencyRecorder Latency { get; init; } = LatencyRecorder.Null;
+
     public void Tick(KeyStateStore store, float dtMs, ref VirtualPadState pad)
     {
+        var startTicks = Stopwatch.GetTimestamp();
         pad.Reset();
 
         for (var i = 0; i < _singles.Length; i++)
@@ -39,6 +50,7 @@ public sealed class BindingPipeline
         }
 
         TickAxes(store, dtMs, ref pad);
+        Latency.Record((long)((Stopwatch.GetTimestamp() - startTicks) * TicksToMicros));
     }
 
     private void TickAxes(KeyStateStore store, float dtMs, ref VirtualPadState pad)

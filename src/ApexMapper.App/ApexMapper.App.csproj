@@ -10,5 +10,10 @@
     <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
     <ProjectReference Include="..\ApexMapper.Persistence\ApexMapper.Persistence.csproj" />
     <ProjectReference Include="..\ApexMapper.Logging\ApexMapper.Logging.csproj" />
+    <ProjectReference Include="..\ApexMapper.Input.Abstractions\ApexMapper.Input.Abstractions.csproj" />
+    <ProjectReference Include="..\ApexMapper.Profiles\ApexMapper.Profiles.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="OxyPlot.Wpf" />
   </ItemGroup>
 </Project>
