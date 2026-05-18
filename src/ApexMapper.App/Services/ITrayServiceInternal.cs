@@ -2,9 +2,10 @@ namespace ApexMapper.App.Services;
 
 /// <summary>
 /// Internal extension of ITrayService so TrayMenuViewModel can trigger ExitRequested
-/// without a public RequestExit() method on ITrayService itself.
+/// and OpenMainWindowRequested without public Request*() methods on ITrayService itself.
 /// </summary>
-internal interface ITrayServiceInternal
+internal interface ITrayServiceInternal : ITrayService
 {
+    void RequestOpenMainWindow();
     void RequestExit();
 }

@@ -15,14 +15,14 @@ public sealed class TrayMenuViewModelTests
     // Fakes
     // ---------------------------------------------------------------------------
 
-    private sealed class FakeTrayService : ITrayService, ITrayServiceInternal
+    // FakeTrayService implements ITrayServiceInternal (which extends ITrayService).
+    // The VM now takes ITrayServiceInternal directly, so no cast is needed.
+    private sealed class FakeTrayService : ITrayServiceInternal
     {
         public bool IsEnabled { get; private set; }
         public bool SetEnabledCalled { get; private set; }
 
-#pragma warning disable CS0067 // event never used — required by ITrayService interface
         public event EventHandler? OpenMainWindowRequested;
-#pragma warning restore CS0067
         public event EventHandler? ExitRequested;
 
         public void Show() { }
@@ -37,7 +37,8 @@ public sealed class TrayMenuViewModelTests
         public void SetTooltip(string text) { }
         public void ShowBalloon(string title, string message) { }
 
-        // ITrayServiceInternal — called by TrayMenuViewModel.ExitCommand
+        // ITrayServiceInternal — called by TrayMenuViewModel commands
+        public void RequestOpenMainWindow() => OpenMainWindowRequested?.Invoke(this, EventArgs.Empty);
         public void RequestExit() => ExitRequested?.Invoke(this, EventArgs.Empty);
 
         public void Dispose() { }
@@ -95,8 +96,8 @@ public sealed class TrayMenuViewModelTests
     // Helpers
     // ---------------------------------------------------------------------------
 
-    private static readonly TrayProfileEntry Profile1 = new("p1", "Profile One", true);
-    private static readonly TrayProfileEntry Profile2 = new("p2", "Profile Two", false);
+    private static readonly TrayProfileEntry Profile1 = new("p1", "Profile One");
+    private static readonly TrayProfileEntry Profile2 = new("p2", "Profile Two");
 
     private static (TrayMenuViewModel vm, FakeTrayService tray, FakeTrayProfileSource source, FakeSupervisorChannel channel)
         Build(string currentId = "p1")
@@ -209,6 +210,20 @@ public sealed class TrayMenuViewModelTests
         bool raised = false;
         tray.ExitRequested += (_, _) => raised = true;
         vm.ExitCommand.Execute(null);
+        raised.Should().BeTrue();
+    }
+
+    // ---------------------------------------------------------------------------
+    // OpenMainWindowCommand
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void OpenMainWindowCommand_fires_OpenMainWindowRequested_event_on_tray_service()
+    {
+        var (vm, tray, _, _) = Build();
+        bool raised = false;
+        tray.OpenMainWindowRequested += (_, _) => raised = true;
+        vm.OpenMainWindowCommand.Execute(null);
         raised.Should().BeTrue();
     }
 

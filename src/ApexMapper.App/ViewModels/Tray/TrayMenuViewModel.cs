@@ -6,7 +6,7 @@ namespace ApexMapper.App.ViewModels.Tray;
 
 public sealed class TrayMenuViewModel : ObservableViewModel
 {
-    private readonly ITrayService _trayService;
+    private readonly ITrayServiceInternal _trayService;
     private readonly ITrayProfileSource _profileSource;
     private readonly ISupervisorChannel _supervisorChannel;
 
@@ -15,7 +15,7 @@ public sealed class TrayMenuViewModel : ObservableViewModel
     private string _currentProfileName;
 
     public TrayMenuViewModel(
-        ITrayService trayService,
+        ITrayServiceInternal trayService,
         ITrayProfileSource profileSource,
         ISupervisorChannel supervisorChannel)
     {
@@ -79,14 +79,12 @@ public sealed class TrayMenuViewModel : ObservableViewModel
 
     private void ExecuteOpenMainWindow()
     {
-        // TrayService owns event routing; no action needed here until TaskbarIcon wiring
+        _trayService.RequestOpenMainWindow();
     }
 
     private void ExecuteExit()
     {
-        // ITrayService has no RequestExit() method; use the internal forwarder interface
-        // so TrayService can raise its ExitRequested event on behalf of this command.
-        (_trayService as ITrayServiceInternal)?.RequestExit();
+        _trayService.RequestExit();
     }
 
     private string ResolveCurrentProfileName()

@@ -35,7 +35,8 @@ public sealed class TrayService : ITrayService, ITrayServiceInternal, IDisposabl
     public void ShowBalloon(string title, string message)
         => _icon.ShowNotification(title, message, NotificationIcon.Info);
 
-    // ITrayServiceInternal — invoked by TrayMenuViewModel.ExitCommand
+    // ITrayServiceInternal — invoked by TrayMenuViewModel commands
+    public void RequestOpenMainWindow() => OpenMainWindowRequested?.Invoke(this, EventArgs.Empty);
     public void RequestExit() => ExitRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnTrayLeftMouseDown(object sender, System.Windows.RoutedEventArgs e)
