@@ -16,7 +16,9 @@ public class LogStoreTests : IDisposable
         using var log = new LogStore(_dir, "app.log", maxBytes: 1_000_000, maxFiles: 5);
         log.Write(LogLevel.Info, "hello");
         log.Flush();
-        var content = File.ReadAllText(Path.Combine(_dir, "app.log"));
+        using var stream = new FileStream(Path.Combine(_dir, "app.log"), FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using var reader = new StreamReader(stream);
+        var content = reader.ReadToEnd();
         content.Should().Contain("hello").And.Contain("INFO");
     }
 
