@@ -183,7 +183,7 @@ public sealed class LatencySampler : ILatencySampler, IDisposable
         var handler = SamplesAdded;
         if (handler is not null && newCount > 0)
         {
-            _batchView.Count = newCount;
+            _batchView.SetCount(newCount);
             handler(_batchView);
         }
     }
@@ -194,11 +194,28 @@ public sealed class LatencySampler : ILatencySampler, IDisposable
     /// boxing <c>ArraySegment&lt;LatencySample&gt;</c> to <c>IReadOnlyList</c>.
     /// Consumers must not retain the reference across <see cref="ILatencySampler.SamplesAdded"/>
     /// invocations; its contents are overwritten on each drain.
+    /// <para>
+    /// <see cref="GetEnumerator"/> returns an <see cref="Enumerator"/> struct so
+    /// that <c>foreach</c> (which binds to the duck-typed public method first)
+    /// is allocation-free. The interface implementations of
+    /// <see cref="IEnumerable{T}.GetEnumerator"/> and
+    /// <see cref="System.Collections.IEnumerable.GetEnumerator"/> still box the struct; LINQ
+    /// operators such as <c>Sum</c> or <c>ToList</c> reach the enumerator
+    /// through those interfaces and therefore allocate. The hot drain path
+    /// passes the batch through <c>foreach</c>/indexer access only, so those
+    /// box paths are not exercised in production.
+    /// </para>
     /// </summary>
-    private sealed class BatchView(LatencySample[] buffer) : IReadOnlyList<LatencySample>
+    private sealed class BatchView : IReadOnlyList<LatencySample>
     {
-        private readonly LatencySample[] _buffer = buffer;
-        public int Count { get; set; }
+        private readonly LatencySample[] _buffer;
+
+        public BatchView(LatencySample[] buffer) { _buffer = buffer; }
+
+        public int Count { get; private set; }
+
+        internal void SetCount(int count) => Count = count;
+
         public LatencySample this[int index]
         {
             get
@@ -207,12 +224,40 @@ public sealed class LatencySampler : ILatencySampler, IDisposable
                 return _buffer[index];
             }
         }
-        public IEnumerator<LatencySample> GetEnumerator()
-        {
-            var count = Count;
-            for (var i = 0; i < count; i++) yield return _buffer[i];
-        }
+
+        /// <summary>Returns a struct enumerator — <c>foreach</c> uses this and avoids allocation.</summary>
+        public Enumerator GetEnumerator() => new(this);
+
+        IEnumerator<LatencySample> IEnumerable<LatencySample>.GetEnumerator() => GetEnumerator();
+
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        /// <summary>Struct enumerator over the populated prefix of the backing buffer.</summary>
+        public struct Enumerator : IEnumerator<LatencySample>
+        {
+            private readonly BatchView _view;
+            private int _index;
+
+            internal Enumerator(BatchView view)
+            {
+                _view = view;
+                _index = -1;
+            }
+
+            public LatencySample Current => _view._buffer[_index];
+
+            object System.Collections.IEnumerator.Current => Current;
+
+            public bool MoveNext()
+            {
+                _index++;
+                return _index < _view.Count;
+            }
+
+            public void Reset() => _index = -1;
+
+            public void Dispose() { }
+        }
     }
 
     private static long NowMicros()

@@ -164,4 +164,24 @@ public class LatencyHistogramViewModelTests
 
         changed.Should().BeFalse();
     }
+
+    [Fact]
+    public void Dispatches_ui_updates_through_provided_dispatcher()
+    {
+        // SamplesAdded fires on the sampler's drain thread; the VM must
+        // marshal WPF-visible mutations through the injected dispatcher so it
+        // never touches OxyPlot/INotifyPropertyChanged from a non-UI thread.
+        var sampler = new FakeSampler();
+        var dispatchCount = 0;
+        var vm = new LatencyHistogramViewModel(sampler, action =>
+        {
+            dispatchCount++;
+            action();
+        });
+
+        sampler.Emit(new[] { new LatencySample(0, 5000) });
+
+        dispatchCount.Should().BeGreaterThan(0, "the first batch must traverse the dispatcher");
+        vm.P50.Should().BeGreaterThan(0, "the dispatched action also applies the histogram percentiles");
+    }
 }

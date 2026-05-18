@@ -147,7 +147,14 @@ public sealed class HdrHistogram
 
     /// <summary>
     /// Returns the bucket index for a sample. Octave = floor(log2(clamped)),
-    /// sub-bucket = top 4 bits of the mantissa within the octave.
+    /// sub-bucket = mantissa within the octave. Below 16 µs each integer
+    /// microsecond maps to a distinct sub-bucket within its octave (the upper
+    /// sub-buckets in those octaves are unused but cause no correctness issue);
+    /// from 16 µs upward the top 4 bits of the mantissa form a 4-bit index.
+    /// This keeps <see cref="BucketIndex"/> symmetric with
+    /// <see cref="BucketLowerBound"/>/<see cref="BucketUpperBound"/> so that
+    /// every sample lands in a bucket whose [lower, upper) interval truly
+    /// contains it.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int BucketIndex(long microseconds)
@@ -164,19 +171,18 @@ public sealed class HdrHistogram
         // Octave = position of highest set bit.
         var octave = BitOperations.Log2((ulong)microseconds);
 
-        // Within the octave [2^octave, 2^(octave+1)), split into 16 linear
-        // sub-buckets by taking the top 4 bits below the leading 1.
-        // sub = (microseconds - 2^octave) >> (octave - 4) when octave >= 4,
-        // else sub = (microseconds - 2^octave) << (4 - octave).
-        long mantissa = microseconds - (1L << octave);
+        // For octaves < 4 each integer microsecond is its own sub-bucket
+        // (`sub = us - 2^octave`, in range [0, 2^octave) ⊂ [0, 16)). For
+        // octaves >= 4 the mantissa is split into 16 linear sub-buckets, with
+        // sub = (us >> (octave - 4)) - 16, in range [0, 16).
         int sub;
-        if (octave >= 4)
+        if (octave < 4)
         {
-            sub = (int)(mantissa >> (octave - 4));
+            sub = (int)(microseconds - (1L << octave));
         }
         else
         {
-            sub = (int)(mantissa << (4 - octave));
+            sub = (int)((microseconds >> (octave - 4)) - SubBucketCount);
         }
         if (sub > SubBucketCount - 1) sub = SubBucketCount - 1;
         if (sub < 0) sub = 0;
@@ -186,6 +192,8 @@ public sealed class HdrHistogram
 
     /// <summary>
     /// Lower-bound microsecond value covered by the given bucket index.
+    /// For octaves &lt; 4, each used sub-bucket is exactly 1 µs wide. For
+    /// octaves &gt;= 4 each sub-bucket spans 2^(octave-4) µs.
     /// </summary>
     private static long BucketLowerBound(int index)
     {
@@ -193,11 +201,16 @@ public sealed class HdrHistogram
         var octave = index / SubBucketCount;
         var sub = index % SubBucketCount;
         long octaveBase = 1L << octave;
-        long subWidth = octave >= 4 ? (octaveBase >> 4) : 1;
-        // For octaves < 4 the sub-buckets are 1 µs wide and indexes < 16 cover
-        // the whole octave (the upper part collapses to the same lower bound).
-        long lower = octaveBase + sub * subWidth;
-        return Math.Max(1, lower);
+        if (octave < 4)
+        {
+            // Sub-buckets [0, 2^octave) cover [octaveBase, octaveBase + 2^octave),
+            // i.e. the whole octave at 1 µs resolution. Sub-buckets at or above
+            // 2^octave are unused; we still return a sane (monotone) bound for
+            // them so that BucketUpperBound never underflows.
+            return octaveBase + sub;
+        }
+        long subWidth = octaveBase >> 4; // = 2^(octave-4)
+        return octaveBase + sub * subWidth;
     }
 
     /// <summary>
@@ -210,7 +223,16 @@ public sealed class HdrHistogram
         {
             return 1L << OctaveCount;
         }
-        return BucketLowerBound(index + 1);
+        var octave = index / SubBucketCount;
+        var sub = index % SubBucketCount;
+        long octaveBase = 1L << octave;
+        if (octave < 4)
+        {
+            // Each used sub-bucket is 1 µs wide.
+            return octaveBase + sub + 1;
+        }
+        long subWidth = octaveBase >> 4;
+        return octaveBase + (sub + 1) * subWidth;
     }
 
     /// <summary>

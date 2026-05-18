@@ -187,4 +187,41 @@ public class HdrHistogramTests
         histogram.Buckets.Should().NotBeNull();
         histogram.Buckets.Sum().Should().Be(2);
     }
+
+    [Fact]
+    public void Low_octave_samples_resolve_to_correct_bucket()
+    {
+        // Bucket math under 16 µs used to be asymmetric: BucketIndex spread
+        // values across all 16 sub-buckets of each low octave, but
+        // BucketLowerBound used a 1 µs sub-width, so the lower/upper bounds
+        // of a low-octave bucket no longer contained the recorded sample.
+        // The fix makes BucketIndex use a per-µs sub-bucket for octaves < 4,
+        // matching BucketLowerBound/UpperBound. Each input µs should now be
+        // recovered (via percentiles) within ±1 µs of itself when it's the
+        // sole sample in the histogram.
+        for (long us = 1; us <= 15; us++)
+        {
+            var histogram = new HdrHistogram();
+            histogram.Record(us);
+            var (p50, p95, p99) = histogram.Percentiles();
+            p50.Should().BeInRange(us, us + 1, $"input {us}");
+            p95.Should().BeInRange(us, us + 1, $"input {us}");
+            p99.Should().BeInRange(us, us + 1, $"input {us}");
+        }
+    }
+
+    [Fact]
+    public void Zero_sample_does_not_throw_and_is_recorded()
+    {
+        // Zero (and negatives) must clamp into the lowest bucket without
+        // crashing or producing garbage upper bounds.
+        var histogram = new HdrHistogram();
+        histogram.Record(0);
+        histogram.TotalCount.Should().Be(1);
+        var (p50, p95, p99) = histogram.Percentiles();
+        // The minimum bucket covers [1, 2) µs; interpolation lands inside.
+        p50.Should().BeInRange(1, 2);
+        p95.Should().BeInRange(1, 2);
+        p99.Should().BeInRange(1, 2);
+    }
 }
