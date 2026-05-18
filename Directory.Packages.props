@@ -11,5 +11,6 @@
     <PackageVersion Include="BenchmarkDotNet" Version="0.13.12" />
     <PackageVersion Include="System.IO.Abstractions" Version="21.0.29" />
     <PackageVersion Include="System.IO.Abstractions.TestingHelpers" Version="21.0.29" />
+    <PackageVersion Include="HidSharp" Version="2.6.4" />
   </ItemGroup>
 </Project>
