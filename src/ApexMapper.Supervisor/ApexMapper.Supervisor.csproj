@@ -6,7 +6,11 @@
     <AssemblyName>ApexMapper.Supervisor</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="MessagePack" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
     <ProjectReference Include="..\ApexMapper.Logging\ApexMapper.Logging.csproj" />
+    <ProjectReference Include="..\ApexMapper.Output\ApexMapper.Output.csproj" />
   </ItemGroup>
 </Project>

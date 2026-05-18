@@ -4,6 +4,12 @@
     <RootNamespace>ApexMapper.Output</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="MessagePack" />
+    <PackageReference Include="Nefarius.ViGEm.Client" />
+    <PackageReference Include="System.IO.Pipes.AccessControl" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
+    <ProjectReference Include="..\ApexMapper.Logging\ApexMapper.Logging.csproj" />
   </ItemGroup>
 </Project>
