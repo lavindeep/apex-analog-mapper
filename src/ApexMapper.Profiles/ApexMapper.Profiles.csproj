@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>ApexMapper.Profiles</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
+    <ProjectReference Include="..\ApexMapper.Persistence\ApexMapper.Persistence.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Defaults\racing.json" />
+  </ItemGroup>
+</Project>

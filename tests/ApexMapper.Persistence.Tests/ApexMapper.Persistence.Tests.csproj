@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ApexMapper.Persistence\ApexMapper.Persistence.csproj" />
     <ProjectReference Include="..\..\src\ApexMapper.Core\ApexMapper.Core.csproj" />
+    <ProjectReference Include="..\..\src\ApexMapper.Profiles\ApexMapper.Profiles.csproj" />
   </ItemGroup>
 
 </Project>
