@@ -43,7 +43,28 @@ public sealed class BindingPipeline
 
     private void TickAxes(KeyStateStore store, float dtMs, ref VirtualPadState pad)
     {
-        // Filled in Task 16.
+        for (var i = 0; i < _axes.Length; i++)
+        {
+            var b = _axes[i];
+            var negState = store.Get(b.NegativeKey);
+            var posState = store.Get(b.PositiveKey);
+
+            var negValue = ResolveValue(negState, _axisNegRamps[i], dtMs);
+            var posValue = ResolveValue(posState, _axisPosRamps[i], dtMs);
+
+            var negShaped = b.Curve.Map(negValue);
+            var posShaped = b.Curve.Map(posValue);
+
+            var signed = SocdResolver.Resolve(b.Socd, negShaped, posShaped, ref _axisSocd[i]);
+            switch (b.Target)
+            {
+                case BindingTarget.LeftStickX: pad.LeftStickX = signed; break;
+                case BindingTarget.LeftStickY: pad.LeftStickY = signed; break;
+                case BindingTarget.RightStickX: pad.RightStickX = signed; break;
+                case BindingTarget.RightStickY: pad.RightStickY = signed; break;
+                default: break;
+            }
+        }
     }
 
     private static float ResolveValue(KeyState state, Ramp ramp, float dtMs)
