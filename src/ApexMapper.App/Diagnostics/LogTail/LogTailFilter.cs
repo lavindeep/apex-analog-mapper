@@ -1,13 +1,11 @@
-using ApexMapper.Logging;
-
 namespace ApexMapper.App.Diagnostics.LogTail;
 
 /// <summary>
-/// Pure-function level filter for <see cref="LogTailEntry"/>. Delegates to
-/// <see cref="LogParser.FilterByLevels"/> after re-projecting through the
-/// cross-platform <see cref="LogEntry"/> shape; matching is case-insensitive
-/// and an empty level set returns an empty list (mirrors UI semantics where
-/// "no level toggles enabled" hides everything).
+/// Pure-function level filter for <see cref="LogTailEntry"/>. Mirrors the
+/// semantics of <see cref="ApexMapper.Logging.LogParser.FilterByLevels"/>
+/// for the App-side entry shape: matching is case-insensitive ordinal, and an
+/// empty level set returns an empty list (UI rule: "no level toggles enabled"
+/// hides everything).
 /// </summary>
 public static class LogTailFilter
 {

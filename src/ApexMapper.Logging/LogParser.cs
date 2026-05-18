@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 namespace ApexMapper.Logging;
@@ -32,7 +33,7 @@ public static class LogParser
     /// is permitted.
     /// </para>
     /// </summary>
-    public static bool TryParseLine(string line, out LogEntry? entry)
+    public static bool TryParseLine(string line, [NotNullWhen(true)] out LogEntry? entry)
     {
         entry = null;
         if (string.IsNullOrWhiteSpace(line))
@@ -110,7 +111,7 @@ public static class LogParser
         var malformed = 0;
         foreach (var line in lines)
         {
-            if (TryParseLine(line, out var entry) && entry is not null)
+            if (TryParseLine(line, out var entry))
             {
                 entries.Add(entry);
             }
