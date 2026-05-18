@@ -1,6 +1,4 @@
-using ApexMapper.Core.Keys;
-
-namespace ApexMapper.Input.Abstractions.Keys;
+namespace ApexMapper.Core.Keys;
 
 public sealed class KeyIndex
 {
