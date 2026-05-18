@@ -35,6 +35,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApexMapper.Core.Benchmarks"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApexMapper.Input.Abstractions", "src\ApexMapper.Input.Abstractions\ApexMapper.Input.Abstractions.csproj", "{7BFAC58C-80A2-4F46-A8B0-6FBD062B0D7E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApexMapper.Input.Abstractions.Tests", "tests\ApexMapper.Input.Abstractions.Tests\ApexMapper.Input.Abstractions.Tests.csproj", "{95CF0C7E-5BC3-44CB-BECF-906F8484AE13}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -96,6 +98,10 @@ Global
 		{7BFAC58C-80A2-4F46-A8B0-6FBD062B0D7E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7BFAC58C-80A2-4F46-A8B0-6FBD062B0D7E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7BFAC58C-80A2-4F46-A8B0-6FBD062B0D7E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{95CF0C7E-5BC3-44CB-BECF-906F8484AE13}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{95CF0C7E-5BC3-44CB-BECF-906F8484AE13}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{95CF0C7E-5BC3-44CB-BECF-906F8484AE13}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{95CF0C7E-5BC3-44CB-BECF-906F8484AE13}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{F31F2AE9-4EBA-4C92-BB3F-A81911B2C170} = {4EA88FDF-A2A7-4BB7-A367-B554CD585A2B}
@@ -111,5 +117,6 @@ Global
 		{53F24C69-0184-4578-8C91-9D72CAC8A0BC} = {4EA88FDF-A2A7-4BB7-A367-B554CD585A2B}
 		{CCDA130A-963E-4F6F-86E9-ACDC28A7C0D2} = {9E70F88D-2A02-4F41-BE5F-ACA6F38D7441}
 		{7BFAC58C-80A2-4F46-A8B0-6FBD062B0D7E} = {4EA88FDF-A2A7-4BB7-A367-B554CD585A2B}
+		{95CF0C7E-5BC3-44CB-BECF-906F8484AE13} = {BDC32AEA-9DC0-44AE-845C-9CD56CB0550F}
 	EndGlobalSection
 EndGlobal

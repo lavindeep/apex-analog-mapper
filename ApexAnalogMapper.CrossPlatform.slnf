@@ -8,6 +8,7 @@
       "src\\ApexMapper.Logging\\ApexMapper.Logging.csproj",
       "src\\ApexMapper.Profiles\\ApexMapper.Profiles.csproj",
       "tests\\ApexMapper.Core.Tests\\ApexMapper.Core.Tests.csproj",
+      "tests\\ApexMapper.Input.Abstractions.Tests\\ApexMapper.Input.Abstractions.Tests.csproj",
       "tests\\ApexMapper.Persistence.Tests\\ApexMapper.Persistence.Tests.csproj",
       "tests\\ApexMapper.Logging.Tests\\ApexMapper.Logging.Tests.csproj",
       "perf\\ApexMapper.Core.Benchmarks\\ApexMapper.Core.Benchmarks.csproj"
