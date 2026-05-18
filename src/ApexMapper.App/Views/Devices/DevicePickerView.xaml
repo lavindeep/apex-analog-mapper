@@ -1,0 +1,133 @@
+<UserControl
+    x:Class="ApexMapper.App.Views.Devices.DevicePickerView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:ApexMapper.App.ViewModels.Devices"
+    x:Name="Root">
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+        <!-- Highlight primary device row -->
+        <Style x:Key="DeviceRowStyle" TargetType="ListBoxItem">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsPrimary}" Value="True">
+                    <Setter Property="FontWeight" Value="Bold" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsConnected}" Value="False">
+                    <Setter Property="Foreground" Value="Gray" />
+                    <Setter Property="FontStyle" Value="Italic" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Device list -->
+        <ListBox
+            Grid.Row="0"
+            ItemsSource="{Binding Devices}"
+            ItemContainerStyle="{StaticResource DeviceRowStyle}">
+            <ListBox.ItemTemplate>
+                <DataTemplate DataType="{x:Type vm:DeviceListItem}">
+                    <Grid Margin="0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Device name + VID/PID -->
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding DisplayName}" />
+                            <TextBlock FontSize="10" Foreground="DimGray">
+                                <TextBlock.Text>
+                                    <MultiBinding StringFormat="VID:{0:X4}  PID:{1:X4}">
+                                        <Binding Path="Vid" />
+                                        <Binding Path="Pid" />
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+                        </StackPanel>
+
+                        <!-- Current / Primary badge -->
+                        <Border
+                            Grid.Column="1"
+                            Margin="4,0"
+                            Padding="4,2"
+                            CornerRadius="3"
+                            Background="#2196F3"
+                            Visibility="{Binding IsPrimary, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="Primary" Foreground="White" FontSize="10" />
+                        </Border>
+
+                        <!-- Calibration status badge -->
+                        <Border
+                            Grid.Column="2"
+                            Margin="4,0"
+                            Padding="4,2"
+                            CornerRadius="3">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="LightGray" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CalibrationStatus}" Value="Calibrated">
+                                            <Setter Property="Background" Value="#4CAF50" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding CalibrationStatus}" Value="Faulted">
+                                            <Setter Property="Background" Value="#F44336" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding CalibrationStatus}" Value="NotCalibrated">
+                                            <Setter Property="Background" Value="#FF9800" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock FontSize="10" Foreground="White">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Text" Value="Unknown" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CalibrationStatus}" Value="Calibrated">
+                                                <Setter Property="Text" Value="Calibrated" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding CalibrationStatus}" Value="Faulted">
+                                                <Setter Property="Text" Value="Faulted" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding CalibrationStatus}" Value="NotCalibrated">
+                                                <Setter Property="Text" Value="Pending calibration" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Border>
+
+                        <!-- Make Primary button -->
+                        <Button
+                            Grid.Column="3"
+                            Margin="4,0,0,0"
+                            Padding="6,2"
+                            Content="Make Primary"
+                            Command="{Binding DataContext.MakePrimaryCommand, ElementName=Root}"
+                            CommandParameter="{Binding Id}" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Toolbar -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,4,0,0">
+            <Button
+                Content="Refresh"
+                Command="{Binding RefreshCommand}"
+                Padding="8,3" />
+        </StackPanel>
+    </Grid>
+</UserControl>
