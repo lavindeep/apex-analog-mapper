@@ -1,8 +1,42 @@
 <Window x:Class="ApexMapper.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Apex Mapper" Height="200" Width="320">
-    <Grid>
-        <TextBlock Text="Apex Pro Mapper — Phase 1 stub" HorizontalAlignment="Center" VerticalAlignment="Center" />
-    </Grid>
+        xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
+        xmlns:profilesVm="clr-namespace:ApexMapper.App.ViewModels.Profiles"
+        xmlns:devicesVm="clr-namespace:ApexMapper.App.ViewModels.Devices"
+        xmlns:calibrationVm="clr-namespace:ApexMapper.App.ViewModels.Calibration"
+        xmlns:profilesViews="clr-namespace:ApexMapper.App.Views.Profiles"
+        xmlns:devicesViews="clr-namespace:ApexMapper.App.Views.Devices"
+        xmlns:calibrationViews="clr-namespace:ApexMapper.App.Views.Calibration"
+        Title="Apex Mapper" Height="480" Width="640"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <!-- Map ProfileSelectorViewModel → ProfileSelectorView -->
+        <DataTemplate DataType="{x:Type profilesVm:ProfileSelectorViewModel}">
+            <profilesViews:ProfileSelectorView />
+        </DataTemplate>
+
+        <!-- Map DevicePickerViewModel → DevicePickerView -->
+        <DataTemplate DataType="{x:Type devicesVm:DevicePickerViewModel}">
+            <devicesViews:DevicePickerView />
+        </DataTemplate>
+
+        <!-- Map CalibrationWizardViewModel → CalibrationWizardView -->
+        <DataTemplate DataType="{x:Type calibrationVm:CalibrationWizardViewModel}">
+            <calibrationViews:CalibrationWizardView />
+        </DataTemplate>
+    </Window.Resources>
+
+    <TabControl>
+        <TabItem Header="Profiles">
+            <ContentControl Content="{Binding ProfileSelectorViewModel}" />
+        </TabItem>
+        <TabItem Header="Devices">
+            <ContentControl Content="{Binding DevicePickerViewModel}" />
+        </TabItem>
+        <TabItem Header="Calibration">
+            <ContentControl Content="{Binding CalibrationWizardViewModel}" />
+        </TabItem>
+    </TabControl>
 </Window>
