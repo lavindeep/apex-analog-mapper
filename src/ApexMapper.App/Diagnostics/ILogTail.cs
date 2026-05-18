@@ -10,5 +10,5 @@ public interface ILogTail
     IReadOnlyList<LogTailEntry> Load(int maxLines);
 
     /// <summary>Filters the supplied entries by the requested set of levels.</summary>
-    IReadOnlyList<LogTailEntry> Filter(IReadOnlyList<LogTailEntry> entries, HashSet<string> levels);
+    IReadOnlyList<LogTailEntry> Filter(IReadOnlyList<LogTailEntry> entries, IReadOnlyCollection<string> levels);
 }

@@ -30,14 +30,19 @@ public sealed class BindingPipeline
     }
 
     /// <summary>
-    /// Latency recorder for diagnostics. Defaults to the zero-overhead null
-    /// recorder; replace via initializer when Phase 5 diagnostics are wired up.
+    /// Latency recorder for diagnostics. Defaults to a Null recorder whose
+    /// <see cref="LatencyRecorder.IsActive"/> is false; the pipeline skips
+    /// timestamp work in that case. Replace via initializer when Phase 5
+    /// diagnostics are wired up.
     /// </summary>
     public LatencyRecorder Latency { get; init; } = LatencyRecorder.Null;
 
     public void Tick(KeyStateStore store, float dtMs, ref VirtualPadState pad)
     {
-        var startTicks = Stopwatch.GetTimestamp();
+        var latency = Latency;
+        var measure = latency.IsActive;
+        long startTicks = measure ? Stopwatch.GetTimestamp() : 0;
+
         pad.Reset();
 
         for (var i = 0; i < _singles.Length; i++)
@@ -50,7 +55,11 @@ public sealed class BindingPipeline
         }
 
         TickAxes(store, dtMs, ref pad);
-        Latency.Record((long)((Stopwatch.GetTimestamp() - startTicks) * TicksToMicros));
+
+        if (measure)
+        {
+            latency.Record((long)((Stopwatch.GetTimestamp() - startTicks) * TicksToMicros));
+        }
     }
 
     private void TickAxes(KeyStateStore store, float dtMs, ref VirtualPadState pad)

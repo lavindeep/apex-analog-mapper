@@ -48,6 +48,13 @@ public sealed class LatencyRecorder
     public long WriteCount => Interlocked.Read(ref _writeIndex);
 
     /// <summary>
+    /// True when this recorder has a real backing buffer; false for the
+    /// <see cref="Null"/> null-object instance. Hot-path callers can branch on
+    /// this to skip timestamp work entirely when diagnostics are disabled.
+    /// </summary>
+    public bool IsActive => _samples.Length != 0;
+
+    /// <summary>
     /// Records a latency sample in microseconds. Lock-free and allocation-free.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -65,7 +72,8 @@ public sealed class LatencyRecorder
     /// <summary>
     /// Copies up to <paramref name="destination"/>.Length most-recent samples
     /// into the destination span in chronological order. Returns the number of
-    /// samples copied.
+    /// samples copied. Best-effort under concurrent writes; the most recent
+    /// slots may be torn or contain pre-write zeros.
     /// </summary>
     public int TrySnapshot(Span<long> destination)
     {

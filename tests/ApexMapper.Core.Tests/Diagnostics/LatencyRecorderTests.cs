@@ -23,6 +23,19 @@ public class LatencyRecorderTests
     }
 
     [Fact]
+    public void Null_recorder_IsActive_is_false()
+    {
+        LatencyRecorder.Null.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Real_recorder_IsActive_is_true()
+    {
+        var recorder = new LatencyRecorder(16);
+        recorder.IsActive.Should().BeTrue();
+    }
+
+    [Fact]
     public void Constructor_rejects_non_power_of_two_capacity()
     {
         var act = () => new LatencyRecorder(1000);
@@ -104,6 +117,15 @@ public class LatencyRecorderTests
         var threads = new Thread[threadCount];
         var ready = new ManualResetEventSlim(false);
 
+        var expected = new HashSet<long>();
+        for (var t = 0; t < threadCount; t++)
+        {
+            for (var i = 0; i < perThread; i++)
+            {
+                expected.Add((long)t * 10_000 + i);
+            }
+        }
+
         for (var t = 0; t < threadCount; t++)
         {
             var threadIndex = t;
@@ -124,5 +146,8 @@ public class LatencyRecorderTests
         var buffer = new long[4096];
         var count = recorder.TrySnapshot(buffer);
         count.Should().Be(threadCount * perThread);
+
+        var actual = new HashSet<long>(buffer.Take(count));
+        actual.Should().BeEquivalentTo(expected);
     }
 }
