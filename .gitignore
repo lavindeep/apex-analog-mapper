@@ -1,0 +1,36 @@
+## .NET
+bin/
+obj/
+out/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+.vs/
+.vscode/
+.idea/
+
+## Build artifacts
+TestResults/
+artifacts/
+*.binlog
+*.nupkg
+*.snupkg
+BenchmarkDotNet.Artifacts/
+
+## Coverage
+coverage/
+*.coverage
+*.coveragexml
+lcov.info
+
+## OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## Editor
+*.swp
+*.swo
+*~
