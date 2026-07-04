@@ -6,10 +6,10 @@ namespace ApexMapper.Output.Ipc;
 [MessagePackObject]
 public sealed record ControlFrame : IFrame
 {
-    [Key(0)] public byte SchemaVersion { get; init; } = 1;
+    [Key(0)] public byte SchemaVersion { get; init; }
     [Key(1)] public long SequenceNumber { get; init; }
     [Key(2)] public long TimestampTicks { get; init; }
-    [Key(3)] public PadStatePayload Payload { get; init; } = new();
+    [Key(3)] public PadStatePayload? Payload { get; init; }
 }
 
 [MessagePackObject]
