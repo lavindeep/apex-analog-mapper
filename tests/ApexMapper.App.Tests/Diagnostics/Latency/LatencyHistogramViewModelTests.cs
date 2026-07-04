@@ -98,14 +98,14 @@ public class LatencyHistogramViewModelTests
     }
 
     [Fact]
-    public void Throttles_property_updates_to_5Hz_under_sustained_emit()
+    public void Throttles_property_updates_to_10Hz_under_sustained_emit()
     {
         // The VM gates PropertyChanged on Environment.TickCount64 deltas of
-        // 200 ms (5 Hz). Emit 100 batches in a tight loop; the wall-clock
-        // duration should be well under 200 ms on any reasonable CI machine,
+        // 100 ms (10 Hz). Emit 100 batches in a tight loop; the wall-clock
+        // duration should be well under 100 ms on any reasonable CI machine,
         // so we expect the first emit to fire P50 once and subsequent emits
-        // to be throttled. Even if the loop takes longer than expected, the
-        // upper bound of 5 fires per second is a generous ceiling.
+        // to be throttled. Even if the loop takes longer than expected, a
+        // ceiling of 5 total fires covers ~400 ms of elapsed time at 10 Hz.
         var sampler = new FakeSampler();
         var vm = new LatencyHistogramViewModel(sampler);
 
@@ -129,11 +129,11 @@ public class LatencyHistogramViewModelTests
         }
         var elapsedMs = Environment.TickCount64 - start;
 
-        // Expected: at most ceil(elapsedMs / 200) + 1 fires. With 100 tight
+        // Expected: at most ceil(elapsedMs / 100) + 1 fires. With 100 tight
         // emits the loop finishes in tens of milliseconds, so 1 fire is
         // typical and 5 is a comfortable ceiling for slow CI runners.
         p50Fires.Should().BeGreaterThan(0, "the first emit should always pass the throttle gate");
-        p50Fires.Should().BeLessThanOrEqualTo(5, $"throttle gate at 5 Hz should suppress most of the 100 emits (elapsed: {elapsedMs} ms)");
+        p50Fires.Should().BeLessThanOrEqualTo(5, $"throttle gate at 10 Hz should suppress most of the 100 emits (elapsed: {elapsedMs} ms)");
         p50Fires.Should().BeLessThan(100, "PropertyChanged must be throttled, not fired on every emit");
     }
 

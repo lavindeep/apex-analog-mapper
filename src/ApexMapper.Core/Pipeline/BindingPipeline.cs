@@ -34,6 +34,14 @@ public sealed class BindingPipeline
     /// <see cref="LatencyRecorder.IsActive"/> is false; the pipeline skips
     /// timestamp work in that case. Replace via initializer when Phase 5
     /// diagnostics are wired up.
+    /// <para>
+    /// Interim measurement anchors: what is recorded today is the duration of
+    /// <see cref="Tick"/> itself (pipeline compute time), NOT the spec's
+    /// end-to-end "input-event to IPC-submit" latency. The start anchor moves
+    /// to the input-event timestamp and the end anchor to IPC submission once
+    /// the supervisor IPC path exists; until then the histogram must not be
+    /// presented as end-to-end latency.
+    /// </para>
     /// </summary>
     public LatencyRecorder Latency { get; init; } = LatencyRecorder.Null;
 

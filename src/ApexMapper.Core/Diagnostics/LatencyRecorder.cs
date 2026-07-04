@@ -75,14 +75,25 @@ public sealed class LatencyRecorder
     /// samples copied. Best-effort under concurrent writes; the most recent
     /// slots may be torn or contain pre-write zeros.
     /// </summary>
-    public int TrySnapshot(Span<long> destination)
+    public int TrySnapshot(Span<long> destination) => TrySnapshot(destination, out _);
+
+    /// <summary>
+    /// Same as <see cref="TrySnapshot(Span{long})"/>, additionally reporting the
+    /// total write count observed atomically at snapshot time. Drain loops must
+    /// use this value (not a separately read <see cref="WriteCount"/>) as their
+    /// high-water mark, otherwise samples written between the two reads are
+    /// double-counted on the next drain.
+    /// </summary>
+    public int TrySnapshot(Span<long> destination, out long observedWriteCount)
     {
+        observedWriteCount = 0;
         if (_samples.Length == 0 || destination.IsEmpty)
         {
             return 0;
         }
 
         var written = Interlocked.Read(ref _writeIndex);
+        observedWriteCount = written;
         if (written <= 0)
         {
             return 0;

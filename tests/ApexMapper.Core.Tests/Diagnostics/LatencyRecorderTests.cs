@@ -150,4 +150,45 @@ public class LatencyRecorderTests
         var actual = new HashSet<long>(buffer.Take(count));
         actual.Should().BeEquivalentTo(expected);
     }
+
+    [Fact]
+    public void TrySnapshot_reports_write_count_observed_at_snapshot_time()
+    {
+        var recorder = new LatencyRecorder(16);
+        for (var i = 0; i < 5; i++)
+        {
+            recorder.Record(i);
+        }
+
+        var buffer = new long[16];
+        var count = recorder.TrySnapshot(buffer, out var observed);
+
+        count.Should().Be(5);
+        observed.Should().Be(5);
+        observed.Should().Be(recorder.WriteCount);
+    }
+
+    [Fact]
+    public void TrySnapshot_observed_count_tracks_writes_past_capacity()
+    {
+        var recorder = new LatencyRecorder(8);
+        for (var i = 0; i < 20; i++)
+        {
+            recorder.Record(i);
+        }
+
+        var count = recorder.TrySnapshot(new long[8], out var observed);
+
+        count.Should().Be(8);
+        observed.Should().Be(20);
+    }
+
+    [Fact]
+    public void TrySnapshot_null_recorder_reports_zero_observed_count()
+    {
+        var count = LatencyRecorder.Null.TrySnapshot(new long[4], out var observed);
+
+        count.Should().Be(0);
+        observed.Should().Be(0);
+    }
 }

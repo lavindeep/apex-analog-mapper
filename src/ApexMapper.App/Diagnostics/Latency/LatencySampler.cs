@@ -146,13 +146,15 @@ public sealed class LatencySampler : ILatencySampler, IDisposable
 
     private void DrainOnce(ref long lastWriteCount)
     {
-        var currentWriteCount = _recorder.WriteCount;
-        if (currentWriteCount == lastWriteCount)
+        if (_recorder.WriteCount == lastWriteCount)
         {
             return;
         }
 
-        var copied = _recorder.TrySnapshot(_buffer);
+        // Accounting uses the write count observed atomically inside the
+        // snapshot; reading WriteCount separately would double-ingest samples
+        // written between the read and the snapshot on the next drain.
+        var copied = _recorder.TrySnapshot(_buffer, out var currentWriteCount);
         if (copied <= 0)
         {
             return;

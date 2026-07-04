@@ -8,14 +8,21 @@ namespace ApexMapper.App.Diagnostics.Latency;
 
 /// <summary>
 /// View-model for <see cref="LatencyHistogramView"/>. Subscribes to an
-/// <see cref="ILatencySampler"/>, throttles UI refresh to ~5 Hz, and exposes
+/// <see cref="ILatencySampler"/>, throttles UI refresh to 10 Hz, and exposes
 /// P50/P95/P99 plus the live bucket array for chart binding.
 ///
 /// <para>
-/// The 5 Hz throttle is enforced by gating <see cref="OnSamplesAdded"/> on
+/// The 10 Hz throttle is enforced by gating <see cref="OnSamplesAdded"/> on
 /// <c>Environment.TickCount64</c> deltas: the sampler may emit dozens of
 /// batches per second at 1 kHz drain, but the WPF dispatcher only sees
-/// property-changed notifications every 200 ms.
+/// property-changed notifications every 100 ms.
+/// </para>
+///
+/// <para>
+/// Percentiles are cumulative since the view-model was created, not a rolling
+/// window: the histogram is never reset. A rolling window becomes worthwhile
+/// once the recorded value is true end-to-end latency (post-IPC wiring);
+/// revisit then.
 /// </para>
 ///
 /// <para>
@@ -31,8 +38,8 @@ namespace ApexMapper.App.Diagnostics.Latency;
 /// </summary>
 public sealed class LatencyHistogramViewModel : INotifyPropertyChanged, IDisposable
 {
-    /// <summary>Minimum interval between UI updates (5 Hz).</summary>
-    public static readonly TimeSpan RefreshInterval = TimeSpan.FromMilliseconds(200);
+    /// <summary>Minimum interval between UI updates (10 Hz, per spec).</summary>
+    public static readonly TimeSpan RefreshInterval = TimeSpan.FromMilliseconds(100);
 
     private readonly ILatencySampler _sampler;
     private readonly HdrHistogramAdapter _histogram = new();
@@ -165,7 +172,7 @@ public sealed class LatencyHistogramViewModel : INotifyPropertyChanged, IDisposa
             _histogram.RecordMicros(batch[i].LatencyMicros);
         }
 
-        // Throttle UI updates to 5 Hz.
+        // Throttle UI updates to 10 Hz.
         var now = Environment.TickCount64;
         if (now - _lastRefreshTick < (long)RefreshInterval.TotalMilliseconds)
         {
