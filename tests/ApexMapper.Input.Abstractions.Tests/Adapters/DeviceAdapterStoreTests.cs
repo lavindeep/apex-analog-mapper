@@ -107,6 +107,38 @@ public class DeviceAdapterStoreTests
     }
 
     [Fact]
+    public void LoadFromFile_defaults_omitted_report_type_to_input_not_feature()
+    {
+        // report_type omitted -> default enum value. That default must be the safe
+        // input-report path, never the exploratory feature path.
+        var json = """
+        {
+          "schema_version": "1",
+          "id": "vendor.x",
+          "display_name": "X",
+          "match": { "vendor_id": 1, "product_id": 2 },
+          "interface_selector": {},
+          "report_id": 0,
+          "key_map": [],
+          "noise_floor": 0.02,
+          "rest_window": 0.05,
+          "capabilities": { "analog": true, "per_key_travel": true }
+        }
+        """;
+        var path = Path.Combine(Path.GetTempPath(), $"apex-adapter-nort-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, json);
+            var loaded = DeviceAdapterStore.LoadFromFile(path);
+            loaded.ReportType.Should().Be(HidReportType.Input);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void LoadFromFile_throws_InvalidDataException_on_duplicate_scan_code()
     {
         var dup = MakeDescriptor(new[]

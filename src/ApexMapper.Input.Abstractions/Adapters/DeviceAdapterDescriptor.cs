@@ -4,8 +4,12 @@ namespace ApexMapper.Input.Abstractions.Adapters;
 
 public enum HidReportType
 {
-    Feature,
+    // Input is value 0 so an omitted report_type defaults to the safe input-report
+    // path rather than the exploratory feature path. The enum serializes to JSON as
+    // a snake_case string, so the underlying value never appears in adapter files
+    // and reordering is round-trip-safe for existing descriptors.
     Input,
+    Feature,
 }
 
 public sealed record DeviceMatch(
