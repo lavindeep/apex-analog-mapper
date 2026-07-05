@@ -23,6 +23,10 @@ public sealed class RawInputAdapter : IRawInputAdapter
     private Thread? _pumpThread;
     private uint _pumpThreadId;
     private int _started;
+    // Bumped under _lifecycleLock on every successful start. Lets a stopping
+    // thread and an outgoing pump tell whether a newer start has since taken
+    // over, so neither clobbers the newer epoch's status or registration.
+    private int _generation;
     private BackendStatus _status = BackendStatus.Stopped;
 
     public RawInputAdapter(SpscRingBuffer<RawKeyEvent> ring)
@@ -50,10 +54,11 @@ public sealed class RawInputAdapter : IRawInputAdapter
 
             started = true;
             _status = BackendStatus.Starting;
+            var generation = ++_generation;
 
             var ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            _pumpThread = new Thread(() => PumpThreadMain(ready))
+            _pumpThread = new Thread(() => PumpThreadMain(ready, generation))
             {
                 IsBackground = true,
                 Name = "ApexRawInputPump",
@@ -124,6 +129,7 @@ public sealed class RawInputAdapter : IRawInputAdapter
     {
         Thread? thread;
         uint threadId;
+        int stopGeneration;
         lock (_lifecycleLock)
         {
             if (Interlocked.Exchange(ref _started, 0) == 0)
@@ -135,21 +141,42 @@ public sealed class RawInputAdapter : IRawInputAdapter
             thread = _pumpThread;
             threadId = _pumpThreadId;
             _pumpThread = null;
+            stopGeneration = _generation;
         }
 
         RaiseStatusChanged(BackendStatus.Stopping, null);
 
+        var joined = true;
         if (thread is not null && threadId != 0)
         {
             PostThreadMessageW(threadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
             // Bounded join: never let Stop/Dispose block forever if the pump
             // fails to exit its message loop. The pump is a background thread,
             // so any straggler is torn down with the process.
-            thread.Join(TimeSpan.FromSeconds(2));
+            joined = thread.Join(TimeSpan.FromSeconds(2));
         }
 
-        _status = BackendStatus.Stopped;
-        RaiseStatusChanged(BackendStatus.Stopped, null);
+        // Publish the terminal status under the lock, and only if no StartAsync has
+        // begun a newer epoch while we were joining — otherwise a concurrent
+        // restart's Running would be clobbered back to Stopped with out-of-order
+        // events. A join timeout is surfaced honestly in the transition reason
+        // (the pump may still be alive, so we do not pretend it exited cleanly).
+        BackendStatus? toRaise = null;
+        string? reason = null;
+        lock (_lifecycleLock)
+        {
+            if (_generation == stopGeneration && _started == 0)
+            {
+                reason = joined ? null : "pump thread did not exit within the join timeout";
+                _status = BackendStatus.Stopped;
+                toRaise = BackendStatus.Stopped;
+            }
+        }
+
+        if (toRaise is not null)
+        {
+            RaiseStatusChanged(toRaise.Value, reason);
+        }
         return Task.CompletedTask;
     }
 
@@ -163,7 +190,7 @@ public sealed class RawInputAdapter : IRawInputAdapter
         StatusChanged?.Invoke(this, new BackendStatusChanged(BackendKind.RawInput, status, reason));
     }
 
-    private void PumpThreadMain(TaskCompletionSource<bool> ready)
+    private void PumpThreadMain(TaskCompletionSource<bool> ready, int generation)
     {
         HwndSource? source = null;
         var signalled = false;
@@ -199,14 +226,21 @@ public sealed class RawInputAdapter : IRawInputAdapter
 
             Dispatcher.Run();
 
-            var unregister = new RAWINPUTDEVICE
+            // RIDEV_REMOVE unregisters keyboard raw input process-wide. If a newer
+            // pump has already taken over (Stop/Start interleave), unregistering
+            // here would tear down that newer pump's registration, so skip it once
+            // our generation is stale.
+            if (Volatile.Read(ref _generation) == generation)
             {
-                UsagePage = HID_USAGE_PAGE_GENERIC,
-                Usage = HID_USAGE_GENERIC_KEYBOARD,
-                Flags = RIDEV_REMOVE,
-                Target = IntPtr.Zero,
-            };
-            RegisterRawInputDevices(new[] { unregister }, 1, (uint)Marshal.SizeOf<RAWINPUTDEVICE>());
+                var unregister = new RAWINPUTDEVICE
+                {
+                    UsagePage = HID_USAGE_PAGE_GENERIC,
+                    Usage = HID_USAGE_GENERIC_KEYBOARD,
+                    Flags = RIDEV_REMOVE,
+                    Target = IntPtr.Zero,
+                };
+                RegisterRawInputDevices(new[] { unregister }, 1, (uint)Marshal.SizeOf<RAWINPUTDEVICE>());
+            }
         }
         catch (Exception ex)
         {
@@ -226,7 +260,13 @@ public sealed class RawInputAdapter : IRawInputAdapter
             {
             }
 
-            _pumpThreadId = 0;
+            // Only clear the shared thread id if a newer pump has not already
+            // published its own — otherwise this stale reset would blank the new
+            // pump's id and leave StopAsync unable to signal it.
+            if (Volatile.Read(ref _generation) == generation)
+            {
+                _pumpThreadId = 0;
+            }
         }
     }
 
