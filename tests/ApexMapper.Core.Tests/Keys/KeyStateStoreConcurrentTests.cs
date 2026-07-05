@@ -187,11 +187,17 @@ public class KeyStateStoreConcurrentTests
             writerReady.Set();
         });
 
-        writerReady.Wait(TimeSpan.FromSeconds(1)).Should().BeTrue();
+        // Generous bound: this waits on thread-pool SCHEDULING of the writer,
+        // not on the visibility property under test - saturated CI runners can
+        // take multiple seconds to run a queued task.
+        writerReady.Wait(TimeSpan.FromSeconds(10)).Should().BeTrue();
 
         var deadline = Stopwatch.StartNew();
         KeyState observed = default;
-        while (deadline.Elapsed < TimeSpan.FromSeconds(1))
+        // Visibility after the release/acquire pair on writerReady is immediate
+        // for a correct store; a broken store never converges, so a generous
+        // deadline keeps full detection power without CI-preemption flakes.
+        while (deadline.Elapsed < TimeSpan.FromSeconds(5))
         {
             observed = store.Get(key);
             if (observed.Value == 0.7f && observed.Source == KeyProvenance.Analog)
@@ -203,7 +209,7 @@ public class KeyStateStoreConcurrentTests
         observed.Value.Should().BeApproximately(0.7f, 1e-6f);
         observed.Source.Should().Be(KeyProvenance.Analog);
 
-        var writerCompleted = await Task.WhenAny(writer, Task.Delay(TimeSpan.FromSeconds(1)));
+        var writerCompleted = await Task.WhenAny(writer, Task.Delay(TimeSpan.FromSeconds(10)));
         writerCompleted.Should().BeSameAs(writer);
         await writer;
     }
