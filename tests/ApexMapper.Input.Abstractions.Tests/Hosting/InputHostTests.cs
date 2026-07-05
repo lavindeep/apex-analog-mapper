@@ -399,4 +399,31 @@ public class InputHostTests
         host.Drain(10);
         store.Get(key).Value.Should().Be(0f);
     }
+
+    [Fact]
+    public async Task FaultedAnalog_sweeps_analog_keys_but_leaves_digital_keys_alone()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var selector = MakeSelector();
+        var store = new KeyStateStore();
+        var probe = new FaultingHidProbe(new IOException("late"), failOnStart: false);
+        var analogKey = KeyId.FromScanCode(0x11);
+        var digitalKey = KeyId.FromScanCode(0x1E);
+
+        await using var host = new InputHost(raw, probe, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+
+        store.Set(analogKey, 0.8f, KeyProvenance.Analog);
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 0));
+        host.Drain(10);
+
+        // Mid-session HID fault must not leave stale analog depths behind.
+        probe.RaiseFault("device dropped");
+
+        store.Get(analogKey).Value.Should().Be(0f);
+        store.IsGated(analogKey).Should().BeTrue();
+        store.Get(digitalKey).Value.Should().Be(1f);
+        store.IsGated(digitalKey).Should().BeFalse();
+    }
 }

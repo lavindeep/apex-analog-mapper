@@ -146,9 +146,16 @@ public sealed class InputHost : IAsyncDisposable
     private void OnHidStatusChanged(object? sender, BackendStatusChanged e)
     {
         _analogStatus = e.Status;
-        if (e.Status == BackendStatus.FaultedAnalog && _analogFallbackReason is null)
+        if (e.Status == BackendStatus.FaultedAnalog)
         {
-            _analogFallbackReason = e.Reason;
+            if (_analogFallbackReason is null)
+            {
+                _analogFallbackReason = e.Reason;
+            }
+
+            // A faulted probe stops reporting; sweep its stale depths so no
+            // analog key keeps driving output.
+            _store.GateHeldKeys(KeyProvenance.Analog);
         }
         StatusChanged?.Invoke(this, e);
     }
