@@ -50,7 +50,7 @@ public class SpscRingBufferTests
     public void Single_enqueue_then_dequeue_returns_same_event()
     {
         var ring = new SpscRingBuffer<RawKeyEvent>(4);
-        var input = new RawKeyEvent(0xE04D, true, 42L, 1);
+        var input = new RawKeyEvent(0xE04D, true, 42L, 0x0BADF00D);
 
         ring.TryEnqueue(in input).Should().BeTrue();
         ring.Count.Should().Be(1);
@@ -58,6 +58,7 @@ public class SpscRingBufferTests
 
         ring.TryDequeue(out var output).Should().BeTrue();
         output.Should().Be(input);
+        output.DeviceId.Should().Be(0x0BADF00D);
         ring.IsEmpty.Should().BeTrue();
         ring.Count.Should().Be(0);
     }

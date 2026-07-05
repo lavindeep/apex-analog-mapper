@@ -14,6 +14,9 @@ public sealed class RawInputAdapter : IRawInputAdapter
     private readonly SpscRingBuffer<RawKeyEvent> _ring;
     private readonly object _lifecycleLock = new();
 
+    // Touched only on the pump thread (WM_INPUT / WM_INPUT_DEVICE_CHANGE).
+    private readonly RawInputDeviceIdMap _deviceIds = new();
+
     private Thread? _pumpThread;
     private uint _pumpThreadId;
     private int _started;
@@ -226,9 +229,9 @@ public sealed class RawInputAdapter : IRawInputAdapter
         }
 
         var keyboardSpan = new ReadOnlySpan<byte>(p + keyboardOffset, keyboardLength);
-        var deviceIndex = DeviceHandleIndex(header.Device);
+        var deviceId = _deviceIds.GetOrAdd(header.Device);
         var timestamp = Stopwatch.GetTimestamp();
-        if (RawInputMessageDecoder.TryDecode(keyboardSpan, deviceIndex, timestamp, out var ev))
+        if (RawInputMessageDecoder.TryDecode(keyboardSpan, deviceId, timestamp, out var ev))
         {
             _ring.TryEnqueue(in ev);
         }
@@ -237,10 +240,13 @@ public sealed class RawInputAdapter : IRawInputAdapter
     private void HandleDeviceChange(int change, IntPtr deviceHandle)
     {
         var attached = change == GIDC_ARRIVAL;
+        var deviceId = attached
+            ? _deviceIds.GetOrAdd(deviceHandle)
+            : _deviceIds.Remove(deviceHandle);
         var path = TryGetDevicePath(deviceHandle);
         var identity = RawInputDevicePath.Parse(path);
         var devicePath = path ?? string.Empty;
-        DeviceChanged?.Invoke(this, new RawInputDeviceChanged(identity, attached, devicePath));
+        DeviceChanged?.Invoke(this, new RawInputDeviceChanged(identity, attached, devicePath, deviceId));
     }
 
     private static string? TryGetDevicePath(IntPtr deviceHandle)
@@ -274,8 +280,4 @@ public sealed class RawInputAdapter : IRawInputAdapter
         }
     }
 
-    private static byte DeviceHandleIndex(IntPtr handle)
-    {
-        return (byte)(handle.ToInt64() & 0xFF);
-    }
 }

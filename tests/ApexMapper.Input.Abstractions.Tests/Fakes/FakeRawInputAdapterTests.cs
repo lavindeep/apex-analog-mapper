@@ -49,7 +49,7 @@ public class FakeRawInputAdapterTests
         var fake = new FakeRawInputAdapter(ring);
         await fake.StartAsync(CancellationToken.None);
 
-        var ev = new RawKeyEvent(ScanCode: 0x001E, IsDown: true, TimestampTicks: 123L, DeviceHandleIndex: 0);
+        var ev = new RawKeyEvent(ScanCode: 0x001E, IsDown: true, TimestampTicks: 123L, DeviceId: 0);
         fake.Push(ev);
 
         ring.TryDequeue(out var dequeued).Should().BeTrue();

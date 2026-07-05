@@ -116,7 +116,7 @@ public class InputHostTests
         await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
 
-        var ev = new RawKeyEvent(ScanCode: 0x1E, IsDown: true, TimestampTicks: 1, DeviceHandleIndex: 0);
+        var ev = new RawKeyEvent(ScanCode: 0x1E, IsDown: true, TimestampTicks: 1, DeviceId: 0);
         raw.Push(in ev).Should().BeTrue();
 
         var drained = host.Drain(10);

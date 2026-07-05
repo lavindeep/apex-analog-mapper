@@ -8,7 +8,7 @@ public static class RawInputMessageDecoder
 {
     public static bool TryDecode(
         ReadOnlySpan<byte> rawKeyboard,
-        byte deviceHandleIndex,
+        int deviceId,
         long timestampTicks,
         out RawKeyEvent ev)
     {
@@ -28,7 +28,7 @@ public static class RawInputMessageDecoder
 
         var keyId = ScanCodeEncoder.Encode(prefix, baseScanCode);
         var isDown = (flags & 0x1) == 0;
-        ev = new RawKeyEvent(keyId.ScanCode, isDown, timestampTicks, deviceHandleIndex);
+        ev = new RawKeyEvent(keyId.ScanCode, isDown, timestampTicks, deviceId);
         return true;
     }
 }
