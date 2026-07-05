@@ -562,6 +562,50 @@ public class InputHostTests
     }
 
     [Fact]
+    public async Task Replug_of_selected_device_restores_input_flow_under_new_device_id()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var dev = MakeDevice("dev://a", "SN-A");
+        var enumerator = new InMemoryDeviceEnumerator(new[] { dev });
+        DeviceRegistry registry = new(null, Array.Empty<KeyCalibration>());
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+
+        var store = new KeyStateStore();
+        var key = KeyId.FromScanCode(0x1E);
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, dev, deviceId: 1);
+
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 1));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+
+        // Unplug: sweep, selection becomes absent, everything drops.
+        enumerator.Remove(dev);
+        raw.Push(new RawInputDeviceChanged(dev.Identity, Attached: false, dev.DevicePath, DeviceId: 1));
+        store.Get(key).Value.Should().Be(0f);
+
+        // Replug: the adapter assigns a fresh id and the saved selection
+        // rebinds automatically.
+        enumerator.Add(dev);
+        raw.Push(new RawInputDeviceChanged(dev.Identity, Attached: true, dev.DevicePath, DeviceId: 4));
+        selector.SelectedDevice.Should().Be(dev);
+
+        // Held-key gate from the unplug clears on the first release...
+        raw.Push(new RawKeyEvent(0x1E, false, 2, 4));
+        host.Drain(10);
+        store.IsGated(key).Should().BeFalse();
+
+        // ...and input flows again under the new id.
+        raw.Push(new RawKeyEvent(0x1E, true, 3, 4));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+    }
+
+    [Fact]
     public async Task Detach_of_non_selected_device_does_not_sweep_held_keys()
     {
         var ring = MakeRing();

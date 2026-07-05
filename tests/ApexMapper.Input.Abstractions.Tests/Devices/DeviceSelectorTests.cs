@@ -129,7 +129,7 @@ public class DeviceSelectorTests
     }
 
     [Fact]
-    public void Refresh_after_detach_of_selected_device_raises_detached_then_unselected_and_persists_null()
+    public void Refresh_after_detach_of_selected_device_unselects_but_keeps_persisted_identity()
     {
         var a = Dev("a", serial: "SN-A");
         var b = Dev("b", serial: "SN-B");
@@ -155,6 +155,96 @@ public class DeviceSelectorTests
         recorder.Events.Should().HaveCount(2);
         recorder.Events[0].Should().Be(new DeviceTopologyChanged(DeviceTopologyChangeKind.Detached, b));
         recorder.Events[1].Should().Be(new DeviceTopologyChanged(DeviceTopologyChangeKind.Unselected, b));
+
+        // An unplug must not erase the user's saved choice; only an explicit
+        // Unselect does. No save happens at all.
+        saves.Count.Should().Be(0);
+        registry.SelectedDevice.Should().Be(b.Identity);
+    }
+
+    [Fact]
+    public void Refresh_after_replug_of_saved_device_auto_reselects_and_raises_Selected()
+    {
+        var b = Dev("b", serial: "SN-B");
+        var enumerator = new InMemoryDeviceEnumerator(new[] { b });
+        DeviceRegistry registry = new(b.Identity, Array.Empty<KeyCalibration>());
+        var saves = new SaveRecorder();
+
+        var selector = new DeviceSelector(
+            enumerator,
+            () => registry,
+            r => { registry = r; saves.Saves.Add(r); });
+        selector.Initialize();
+        selector.SelectedDevice.Should().Be(b);
+
+        enumerator.Remove(b);
+        selector.Refresh();
+        selector.SelectedDevice.Should().BeNull();
+
+        var recorder = new EventRecorder();
+        selector.Changed += recorder.Handle;
+
+        enumerator.Add(b);
+        selector.Refresh();
+
+        selector.SelectedDevice.Should().Be(b);
+        recorder.Events.Should().HaveCount(2);
+        recorder.Events[0].Should().Be(new DeviceTopologyChanged(DeviceTopologyChangeKind.Attached, b));
+        recorder.Events[1].Should().Be(new DeviceTopologyChanged(DeviceTopologyChangeKind.Selected, b));
+
+        // The saved identity never changed, so nothing is re-persisted.
+        saves.Count.Should().Be(0);
+        registry.SelectedDevice.Should().Be(b.Identity);
+    }
+
+    [Fact]
+    public void Refresh_reenumeration_with_new_path_rebinds_selection_in_one_pass()
+    {
+        // Sleep/resume can re-enumerate the same physical device under a new
+        // path in a single refresh window.
+        var b = Dev("b", serial: "SN-B");
+        var enumerator = new InMemoryDeviceEnumerator(new[] { b });
+        DeviceRegistry registry = new(b.Identity, Array.Empty<KeyCalibration>());
+
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+        selector.SelectedDevice.Should().Be(b);
+
+        var recorder = new EventRecorder();
+        selector.Changed += recorder.Handle;
+
+        var b2 = Dev("b-reborn", serial: "SN-B");
+        enumerator.Remove(b);
+        enumerator.Add(b2);
+        selector.Refresh();
+
+        selector.SelectedDevice.Should().Be(b2);
+        recorder.Events.Should().Contain(new DeviceTopologyChanged(DeviceTopologyChangeKind.Selected, b2));
+    }
+
+    [Fact]
+    public void Unselect_while_saved_device_is_absent_clears_persistence()
+    {
+        var a = Dev("a", serial: "SN-A");
+        var enumerator = new InMemoryDeviceEnumerator(new[] { a });
+        var missing = Dev("b", serial: "SN-B");
+        var calibs = new[] { new KeyCalibration(new KeyId(0x1E), 0.1f, 0.9f, 0.01f) };
+        DeviceRegistry registry = new(missing.Identity, calibs);
+        var saves = new SaveRecorder();
+
+        var selector = new DeviceSelector(
+            enumerator,
+            () => registry,
+            r => { registry = r; saves.Saves.Add(r); });
+        selector.Initialize();
+        selector.SelectedDevice.Should().BeNull();
+
+        var recorder = new EventRecorder();
+        selector.Changed += recorder.Handle;
+
+        selector.Unselect();
+
+        recorder.Events.Should().BeEmpty(); // no device instance to report
         saves.Count.Should().Be(1);
         saves.Saves[0].SelectedDevice.Should().BeNull();
         saves.Saves[0].Calibrations.Should().BeEquivalentTo(calibs);

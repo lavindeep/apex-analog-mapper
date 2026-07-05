@@ -37,14 +37,7 @@ public sealed class DeviceSelector
 
         if (_lastRegistry.SelectedDevice is { } savedIdentity)
         {
-            foreach (var device in _discovered)
-            {
-                if (IdentityMatches(device.Identity, savedIdentity))
-                {
-                    SelectedDevice = device;
-                    break;
-                }
-            }
+            SelectedDevice = FindMatch(savedIdentity);
         }
     }
 
@@ -88,13 +81,23 @@ public sealed class DeviceSelector
 
         if (detachedSelection is { } unselected)
         {
+            // The selection is absent, not forgotten: the persisted identity
+            // survives so a later attach can rebind it. Only an explicit
+            // Unselect clears persistence.
             Changed?.Invoke(this, new DeviceTopologyChanged(DeviceTopologyChangeKind.Unselected, unselected));
-            PersistSelection(null);
         }
 
         foreach (var device in added)
         {
             Changed?.Invoke(this, new DeviceTopologyChanged(DeviceTopologyChangeKind.Attached, device));
+        }
+
+        if (SelectedDevice is null &&
+            _lastRegistry.SelectedDevice is { } saved &&
+            FindMatch(saved) is { } rebound)
+        {
+            SelectedDevice = rebound;
+            Changed?.Invoke(this, new DeviceTopologyChanged(DeviceTopologyChangeKind.Selected, rebound));
         }
     }
 
@@ -113,10 +116,14 @@ public sealed class DeviceSelector
 
     public void Unselect()
     {
-        if (SelectedDevice is not { } previous) return;
+        var previous = SelectedDevice;
+        if (previous is null && _lastRegistry.SelectedDevice is null) return;
 
         SelectedDevice = null;
-        Changed?.Invoke(this, new DeviceTopologyChanged(DeviceTopologyChangeKind.Unselected, previous));
+        if (previous is not null)
+        {
+            Changed?.Invoke(this, new DeviceTopologyChanged(DeviceTopologyChangeKind.Unselected, previous));
+        }
         PersistSelection(null);
     }
 
@@ -125,6 +132,18 @@ public sealed class DeviceSelector
         var next = new DeviceRegistry(identity, _lastRegistry.Calibrations);
         _lastRegistry = next;
         _saveRegistry(next);
+    }
+
+    private DiscoveredDevice? FindMatch(DeviceIdentity saved)
+    {
+        foreach (var device in _discovered)
+        {
+            if (IdentityMatches(device.Identity, saved))
+            {
+                return device;
+            }
+        }
+        return null;
     }
 
     private static bool IdentityMatches(DeviceIdentity a, DeviceIdentity b)
