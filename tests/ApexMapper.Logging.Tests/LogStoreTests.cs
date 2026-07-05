@@ -66,6 +66,25 @@ public class LogStoreTests : IDisposable
     }
 
     [Fact]
+    public void Stranded_staged_file_is_archived_not_deleted_at_the_next_rotation()
+    {
+        // A crash mid-rotation strands app.log.rotating; its bytes are log content and must
+        // survive as a normal archive generation instead of being deleted.
+        File.WriteAllText(Path.Combine(_dir, "app.log.rotating"), "stranded generation\n");
+        using var log = new LogStore(_dir, "app.log", maxBytes: 64, maxFiles: 3);
+        log.Write(LogLevel.Info, "first line");
+        log.Write(LogLevel.Info, "second line"); // pushes past maxBytes: exactly one rotation
+        log.Flush();
+
+        var archives = Directory.GetFiles(_dir, "app.log.*")
+            .Where(f => !f.EndsWith(".rotating", StringComparison.Ordinal))
+            .Select(File.ReadAllText);
+        archives.Should().Contain(
+            c => c.Contains("stranded generation"),
+            "the stranded staged bytes must survive as an archive generation");
+    }
+
+    [Fact]
     public void Write_does_not_throw_when_the_final_archive_move_fails()
     {
         // Only the staged->newest-archive move fails (e.g. a reader holds app.log.1).

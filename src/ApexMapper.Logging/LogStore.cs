@@ -110,7 +110,12 @@ public sealed class LogStore : IDisposable
                 return;
             }
 
-            if (File.Exists(staged)) File.Delete(staged);
+            // A staged file stranded by a crash or partial rotation still holds log content;
+            // archive it first (into .1, shifting the chain) so its bytes survive as a
+            // normal generation. It then ages ahead of the generation rotating out now,
+            // which is the correct order: the stranded bytes are older than the active file.
+            if (File.Exists(staged)) ArchiveStaged(staged, archives);
+
             if (File.Exists(ActivePath))
             {
                 _move(ActivePath, staged);
