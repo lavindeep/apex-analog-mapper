@@ -73,6 +73,34 @@ public class SocdResolverTests
     }
 
     [Fact]
+    public void Stronger_analog_wins_treats_a_single_held_side_as_the_incumbent()
+    {
+        var state = default(SocdState);
+        // Positive wins an episode.
+        SocdResolver.Resolve(SocdMode.StrongerAnalogWins, 0.4f, 0.7f, ref state).Should().Be(0.7f);
+        // Positive releases; negative alone holds the axis for several ticks.
+        for (var i = 0; i < 5; i++)
+        {
+            SocdResolver.Resolve(SocdMode.StrongerAnalogWins, 0.5f, 0f, ref state).Should().Be(-0.5f);
+        }
+
+        // Positive is re-pressed a hair weaker than the held negative. The held side is the
+        // incumbent, so the sub-band newcomer must not snap the axis to the wrong direction.
+        SocdResolver.Resolve(SocdMode.StrongerAnalogWins, 0.5f, 0.49f, ref state).Should().Be(-0.5f);
+    }
+
+    [Fact]
+    public void Stronger_analog_wins_resets_the_winner_when_both_sides_release()
+    {
+        var state = default(SocdState);
+        SocdResolver.Resolve(SocdMode.StrongerAnalogWins, 0.4f, 0.7f, ref state).Should().Be(0.7f);
+        // Both release: output is neutral and the remembered winner is cleared.
+        SocdResolver.Resolve(SocdMode.StrongerAnalogWins, 0f, 0f, ref state).Should().Be(0f);
+        // A fresh exact tie is therefore neutral again (no stale winner survives the release).
+        SocdResolver.Resolve(SocdMode.StrongerAnalogWins, 0.5f, 0.5f, ref state).Should().Be(0f);
+    }
+
+    [Fact]
     public void Last_input_wins_remembers_the_most_recent_side()
     {
         var state = default(SocdState);

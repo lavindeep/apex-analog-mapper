@@ -37,8 +37,19 @@ public static class SocdResolver
         state.PrevPosActive = posActive;
 
         if (!negActive && !posActive) return 0f;
-        if (!negActive) return positive;
-        if (!posActive) return -negative;
+        // A single active side holds the axis, so it becomes the incumbent winner: when the
+        // opposing side returns, the both-pressed hysteresis treats the held side as the one to
+        // beat rather than letting a sub-band newcomer snap the axis to the wrong direction.
+        if (!negActive)
+        {
+            state.StrongerWinner = SocdState.Positive;
+            return positive;
+        }
+        if (!posActive)
+        {
+            state.StrongerWinner = SocdState.Negative;
+            return -negative;
+        }
 
         return mode switch
         {
