@@ -101,7 +101,8 @@ public sealed record DeviceRegistry(
             }
         }
 
-        // No historical device-registry versions exist yet; a lower version is not migratable.
-        return new ParseResult<DeviceRegistry>(ParseStatus.Corrupt, null);
+        // No historical device-registry versions exist yet, so a lower version has no
+        // migration path; leave the document in place rather than quarantining it.
+        return new ParseResult<DeviceRegistry>(ParseStatus.UnmigratableSchema, null);
     }
 }

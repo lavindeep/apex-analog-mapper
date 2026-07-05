@@ -43,6 +43,8 @@ public class ProfileMigratorTests
     {
         var steps = new Dictionary<int, Func<string, string>>(); // no v1->v2 step
 
+        // Null signals an unmigratable document: the stores classify it as
+        // UnmigratableSchema and leave the file in place instead of quarantining it.
         ProfileMigrator.Migrate("doc", fromVersion: 1, toVersion: 2, steps).Should().BeNull();
     }
 

@@ -3,11 +3,11 @@ namespace ApexMapper.Persistence.Profiles;
 /// <summary>
 /// Forward-only migration pipeline for versioned profile documents. Each step transforms a
 /// document's raw JSON from one schema version to the next. There are no historical versions to
-/// migrate yet, so the production step set is empty; the plumbing is exercised via the internal
+/// migrate yet, so the production step set is empty; the plumbing is exercised via the
 /// <see cref="Migrate(string, int, int, IReadOnlyDictionary{int, Func{string, string}})"/>
 /// overload with injected steps.
 /// </summary>
-public static class ProfileMigrator
+internal static class ProfileMigrator
 {
     private static readonly IReadOnlyDictionary<int, Func<string, string>> Steps
         = new Dictionary<int, Func<string, string>>();
@@ -17,7 +17,8 @@ public static class ProfileMigrator
     /// <summary>
     /// Advances <paramref name="json"/> from <paramref name="fromVersion"/> up to
     /// <paramref name="toVersion"/> by applying each registered forward step in order. Returns the
-    /// migrated JSON, or <c>null</c> if the range is invalid or a required step is missing.
+    /// migrated JSON, or <c>null</c> if the range is invalid or a required step is missing —
+    /// the stores classify a <c>null</c> as an unmigratable document and leave the file in place.
     /// </summary>
     public static string? Migrate(string json, int fromVersion, int toVersion)
         => Migrate(json, fromVersion, toVersion, Steps);

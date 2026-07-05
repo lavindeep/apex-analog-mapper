@@ -118,8 +118,10 @@ public sealed class ProfileStore
             return DeserializeCurrent(text);
 
         // 0 < version < current: run the forward-only migration pipeline, then re-parse.
+        // A missing migration step means the document is old but readable; it is left in
+        // place rather than quarantined so its content survives for a build that can read it.
         var migrated = ProfileMigrator.Migrate(text, version, CurrentSchemaVersion);
-        if (migrated is null) return new ParseResult<Profile>(ParseStatus.Corrupt, null);
+        if (migrated is null) return new ParseResult<Profile>(ParseStatus.UnmigratableSchema, null);
         return DeserializeCurrent(migrated);
     }
 

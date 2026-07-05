@@ -11,6 +11,9 @@ public enum RecoveryOutcome
 
     /// <summary>The file was written by a newer schema version than this build understands; it was left untouched.</summary>
     NewerSchema,
+
+    /// <summary>The file's older schema version has no migration path to the current one; it was left untouched.</summary>
+    UnmigratableSchema,
 }
 
 /// <summary>A per-file report of a non-normal load outcome. Clean loads produce no report.</summary>

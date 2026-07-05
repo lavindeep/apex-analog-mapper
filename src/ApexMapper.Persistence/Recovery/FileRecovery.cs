@@ -5,7 +5,8 @@ namespace ApexMapper.Persistence.Recovery;
 /// <summary>
 /// Shared corrupt-file recovery for the versioned stores. On a corrupt primary it quarantines
 /// the primary as evidence (never deleting it), then walks the rolling backups in order; the
-/// first that parses is restored as the new primary. A newer-schema primary is left untouched.
+/// first that parses is restored as the new primary. A newer-schema or unmigratable-schema
+/// primary is left untouched.
 /// </summary>
 internal static class FileRecovery
 {
@@ -28,6 +29,10 @@ internal static class FileRecovery
                 case ParseStatus.NewerSchema:
                     // Leave a newer-schema file untouched; report it so callers don't silently drop it.
                     return (false, default, new RecoveryReport(path, RecoveryOutcome.NewerSchema));
+                case ParseStatus.UnmigratableSchema:
+                    // Leave an old-but-readable document in place: the quarantine slot is a
+                    // single file, and a later corruption would overwrite the buried document.
+                    return (false, default, new RecoveryReport(path, RecoveryOutcome.UnmigratableSchema));
             }
         }
 

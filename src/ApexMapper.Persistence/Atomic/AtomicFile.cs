@@ -2,7 +2,7 @@ using System.Text;
 
 namespace ApexMapper.Persistence.Atomic;
 
-public static class AtomicFile
+internal static class AtomicFile
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 

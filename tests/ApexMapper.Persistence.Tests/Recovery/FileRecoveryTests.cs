@@ -35,6 +35,23 @@ public class FileRecoveryTests : IDisposable
     }
 
     [Fact]
+    public void Unmigratable_old_schema_is_left_in_place_and_reported()
+    {
+        File.WriteAllText(Path_, "old schema doc");
+        File.WriteAllText(Path_ + ".bak.1", "good backup");
+
+        var (loaded, _, report) = FileRecovery.Load(Path_, backupCount: 5,
+            _ => new ParseResult<string>(ParseStatus.UnmigratableSchema, null));
+
+        loaded.Should().BeFalse();
+        report!.Outcome.Should().Be(RecoveryOutcome.UnmigratableSchema);
+        File.ReadAllText(Path_).Should().Be(
+            "old schema doc", "an old but readable document must not be quarantined or overwritten");
+        File.Exists(Path_ + ".corrupt").Should().BeFalse(
+            "the shared quarantine slot must stay free for genuine corruption");
+    }
+
+    [Fact]
     public void Successful_quarantine_still_restores_the_backup_as_the_new_primary()
     {
         File.WriteAllText(Path_, "corrupt bytes");
