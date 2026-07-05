@@ -171,9 +171,9 @@ public sealed class HidPollLoop : IAsyncDisposable
                     if (n <= 0)
                     {
                         // Idle, not dead: a zero-byte read means the device had no
-                        // report ready this tick (a healthy blocking stream returns 0
-                        // when its read timeout elapses). A quiet device must not be
-                        // mistaken for a broken one, so idle ticks are silent — they
+                        // report ready this tick. The stream adapter normalizes a
+                        // read timeout to a 0-byte read, so a quiet device must not
+                        // be mistaken for a broken one; idle ticks are silent — they
                         // neither count as failures nor reset the streak. A genuinely
                         // dead stream throws, which is what trips FaultedAnalog below.
                     }

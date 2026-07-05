@@ -36,6 +36,15 @@ internal sealed class HidSharpStreamAdapter : IHidStream
             }
             return n;
         }
+        catch (TimeoutException)
+        {
+            // HidSharp throws TimeoutException when the stream's read timeout
+            // elapses with no report ready — a healthy but quiet device, not a
+            // fault. Normalize it to an idle (0-byte) read so the poll loop treats
+            // it as an idle tick instead of a failure. IOException and every other
+            // exception still propagate so a genuinely dead transport faults.
+            return 0;
+        }
         finally
         {
             ArrayPool<byte>.Shared.Return(rented);
