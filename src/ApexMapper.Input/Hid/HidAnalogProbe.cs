@@ -101,7 +101,13 @@ public sealed class HidAnalogProbe : IHidAnalogProbe
 
             var fields = DeviceAdapterStore.ToFields(_adapter);
             var parser = new HidReportParser(fields, _adapter.ReportId);
-            var loop = new HidPollLoop(stream, parser, _store, _reportLength, _consecutiveFailureThreshold);
+            var loop = new HidPollLoop(
+                stream,
+                parser,
+                _store,
+                _reportLength,
+                _consecutiveFailureThreshold,
+                _adapter.ReportType);
             loop.StatusChanged += OnLoopStatusChanged;
 
             _stream = stream;

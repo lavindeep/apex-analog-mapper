@@ -1,4 +1,5 @@
 using ApexMapper.Core.Keys;
+using ApexMapper.Input.Abstractions.Adapters;
 using ApexMapper.Input.Abstractions.Backends;
 
 namespace ApexMapper.Input.Abstractions.Hid;
@@ -10,6 +11,8 @@ public sealed class HidPollLoop : IAsyncDisposable
     private readonly KeyStateStore _store;
     private readonly int _reportLength;
     private readonly int _consecutiveFailureThreshold;
+    private readonly HidReportType _reportType;
+    private readonly int _featurePollIntervalMs;
     private readonly CancellationTokenSource _cts = new();
     private readonly object _statusLock = new();
 
@@ -21,12 +24,24 @@ public sealed class HidPollLoop : IAsyncDisposable
     private int _consecutiveFailures;
     private int _disposed;
 
+    /// <param name="reportType">
+    /// Whether the analog payload arrives as an input report (read from the
+    /// stream, blocking until data or a timeout) or a feature report (polled
+    /// with GetFeature). Feature polling is the exploratory path for devices
+    /// like the Apex Pro that expose analog travel only through a feature report.
+    /// </param>
+    /// <param name="featurePollIntervalMs">
+    /// Delay between feature-report polls, so feature mode does not spin a core.
+    /// Ignored for input reports (their read blocks). Zero polls continuously.
+    /// </param>
     public HidPollLoop(
         IHidStream stream,
         HidReportParser parser,
         KeyStateStore store,
         int reportLength,
-        int consecutiveFailureThreshold = 5)
+        int consecutiveFailureThreshold = 5,
+        HidReportType reportType = HidReportType.Input,
+        int featurePollIntervalMs = 2)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(parser);
@@ -39,12 +54,18 @@ public sealed class HidPollLoop : IAsyncDisposable
         {
             throw new ArgumentOutOfRangeException(nameof(consecutiveFailureThreshold), "threshold must be positive.");
         }
+        if (featurePollIntervalMs < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(featurePollIntervalMs), "interval must be non-negative.");
+        }
 
         _stream = stream;
         _parser = parser;
         _store = store;
         _reportLength = reportLength;
         _consecutiveFailureThreshold = consecutiveFailureThreshold;
+        _reportType = reportType;
+        _featurePollIntervalMs = featurePollIntervalMs;
     }
 
     public BackendStatus Status
@@ -133,7 +154,20 @@ public sealed class HidPollLoop : IAsyncDisposable
             {
                 try
                 {
-                    var n = _stream.Read(buffer);
+                    // Route by report type: input reports are read from the stream
+                    // (blocking, 0 == idle); feature reports are polled with
+                    // GetFeature, which fills the whole buffer or throws.
+                    int n;
+                    if (_reportType == HidReportType.Feature)
+                    {
+                        _stream.GetFeature(buffer);
+                        n = buffer.Length;
+                    }
+                    else
+                    {
+                        n = _stream.Read(buffer);
+                    }
+
                     if (n <= 0)
                     {
                         // Idle, not dead: a zero-byte read means the device had no
@@ -166,6 +200,13 @@ public sealed class HidPollLoop : IAsyncDisposable
                         BackendStatus.FaultedAnalog,
                         $"hid read failed {_consecutiveFailures} times in a row");
                     return;
+                }
+
+                // Feature polling has no blocking read to pace it; sleep between
+                // polls (cancellably) so it does not peg a core. Input reads block.
+                if (_reportType == HidReportType.Feature && _featurePollIntervalMs > 0)
+                {
+                    ct.WaitHandle.WaitOne(_featurePollIntervalMs);
                 }
             }
         }

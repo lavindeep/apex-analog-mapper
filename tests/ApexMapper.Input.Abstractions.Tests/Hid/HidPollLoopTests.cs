@@ -1,4 +1,5 @@
 using ApexMapper.Core.Keys;
+using ApexMapper.Input.Abstractions.Adapters;
 using ApexMapper.Input.Abstractions.Backends;
 using ApexMapper.Input.Abstractions.Calibration;
 using ApexMapper.Input.Abstractions.Hid;
@@ -246,6 +247,61 @@ public class HidPollLoopTests
     }
 
     [Fact]
+    public async Task Feature_report_mode_polls_get_feature_into_store()
+    {
+        var (store, parser, key) = MakeOneFieldParser();
+        // No input reports queued; the analog value comes from the feature report.
+        var stream = new FakeHidStream(Array.Empty<byte[]>());
+        stream.SetFeatureResponse(new byte[] { 0xC0 });
+        await using var loop = new HidPollLoop(
+            stream, parser, store, ReportLength,
+            reportType: HidReportType.Feature,
+            featurePollIntervalMs: 0);
+
+        await loop.StartAsync(CancellationToken.None);
+        await WaitForAsync(() => loop.ReadCount >= 1, TimeSpan.FromSeconds(2));
+        await loop.StopAsync(CancellationToken.None);
+
+        stream.GetFeatureCallCount.Should().BeGreaterThan(0);
+        var state = store.Get(key);
+        state.Source.Should().Be(KeyProvenance.Analog);
+        state.Value.Should().BeApproximately(0xC0 / 255f, 1e-3f);
+    }
+
+    [Fact]
+    public async Task Input_report_mode_never_calls_get_feature()
+    {
+        var (store, parser, _) = MakeOneFieldParser();
+        var stream = new FakeHidStream(new[] { new byte[] { 0x40 } });
+        await using var loop = new HidPollLoop(
+            stream, parser, store, ReportLength,
+            reportType: HidReportType.Input);
+
+        await loop.StartAsync(CancellationToken.None);
+        await WaitForAsync(() => loop.ReadCount >= 1, TimeSpan.FromSeconds(2));
+        await loop.StopAsync(CancellationToken.None);
+
+        stream.GetFeatureCallCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Feature_poll_that_throws_trips_FaultedAnalog()
+    {
+        var (store, parser, _) = MakeOneFieldParser();
+        var stream = new ThrowingFeatureHidStream();
+        await using var loop = new HidPollLoop(
+            stream, parser, store, ReportLength,
+            consecutiveFailureThreshold: 3,
+            reportType: HidReportType.Feature,
+            featurePollIntervalMs: 0);
+
+        await loop.StartAsync(CancellationToken.None);
+        await WaitForAsync(() => loop.Status == BackendStatus.FaultedAnalog, TimeSpan.FromSeconds(2));
+
+        loop.FailureCount.Should().BeGreaterThanOrEqualTo(3);
+    }
+
+    [Fact]
     public async Task DisposeAsync_stops_running_loop()
     {
         var (store, parser, _) = MakeOneFieldParser();
@@ -295,6 +351,20 @@ public class HidPollLoopTests
 
         public void GetFeature(Span<byte> buffer) { }
         public void SetFeature(ReadOnlySpan<byte> buffer) { }
+        public void Dispose() { }
+    }
+
+    /// <summary>
+    /// IHidStream whose feature poll always throws — a dead feature-report stream.
+    /// </summary>
+    private sealed class ThrowingFeatureHidStream : IHidStream
+    {
+        public int Read(Span<byte> buffer) => 0;
+
+        public void GetFeature(Span<byte> buffer) => throw new IOException("dead feature stream");
+
+        public void SetFeature(ReadOnlySpan<byte> buffer) { }
+
         public void Dispose() { }
     }
 
