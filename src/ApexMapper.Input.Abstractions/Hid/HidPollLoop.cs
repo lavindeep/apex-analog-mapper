@@ -136,11 +136,12 @@ public sealed class HidPollLoop : IAsyncDisposable
                     var n = _stream.Read(buffer);
                     if (n <= 0)
                     {
-                        // n == 0 is treated as a failure tick: many HID streams use it for
-                        // "no data ready", but a permanently dead stream returns 0 forever
-                        // and should trip FaultedAnalog once the streak hits the threshold.
-                        Interlocked.Increment(ref _failureCount);
-                        _consecutiveFailures++;
+                        // Idle, not dead: a zero-byte read means the device had no
+                        // report ready this tick (a healthy blocking stream returns 0
+                        // when its read timeout elapses). A quiet device must not be
+                        // mistaken for a broken one, so idle ticks are silent — they
+                        // neither count as failures nor reset the streak. A genuinely
+                        // dead stream throws, which is what trips FaultedAnalog below.
                     }
                     else
                     {

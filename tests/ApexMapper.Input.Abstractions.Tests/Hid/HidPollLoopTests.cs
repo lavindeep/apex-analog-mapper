@@ -94,11 +94,44 @@ public class HidPollLoopTests
     }
 
     [Fact]
-    public async Task Threshold_consecutive_failures_trips_FaultedAnalog()
+    public async Task Idle_zero_byte_reads_never_trip_FaultedAnalog()
     {
         var (store, parser, _) = MakeOneFieldParser();
-        // Empty queue -> FakeHidStream.Read returns 0 forever.
+        // Empty queue -> FakeHidStream.Read returns 0 forever, i.e. a device that
+        // is healthy but simply has no report ready. This must stay Running.
         var stream = new FakeHidStream(Array.Empty<byte[]>());
+        await using var loop = new HidPollLoop(stream, parser, store, ReportLength, consecutiveFailureThreshold: 3);
+
+        var faulted = false;
+        loop.StatusChanged += (_, e) =>
+        {
+            if (e.Status == BackendStatus.FaultedAnalog)
+            {
+                faulted = true;
+            }
+        };
+
+        await loop.StartAsync(CancellationToken.None);
+        await Task.Delay(150); // let many idle ticks elapse
+
+        loop.Status.Should().Be(BackendStatus.Running);
+        faulted.Should().BeFalse();
+        loop.FailureCount.Should().Be(0);
+
+        await loop.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Threshold_consecutive_faults_trips_FaultedAnalog()
+    {
+        var (store, parser, _) = MakeOneFieldParser();
+        // A stream that throws forever is a genuinely dead stream.
+        var stream = new SequencedHidStream(new Func<int>[]
+        {
+            () => throw new IOException("dead"),
+            () => throw new IOException("dead"),
+            () => throw new IOException("dead"),
+        });
         await using var loop = new HidPollLoop(stream, parser, store, ReportLength, consecutiveFailureThreshold: 3);
 
         BackendStatusChanged? faulted = null;
@@ -120,34 +153,39 @@ public class HidPollLoopTests
     }
 
     [Fact]
-    public async Task Successful_read_resets_consecutive_failure_count()
+    public async Task Successful_read_resets_consecutive_fault_count()
     {
         var (store, parser, _) = MakeOneFieldParser();
         var stream = new SequencedHidStream(new Func<int>[]
         {
-            () => 1,    // ok
-            () => 1,    // ok
-            () => 0,    // fail
-            () => 0,    // fail
-            () => 1,    // ok -> reset
-            () => 1,    // ok
-            () => 0,    // fail
-            () => 0,    // fail
-            () => 1,    // ok -> reset
+            () => 1,                                 // ok
+            () => throw new IOException("blip"),     // fault
+            () => throw new IOException("blip"),     // fault
+            () => 1,                                 // ok -> reset streak
+            () => throw new IOException("blip"),     // fault
+            () => throw new IOException("blip"),     // fault
+            () => 1,                                 // ok -> reset streak
         });
-        await using var loop = new HidPollLoop(stream, parser, store, ReportLength, consecutiveFailureThreshold: 5);
+        await using var loop = new HidPollLoop(stream, parser, store, ReportLength, consecutiveFailureThreshold: 3);
+
+        BackendStatusChanged? faulted = null;
+        loop.StatusChanged += (_, e) =>
+        {
+            if (e.Status == BackendStatus.FaultedAnalog)
+            {
+                faulted = e;
+            }
+        };
 
         await loop.StartAsync(CancellationToken.None);
 
-        // Wait for all 9 scripted reads to be consumed.
-        await WaitForAsync(() => stream.CallCount >= 9, TimeSpan.FromSeconds(2));
+        // Wait for all 7 scripted reads to be consumed (script then goes idle).
+        await WaitForAsync(() => stream.CallCount >= 7, TimeSpan.FromSeconds(2));
 
-        // After exhausting the script SequencedHidStream returns 0 -> will eventually trip.
-        // What we care about: didn't trip during the scripted sequence (no >= 5-streak).
-        // Verify: at the moment script ended, status was Running (or perhaps already past
-        // the script the loop kept reading zeros). Easier check: loop must have done at
-        // least 5 successful reads (the 5 ok ticks) before any trip.
-        loop.ReadCount.Should().BeGreaterThanOrEqualTo(5);
+        // No fault streak ever reached the threshold of 3 because each pair of
+        // faults was broken by a success; the 3 successes read through.
+        faulted.Should().BeNull();
+        loop.ReadCount.Should().BeGreaterThanOrEqualTo(3);
 
         await loop.StopAsync(CancellationToken.None);
     }
