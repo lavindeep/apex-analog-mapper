@@ -96,38 +96,30 @@ public sealed class ProfileStore
 
     internal static ParseResult<Profile> Parse(string text)
     {
-        VersionedDocument<Profile>? doc;
-        try
-        {
-            doc = JsonSerializer.Deserialize<VersionedDocument<Profile>>(text, Options);
-        }
-        catch
-        {
+        // Classify from the version header alone before touching the payload: a newer
+        // document's payload may be shaped in a way this build cannot deserialize, and must
+        // not be misread as corrupt (which would quarantine it, or downgrade it on save).
+        if (!VersionedDocumentHeader.TryReadVersion(text, out var version) || version <= 0)
             return new ParseResult<Profile>(ParseStatus.Corrupt, null);
-        }
-
-        if (doc is null || doc.Version <= 0)
-            return new ParseResult<Profile>(ParseStatus.Corrupt, null);
-        // Classify by version before inspecting the payload: a newer document's payload may be
-        // shaped in a way this build cannot deserialize, and must not be misread as corrupt.
-        if (doc.Version > CurrentSchemaVersion)
+        if (version > CurrentSchemaVersion)
             return new ParseResult<Profile>(ParseStatus.NewerSchema, null);
-        if (doc.Version == CurrentSchemaVersion)
-        {
-            return doc.Payload is null
-                ? new ParseResult<Profile>(ParseStatus.Corrupt, null)
-                : new ParseResult<Profile>(ParseStatus.Ok, doc.Payload);
-        }
+        if (version == CurrentSchemaVersion)
+            return DeserializeCurrent(text);
 
         // 0 < version < current: run the forward-only migration pipeline, then re-parse.
-        var migrated = ProfileMigrator.Migrate(text, doc.Version, CurrentSchemaVersion);
+        var migrated = ProfileMigrator.Migrate(text, version, CurrentSchemaVersion);
         if (migrated is null) return new ParseResult<Profile>(ParseStatus.Corrupt, null);
+        return DeserializeCurrent(migrated);
+    }
+
+    private static ParseResult<Profile> DeserializeCurrent(string text)
+    {
         try
         {
-            var upgraded = JsonSerializer.Deserialize<VersionedDocument<Profile>>(migrated, Options);
-            if (upgraded?.Payload is null || upgraded.Version != CurrentSchemaVersion)
-                return new ParseResult<Profile>(ParseStatus.Corrupt, null);
-            return new ParseResult<Profile>(ParseStatus.Ok, upgraded.Payload);
+            var doc = JsonSerializer.Deserialize<VersionedDocument<Profile>>(text, Options);
+            return doc?.Payload is null || doc.Version != CurrentSchemaVersion
+                ? new ParseResult<Profile>(ParseStatus.Corrupt, null)
+                : new ParseResult<Profile>(ParseStatus.Ok, doc.Payload);
         }
         catch
         {

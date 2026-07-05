@@ -136,6 +136,25 @@ public class DeviceRegistryTests : IDisposable
     }
 
     [Fact]
+    public void Newer_schema_with_payload_this_build_cannot_read_is_not_treated_as_corrupt()
+    {
+        var newer = "{\"version\":2,\"payload\":{\"calibrations\":42}}";
+        File.WriteAllText(Path, newer);
+
+        var loaded = DeviceRegistry.Load(Path, out var recovery);
+
+        loaded.SelectedDevice.Should().BeNull();
+        recovery!.Outcome.Should().Be(RecoveryOutcome.NewerSchema);
+        File.Exists(Path + ".corrupt").Should().BeFalse("a newer-schema file must not be quarantined");
+        File.ReadAllText(Path).Should().Be(newer, "the file must be left untouched");
+
+        var act = () => DeviceRegistry.Save(Path, new DeviceRegistry(null, Array.Empty<KeyCalibration>()));
+        act.Should().Throw<InvalidOperationException>();
+        File.ReadAllText(Path).Should().Be(newer, "the newer file must not be downgraded");
+        File.Exists(Path + ".bak.1").Should().BeFalse("no backup generation should be consumed");
+    }
+
+    [Fact]
     public void Save_refuses_to_overwrite_a_newer_schema_file()
     {
         var newer = "{\"version\": 999, \"payload\": null}";

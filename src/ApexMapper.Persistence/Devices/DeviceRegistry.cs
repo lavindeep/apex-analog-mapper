@@ -68,25 +68,26 @@ public sealed record DeviceRegistry(
 
     internal static ParseResult<DeviceRegistry> Parse(string text)
     {
-        VersionedDocument<DeviceRegistry>? doc;
-        try
-        {
-            doc = JsonSerialization.Deserialize<VersionedDocument<DeviceRegistry>>(text);
-        }
-        catch
-        {
+        // Classify from the version header alone before touching the payload: a newer
+        // document's payload may be shaped in a way this build cannot deserialize, and must
+        // not be misread as corrupt (which would quarantine it, or downgrade it on save).
+        if (!VersionedDocumentHeader.TryReadVersion(text, out var version) || version <= 0)
             return new ParseResult<DeviceRegistry>(ParseStatus.Corrupt, null);
-        }
-
-        if (doc is null || doc.Version <= 0)
-            return new ParseResult<DeviceRegistry>(ParseStatus.Corrupt, null);
-        if (doc.Version > CurrentSchemaVersion)
+        if (version > CurrentSchemaVersion)
             return new ParseResult<DeviceRegistry>(ParseStatus.NewerSchema, null);
-        if (doc.Version == CurrentSchemaVersion)
+        if (version == CurrentSchemaVersion)
         {
-            return doc.Payload is null
-                ? new ParseResult<DeviceRegistry>(ParseStatus.Corrupt, null)
-                : new ParseResult<DeviceRegistry>(ParseStatus.Ok, doc.Payload);
+            try
+            {
+                var doc = JsonSerialization.Deserialize<VersionedDocument<DeviceRegistry>>(text);
+                return doc?.Payload is null
+                    ? new ParseResult<DeviceRegistry>(ParseStatus.Corrupt, null)
+                    : new ParseResult<DeviceRegistry>(ParseStatus.Ok, doc.Payload);
+            }
+            catch
+            {
+                return new ParseResult<DeviceRegistry>(ParseStatus.Corrupt, null);
+            }
         }
 
         // No historical device-registry versions exist yet; a lower version is not migratable.

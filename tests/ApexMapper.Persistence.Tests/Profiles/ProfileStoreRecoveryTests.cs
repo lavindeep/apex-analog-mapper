@@ -130,6 +130,44 @@ public class ProfileStoreRecoveryTests : IDisposable
     }
 
     [Fact]
+    public void Newer_schema_with_payload_this_build_cannot_read_is_not_treated_as_corrupt()
+    {
+        var newer = "{\"version\":2,\"payload\":{\"id\":42}}";
+        File.WriteAllText(Path_, newer);
+        var store = new ProfileStore(new ProfileStoreOptions(_dir));
+
+        var loaded = store.LoadAll(out var reports);
+
+        loaded.Should().BeEmpty();
+        reports.Should().ContainSingle();
+        reports[0].Outcome.Should().Be(RecoveryOutcome.NewerSchema);
+        File.Exists(Path_ + ".corrupt").Should().BeFalse("a newer-schema file must not be quarantined");
+        File.ReadAllText(Path_).Should().Be(newer, "the file must be left untouched");
+
+        var act = () => store.Save(Make("racing"));
+        act.Should().Throw<InvalidOperationException>();
+        File.ReadAllText(Path_).Should().Be(newer, "the newer file must not be downgraded");
+        File.Exists(Path_ + ".bak.1").Should().BeFalse("no backup generation should be consumed");
+    }
+
+    [Theory]
+    [InlineData("{\"version\":0,\"payload\":null}")]
+    [InlineData("{\"version\":-1,\"payload\":null}")]
+    [InlineData("{\"version\":\"garbage\",\"payload\":null}")]
+    [InlineData("{\"version\":null,\"payload\":null}")]
+    [InlineData("{\"payload\":null}")]
+    [InlineData("{\"version\":1,\"payload\":null}")]
+    [InlineData("not json at all")]
+    public void Parse_classifies_invalid_version_headers_and_null_current_payloads_as_corrupt(string text)
+        => ProfileStore.Parse(text).Status.Should().Be(ParseStatus.Corrupt);
+
+    [Theory]
+    [InlineData("{\"version\":999,\"payload\":null}")]
+    [InlineData("{\"version\":2,\"payload\":{\"id\":42}}")]
+    public void Parse_classifies_any_newer_version_as_newer_schema_regardless_of_payload(string text)
+        => ProfileStore.Parse(text).Status.Should().Be(ParseStatus.NewerSchema);
+
+    [Fact]
     public void Save_refuses_to_overwrite_a_newer_schema_file()
     {
         var newer = "{\"version\": 999, \"payload\": null}";
