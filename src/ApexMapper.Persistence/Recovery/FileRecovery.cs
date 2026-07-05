@@ -12,14 +12,19 @@ internal static class FileRecovery
     internal static (bool Loaded, T? Value, RecoveryReport? Report) Load<T>(
         string path, int backupCount, Func<string, ParseResult<T>> parse)
     {
-        var primary = ReadAndParse(path, parse);
-        switch (primary.Status)
+        // A missing primary (crash between quarantine and restore, or accidental deletion)
+        // falls through to the backup walk rather than short-circuiting to defaults.
+        if (File.Exists(path))
         {
-            case ParseStatus.Ok:
-                return (true, primary.Value, null);
-            case ParseStatus.NewerSchema:
-                // Leave a newer-schema file untouched; report it so callers don't silently drop it.
-                return (false, default, new RecoveryReport(path, RecoveryOutcome.NewerSchema));
+            var primary = ReadAndParse(path, parse);
+            switch (primary.Status)
+            {
+                case ParseStatus.Ok:
+                    return (true, primary.Value, null);
+                case ParseStatus.NewerSchema:
+                    // Leave a newer-schema file untouched; report it so callers don't silently drop it.
+                    return (false, default, new RecoveryReport(path, RecoveryOutcome.NewerSchema));
+            }
         }
 
         // Primary is corrupt: preserve it as evidence before attempting recovery.
@@ -49,14 +54,28 @@ internal static class FileRecovery
         return parse(text);
     }
 
+    /// <summary>True when any rolling backup slot exists for <paramref name="path"/>.</summary>
+    internal static bool AnyBackupExists(string path, int backupCount)
+    {
+        for (var i = 1; i <= backupCount; i++)
+        {
+            if (File.Exists(path + ".bak." + i)) return true;
+        }
+        return false;
+    }
+
     private static void Quarantine(string path)
     {
+        // A missing primary may mean a previous quarantine already holds the evidence;
+        // never touch the existing quarantine file in that case.
+        if (!File.Exists(path)) return;
+
         var quarantine = path + ".corrupt";
         try
         {
             // Overwrite an older quarantine, but never delete the current corrupt primary silently.
             if (File.Exists(quarantine)) File.Delete(quarantine);
-            if (File.Exists(path)) File.Move(path, quarantine);
+            File.Move(path, quarantine);
         }
         catch { /* if we cannot quarantine, leave the primary in place rather than lose evidence */ }
     }

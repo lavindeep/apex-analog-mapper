@@ -80,6 +80,40 @@ public class ProfileStoreRecoveryTests : IDisposable
     }
 
     [Fact]
+    public void Missing_primary_with_intact_backup_is_recovered()
+    {
+        var store = new ProfileStore(new ProfileStoreOptions(_dir, BackupCount: 5));
+        store.Save(Make("racing"));
+        store.Save(Make("racing")); // bak.1 is now a good copy
+        File.Delete(Path_);
+
+        var loaded = store.LoadAll(out var reports);
+
+        loaded.Should().ContainSingle().Which.Id.Should().Be("racing");
+        Store_Parses(Path_).Should().BeTrue("the primary must be restored from the backup");
+        reports.Should().ContainSingle();
+        reports[0].Outcome.Should().Be(RecoveryOutcome.RecoveredFromBackup);
+    }
+
+    [Fact]
+    public void Primary_stranded_as_quarantine_with_intact_backup_is_recovered()
+    {
+        // Crash window: the quarantine rename completed but the backup restore never ran.
+        var store = new ProfileStore(new ProfileStoreOptions(_dir, BackupCount: 5));
+        store.Save(Make("racing"));
+        store.Save(Make("racing")); // bak.1 is now a good copy
+        File.Move(Path_, Path_ + ".corrupt");
+
+        var loaded = store.LoadAll(out var reports);
+
+        loaded.Should().ContainSingle().Which.Id.Should().Be("racing");
+        Store_Parses(Path_).Should().BeTrue("the primary must be restored from the backup");
+        File.Exists(Path_ + ".corrupt").Should().BeTrue("the stranded quarantine evidence must be preserved");
+        reports.Should().ContainSingle();
+        reports[0].Outcome.Should().Be(RecoveryOutcome.RecoveredFromBackup);
+    }
+
+    [Fact]
     public void LoadAll_reports_newer_schema_files_and_leaves_them_untouched()
     {
         var newer = "{\"version\": 999, \"payload\": null}";

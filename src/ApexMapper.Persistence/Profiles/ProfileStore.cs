@@ -32,7 +32,21 @@ public sealed class ProfileStore
         var result = new List<Profile>();
         var reports = new List<RecoveryReport>();
         // Materialize first: recovery renames files (quarantine/restore) mid-scan.
-        foreach (var file in System.IO.Directory.GetFiles(_options.Directory, "*.json"))
+        var primaries = new List<string>(System.IO.Directory.GetFiles(_options.Directory, "*.json"));
+        // Also pick up profiles whose primary vanished but left recovery artifacts behind
+        // (a crash between quarantine and restore, or accidental deletion of the primary):
+        // their backups can still be walked and the primary restored.
+        var known = new HashSet<string>(primaries);
+        foreach (var suffix in new[] { ".bak.1", ".corrupt" })
+        {
+            foreach (var artifact in System.IO.Directory.GetFiles(_options.Directory, "*.json" + suffix))
+            {
+                var primary = artifact[..^suffix.Length];
+                if (!File.Exists(primary) && known.Add(primary)) primaries.Add(primary);
+            }
+        }
+
+        foreach (var file in primaries)
         {
             var (loaded, value, report) = FileRecovery.Load(file, _options.BackupCount, Parse);
             if (report is not null) reports.Add(report);

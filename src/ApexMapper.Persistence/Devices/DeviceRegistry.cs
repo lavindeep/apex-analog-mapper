@@ -23,7 +23,9 @@ public sealed record DeviceRegistry(
     public static DeviceRegistry Load(string path, out RecoveryReport? recovery, int backupCount = DefaultBackupCount)
     {
         recovery = null;
-        if (!File.Exists(path)) return Empty;
+        // A missing primary still recovers when rolling backups exist (e.g. a crash between
+        // quarantine and restore, or accidental deletion of the file itself).
+        if (!File.Exists(path) && !FileRecovery.AnyBackupExists(path, backupCount)) return Empty;
         AtomicFile.SweepStaleTemps(Path.GetDirectoryName(path)!);
         var (loaded, value, report) = FileRecovery.Load(path, backupCount, Parse);
         recovery = report;

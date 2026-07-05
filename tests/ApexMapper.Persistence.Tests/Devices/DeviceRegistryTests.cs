@@ -89,6 +89,39 @@ public class DeviceRegistryTests : IDisposable
     }
 
     [Fact]
+    public void Missing_primary_with_intact_backup_is_recovered()
+    {
+        var reg = new DeviceRegistry(new DeviceIdentity(0x1038, 0x161C, null, null, null), Array.Empty<KeyCalibration>());
+        DeviceRegistry.Save(Path, reg);
+        DeviceRegistry.Save(Path, reg); // bak.1 is a good copy
+        File.Delete(Path);
+
+        var loaded = DeviceRegistry.Load(Path, out var recovery);
+
+        loaded.SelectedDevice.Should().Be(reg.SelectedDevice);
+        File.Exists(Path).Should().BeTrue("the primary must be restored from the backup");
+        recovery.Should().NotBeNull();
+        recovery!.Outcome.Should().Be(RecoveryOutcome.RecoveredFromBackup);
+    }
+
+    [Fact]
+    public void Primary_stranded_as_quarantine_with_intact_backup_is_recovered()
+    {
+        // Crash window: the quarantine rename completed but the backup restore never ran.
+        var reg = new DeviceRegistry(new DeviceIdentity(0x1038, 0x161C, null, null, null), Array.Empty<KeyCalibration>());
+        DeviceRegistry.Save(Path, reg);
+        DeviceRegistry.Save(Path, reg); // bak.1 is a good copy
+        File.Move(Path, Path + ".corrupt");
+
+        var loaded = DeviceRegistry.Load(Path, out var recovery);
+
+        loaded.SelectedDevice.Should().Be(reg.SelectedDevice);
+        File.Exists(Path).Should().BeTrue("the primary must be restored from the backup");
+        File.Exists(Path + ".corrupt").Should().BeTrue("the stranded quarantine evidence must be preserved");
+        recovery!.Outcome.Should().Be(RecoveryOutcome.RecoveredFromBackup);
+    }
+
+    [Fact]
     public void Newer_schema_is_reported_and_left_untouched()
     {
         var newer = "{\"version\": 999, \"payload\": null}";
