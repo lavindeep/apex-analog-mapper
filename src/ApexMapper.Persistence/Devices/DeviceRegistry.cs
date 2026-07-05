@@ -1,5 +1,6 @@
 using ApexMapper.Persistence.Atomic;
 using ApexMapper.Persistence.Json;
+using ApexMapper.Persistence.Recovery;
 
 namespace ApexMapper.Persistence.Devices;
 
@@ -8,29 +9,85 @@ public sealed record DeviceRegistry(
     IReadOnlyList<KeyCalibration> Calibrations)
 {
     public const int CurrentSchemaVersion = 1;
+    public const int DefaultBackupCount = 5;
 
-    public static DeviceRegistry Load(string path)
+    private static DeviceRegistry Empty => new(null, Array.Empty<KeyCalibration>());
+
+    public static DeviceRegistry Load(string path) => Load(path, out _);
+
+    /// <summary>
+    /// Loads the registry, recovering a corrupt file from its rolling backups where possible.
+    /// <paramref name="recovery"/> receives a report when the file was recovered, quarantined, or
+    /// skipped as a newer schema; it is <c>null</c> on a clean load or a missing file.
+    /// </summary>
+    public static DeviceRegistry Load(string path, out RecoveryReport? recovery, int backupCount = DefaultBackupCount)
     {
-        if (!File.Exists(path)) return new DeviceRegistry(null, Array.Empty<KeyCalibration>());
+        recovery = null;
+        if (!File.Exists(path)) return Empty;
+        AtomicFile.SweepStaleTemps(Path.GetDirectoryName(path)!);
+        var (loaded, value, report) = FileRecovery.Load(path, backupCount, Parse);
+        recovery = report;
+        return loaded ? value! : Empty;
+    }
+
+    public static void Save(string path, DeviceRegistry registry, int backupCount = DefaultBackupCount)
+    {
+        var dir = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(dir);
+        AtomicFile.SweepStaleTemps(dir);
+
+        // Never downgrade a file written by a newer schema version by rotating and clobbering it.
+        if (File.Exists(path) && ReadStatus(path) == ParseStatus.NewerSchema)
+        {
+            throw new InvalidOperationException(
+                $"Refusing to overwrite '{path}': it was written by a newer schema version than {CurrentSchemaVersion}.");
+        }
+
+        var doc = new VersionedDocument<DeviceRegistry>(CurrentSchemaVersion, registry);
+        // Stage the new content first, then rotate the current primary into a backup and swap in.
+        var tmp = AtomicFile.WriteTemp(path, JsonSerialization.Serialize(doc));
         try
         {
-            var json = File.ReadAllText(path);
-            var doc = JsonSerialization.Deserialize<VersionedDocument<DeviceRegistry>>(json);
-            if (doc is null || doc.Version != CurrentSchemaVersion || doc.Payload is null)
-            {
-                return new DeviceRegistry(null, Array.Empty<KeyCalibration>());
-            }
-            return doc.Payload;
+            if (File.Exists(path)) BackupRotation.Rotate(path, backupCount);
+            AtomicFile.Commit(tmp, path);
         }
         catch
         {
-            return new DeviceRegistry(null, Array.Empty<KeyCalibration>());
+            AtomicFile.DiscardTemp(tmp);
+            throw;
         }
     }
 
-    public static void Save(string path, DeviceRegistry registry)
+    private static ParseStatus ReadStatus(string path)
     {
-        var doc = new VersionedDocument<DeviceRegistry>(CurrentSchemaVersion, registry);
-        AtomicFile.WriteAllText(path, JsonSerialization.Serialize(doc));
+        try { return Parse(File.ReadAllText(path)).Status; }
+        catch { return ParseStatus.Corrupt; }
+    }
+
+    internal static ParseResult<DeviceRegistry> Parse(string text)
+    {
+        VersionedDocument<DeviceRegistry>? doc;
+        try
+        {
+            doc = JsonSerialization.Deserialize<VersionedDocument<DeviceRegistry>>(text);
+        }
+        catch
+        {
+            return new ParseResult<DeviceRegistry>(ParseStatus.Corrupt, null);
+        }
+
+        if (doc is null || doc.Version <= 0)
+            return new ParseResult<DeviceRegistry>(ParseStatus.Corrupt, null);
+        if (doc.Version > CurrentSchemaVersion)
+            return new ParseResult<DeviceRegistry>(ParseStatus.NewerSchema, null);
+        if (doc.Version == CurrentSchemaVersion)
+        {
+            return doc.Payload is null
+                ? new ParseResult<DeviceRegistry>(ParseStatus.Corrupt, null)
+                : new ParseResult<DeviceRegistry>(ParseStatus.Ok, doc.Payload);
+        }
+
+        // No historical device-registry versions exist yet; a lower version is not migratable.
+        return new ParseResult<DeviceRegistry>(ParseStatus.Corrupt, null);
     }
 }
