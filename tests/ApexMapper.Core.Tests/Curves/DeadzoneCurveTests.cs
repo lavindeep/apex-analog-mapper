@@ -60,6 +60,18 @@ public class DeadzoneCurveTests
     }
 
     [Fact]
+    public void Allows_an_anti_deadzone_offset_at_the_inner_edge()
+    {
+        // An inner curve starting above 0 is a deliberate anti-deadzone: past the inner edge the
+        // output jumps straight to a minimum. Only the outer edge is checked for continuity, so
+        // this offset is allowed, not rejected.
+        var offset = new PiecewiseCubicCurve(new[] { (0f, 0.3f), (1f, 1f) });
+        var curve = new DeadzoneCurve(offset, innerDeadzone: 0f, outerDeadzone: 1f);
+        curve.Map(0f).Should().Be(0f);
+        curve.Map(0.01f).Should().BeGreaterThan(0.29f);
+    }
+
+    [Fact]
     public void Compliant_curve_is_continuous_across_the_outer_boundary()
     {
         var curve = new DeadzoneCurve(LinearCurve.Instance, innerDeadzone: 0.1f, outerDeadzone: 0.9f);

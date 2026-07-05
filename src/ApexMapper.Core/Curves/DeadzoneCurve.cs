@@ -16,9 +16,12 @@ public sealed class DeadzoneCurve : ICurve
                 "Required: 0 <= inner < outer <= 1.");
         }
 
-        // The inner curve is stretched across [inner, outer] and clamped to 1 at and beyond the
-        // outer edge. Unless the inner curve itself reaches 1 at its top, the output jumps
-        // discontinuously at the boundary; reject such a curve rather than ship the cliff.
+        // Only the outer edge is checked for continuity, and deliberately so. The inner curve is
+        // stretched across [inner, outer] and clamped to 1 at and beyond the outer edge; unless it
+        // reaches 1 at its top the output cliffs at full deflection, which is never wanted, so it is
+        // rejected. The inner edge is intentionally left free: an inner curve that starts above 0
+        // is a deliberate anti-deadzone (an immediate minimum output past the deadzone), a common
+        // gamepad shaping choice rather than a defect.
         if (MathF.Abs(inner.Map(1f) - 1f) > 1e-4f)
         {
             throw new ArgumentException(
