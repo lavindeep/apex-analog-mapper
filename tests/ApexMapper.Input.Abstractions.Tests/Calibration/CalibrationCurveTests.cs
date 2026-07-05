@@ -46,25 +46,61 @@ public class CalibrationCurveTests
         curve.Normalize(-10f).Should().Be(0f);
     }
 
+    // Inverted travel is authored the same ascending way as Linear (raw bounds
+    // in RawMin..RawMax order); the Kind flag alone reverses the mapping, so the
+    // physical rest is at the Max endpoint and full press at the Rest endpoint.
     [Fact]
-    public void Inverted_at_rest_returns_zero()
+    public void Inverted_at_physical_rest_high_raw_returns_zero()
     {
-        var curve = new CalibrationCurve(Rest: 255f, Max: 0f, NoiseBand: 2f, Kind: NormalizationKind.Inverted);
+        var curve = new CalibrationCurve(Rest: 0f, Max: 255f, NoiseBand: 2f, Kind: NormalizationKind.Inverted);
         curve.Normalize(255f).Should().Be(0f);
     }
 
     [Fact]
-    public void Inverted_at_max_returns_one()
+    public void Inverted_at_full_press_low_raw_returns_one()
     {
-        var curve = new CalibrationCurve(255f, 0f, 2f, NormalizationKind.Inverted);
+        var curve = new CalibrationCurve(0f, 255f, 2f, NormalizationKind.Inverted);
         curve.Normalize(0f).Should().Be(1f);
     }
 
     [Fact]
     public void Inverted_midpoint_returns_about_one_half()
     {
-        var curve = new CalibrationCurve(255f, 0f, 2f, NormalizationKind.Inverted);
+        var curve = new CalibrationCurve(0f, 255f, 2f, NormalizationKind.Inverted);
         curve.Normalize(127f).Should().BeApproximately(128f / 255f, 1e-3f);
+    }
+
+    [Fact]
+    public void Inverted_inside_noise_band_of_high_rest_returns_zero()
+    {
+        var curve = new CalibrationCurve(0f, 255f, 2f, NormalizationKind.Inverted);
+        curve.Normalize(254f).Should().Be(0f);
+    }
+
+    [Fact]
+    public void Inverted_below_rest_endpoint_clamps_to_one()
+    {
+        var curve = new CalibrationCurve(0f, 255f, 2f, NormalizationKind.Inverted);
+        curve.Normalize(-10f).Should().Be(1f);
+    }
+
+    [Fact]
+    public void Inverted_above_max_endpoint_clamps_to_zero()
+    {
+        var curve = new CalibrationCurve(0f, 255f, 2f, NormalizationKind.Inverted);
+        curve.Normalize(300f).Should().Be(0f);
+    }
+
+    [Fact]
+    public void Linear_and_inverted_are_mirror_images_across_the_range()
+    {
+        var linear = new CalibrationCurve(0f, 255f, 0f, NormalizationKind.Linear);
+        var inverted = new CalibrationCurve(0f, 255f, 0f, NormalizationKind.Inverted);
+
+        foreach (var raw in new[] { 0f, 64f, 128f, 192f, 255f })
+        {
+            (linear.Normalize(raw) + inverted.Normalize(raw)).Should().BeApproximately(1f, 1e-4f);
+        }
     }
 
     [Fact]
