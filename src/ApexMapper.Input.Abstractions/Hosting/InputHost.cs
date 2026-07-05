@@ -2,6 +2,7 @@ using ApexMapper.Core.Keys;
 using ApexMapper.Input.Abstractions.Backends;
 using ApexMapper.Input.Abstractions.Devices;
 using ApexMapper.Input.Abstractions.Pipeline;
+using ApexMapper.Persistence.Devices;
 
 namespace ApexMapper.Input.Abstractions.Hosting;
 
@@ -18,6 +19,19 @@ public sealed class InputHost : IAsyncDisposable
     private BackendStatus _analogStatus = BackendStatus.Stopped;
     private string? _analogFallbackReason;
     private int _disposed;
+
+    // DeviceId of the selected device's raw-input source; 0 = no selection
+    // (or not yet announced by the adapter), which drops every digital event.
+    // Written on the adapter/UI threads, read by Drain on the tick thread.
+    private volatile int _selectedDeviceId;
+
+    // Raw-input arrivals keyed by device path, used to bind the selected
+    // identity to the DeviceId stamped on its events. Guarded by its own
+    // lock: arrivals come from the adapter's pump thread while explicit
+    // Select/Unselect calls resolve from the UI thread.
+    private readonly Dictionary<string, (int Id, DeviceIdentity Identity)> _deviceIdsByPath =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _deviceIdsLock = new();
 
     public InputHost(
         IRawInputAdapter rawInput,
@@ -93,15 +107,25 @@ public sealed class InputHost : IAsyncDisposable
     {
         if (maxEvents <= 0) return 0;
 
+        var selectedId = _selectedDeviceId;
         int drained = 0;
         while (drained < maxEvents && _ring.TryDequeue(out var ev))
         {
+            drained++;
+
+            // Only the selected device drives mapping. No selection (or a
+            // selection whose id the adapter has not announced yet) drops
+            // every digital event — fail-safe, integer compare only.
+            if (ev.DeviceId != selectedId || selectedId == 0)
+            {
+                continue;
+            }
+
             // The store enforces the held-key rule: gated keys swallow
             // pressed writes (including auto-repeat downs) and a key-up
             // clears the gate.
             var keyId = KeyId.FromScanCode(ev.ScanCode);
             _store.Set(keyId, ev.IsDown ? 1f : 0f, KeyProvenance.Digital);
-            drained++;
         }
         return drained;
     }
@@ -170,6 +194,21 @@ public sealed class InputHost : IAsyncDisposable
 
     private void OnRawDeviceChanged(object? sender, RawInputDeviceChanged e)
     {
+        lock (_deviceIdsLock)
+        {
+            if (e.DevicePath.Length != 0)
+            {
+                if (e.Attached)
+                {
+                    _deviceIdsByPath[e.DevicePath] = (e.DeviceId, e.Device);
+                }
+                else
+                {
+                    _deviceIdsByPath.Remove(e.DevicePath);
+                }
+            }
+        }
+
         if (!e.Attached)
         {
             // Unplug mid-press must not leave keys latched. Device-identity
@@ -180,12 +219,64 @@ public sealed class InputHost : IAsyncDisposable
 
         try { _deviceSelector.Refresh(); }
         catch (Exception ex) { _log?.Warn("device selector refresh failed: " + ex.Message); }
+
+        // Bind the id even when the refresh produced no topology delta — the
+        // selected device may have been restored silently at Initialize and
+        // only now announced by the adapter.
+        UpdateSelectedDeviceId();
     }
 
     private void OnDeviceTopologyChanged(object? sender, DeviceTopologyChanged e)
     {
-        if (e.ChangeKind != DeviceTopologyChangeKind.Attached) return;
+        switch (e.ChangeKind)
+        {
+            case DeviceTopologyChangeKind.Attached:
+            case DeviceTopologyChangeKind.Selected:
+            case DeviceTopologyChangeKind.Unselected:
+                // Any mapping-relevant transition gates held keys so nothing
+                // stays latched across it (a key held on the previously
+                // selected board must release once before pressing again).
+                _store.GateHeldKeys();
+                UpdateSelectedDeviceId();
+                break;
+        }
+    }
 
-        _store.GateHeldKeys();
+    private void UpdateSelectedDeviceId()
+    {
+        _selectedDeviceId = _deviceSelector.SelectedDevice is { } selected
+            ? ResolveDeviceId(selected)
+            : 0;
+    }
+
+    private int ResolveDeviceId(DiscoveredDevice selected)
+    {
+        lock (_deviceIdsLock)
+        {
+            if (_deviceIdsByPath.TryGetValue(selected.DevicePath, out var entry))
+            {
+                return entry.Id;
+            }
+
+            // Enumerator and raw-input paths for the same device can differ
+            // in form; fall back to a unique VID/PID match among announced
+            // keyboards. Ambiguity resolves to 0 (drop all) — fail-safe.
+            var id = 0;
+            foreach (var candidate in _deviceIdsByPath.Values)
+            {
+                if (candidate.Identity.VendorId != selected.Identity.VendorId ||
+                    candidate.Identity.ProductId != selected.Identity.ProductId)
+                {
+                    continue;
+                }
+
+                if (id != 0)
+                {
+                    return 0;
+                }
+                id = candidate.Id;
+            }
+            return id;
+        }
     }
 }

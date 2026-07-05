@@ -28,6 +28,20 @@ public class InputHostTests
 
     private static SpscRingBuffer<RawKeyEvent> MakeRing(int capacity = 256) => new(capacity);
 
+    /// <summary>
+    /// Simulates the adapter announcing the device (which binds its DeviceId)
+    /// followed by the user selecting it.
+    /// </summary>
+    private static void AttachAndSelect(
+        FakeRawInputAdapter raw,
+        DeviceSelector selector,
+        DiscoveredDevice device,
+        int deviceId)
+    {
+        raw.Push(new RawInputDeviceChanged(device.Identity, Attached: true, device.DevicePath, deviceId));
+        selector.Select(device);
+    }
+
     private sealed class FaultingHidProbe : IHidAnalogProbe
     {
         private readonly Exception _failure;
@@ -106,17 +120,19 @@ public class InputHostTests
     }
 
     [Fact]
-    public async Task Drain_pushes_digital_keydown_to_store()
+    public async Task Drain_pushes_digital_keydown_from_selected_device_to_store()
     {
         var ring = MakeRing();
         var raw = new FakeRawInputAdapter(ring);
-        var selector = MakeSelector();
+        var dev = MakeDevice();
+        var selector = MakeSelector(dev);
         var store = new KeyStateStore();
 
         await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, dev, deviceId: 7);
 
-        var ev = new RawKeyEvent(ScanCode: 0x1E, IsDown: true, TimestampTicks: 1, DeviceId: 0);
+        var ev = new RawKeyEvent(ScanCode: 0x1E, IsDown: true, TimestampTicks: 1, DeviceId: 7);
         raw.Push(in ev).Should().BeTrue();
 
         var drained = host.Drain(10);
@@ -132,14 +148,16 @@ public class InputHostTests
     {
         var ring = MakeRing();
         var raw = new FakeRawInputAdapter(ring);
-        var selector = MakeSelector();
+        var dev = MakeDevice();
+        var selector = MakeSelector(dev);
         var store = new KeyStateStore();
 
         await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, dev, deviceId: 7);
 
-        var down = new RawKeyEvent(0x1E, IsDown: true, 1, 0);
-        var up = new RawKeyEvent(0x1E, IsDown: false, 2, 0);
+        var down = new RawKeyEvent(0x1E, IsDown: true, 1, 7);
+        var up = new RawKeyEvent(0x1E, IsDown: false, 2, 7);
         raw.Push(in down);
         host.Drain(10);
         raw.Push(in up);
@@ -148,6 +166,144 @@ public class InputHostTests
         var state = store.Get(KeyId.FromScanCode(0x1E));
         state.Value.Should().Be(0f);
         state.Source.Should().Be(KeyProvenance.Digital);
+    }
+
+    [Fact]
+    public async Task Drain_drops_all_digital_events_when_no_device_is_selected()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var dev = MakeDevice();
+        var selector = MakeSelector(dev); // discovered but never selected
+        var store = new KeyStateStore();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+        raw.Push(new RawInputDeviceChanged(dev.Identity, Attached: true, dev.DevicePath, DeviceId: 7));
+
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 7));
+        var drained = host.Drain(10);
+
+        drained.Should().Be(1);
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(0f);
+    }
+
+    [Fact]
+    public async Task Drain_drops_events_from_devices_other_than_the_selected_one()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var dev = MakeDevice();
+        var selector = MakeSelector(dev);
+        var store = new KeyStateStore();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, dev, deviceId: 7);
+
+        // A second physical keyboard (never selected) must not drive mapping.
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 9));
+        host.Drain(10);
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(0f);
+
+        // The selected device still does.
+        raw.Push(new RawKeyEvent(0x1E, true, 2, 7));
+        host.Drain(10);
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(1f);
+    }
+
+    [Fact]
+    public async Task Changing_selection_sweeps_keys_held_on_the_previous_device()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var devA = MakeDevice("dev://a", "SN-A");
+        var devB = MakeDevice("dev://b", "SN-B");
+        var selector = MakeSelector(devA, devB);
+        var store = new KeyStateStore();
+        var key = KeyId.FromScanCode(0x1E);
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+        raw.Push(new RawInputDeviceChanged(devB.Identity, Attached: true, devB.DevicePath, DeviceId: 8));
+        AttachAndSelect(raw, selector, devA, deviceId: 7);
+
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 7));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+
+        // Switching selection must not leave the old board's key latched.
+        selector.Select(devB);
+        store.Get(key).Value.Should().Be(0f);
+        store.IsGated(key).Should().BeTrue();
+
+        // The old board's release is no longer ours to consume.
+        raw.Push(new RawKeyEvent(0x1E, false, 2, 7));
+        host.Drain(10);
+        store.IsGated(key).Should().BeTrue();
+
+        // The new board clears the gate with a full release, then drives output.
+        raw.Push(new RawKeyEvent(0x1E, false, 3, 8));
+        host.Drain(10);
+        store.IsGated(key).Should().BeFalse();
+        raw.Push(new RawKeyEvent(0x1E, true, 4, 8));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+    }
+
+    [Fact]
+    public async Task Unselecting_sweeps_held_keys_and_stops_all_digital_input()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var dev = MakeDevice();
+        var selector = MakeSelector(dev);
+        var store = new KeyStateStore();
+        var key = KeyId.FromScanCode(0x1E);
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, dev, deviceId: 7);
+
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 7));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+
+        selector.Unselect();
+
+        store.Get(key).Value.Should().Be(0f);
+        store.IsGated(key).Should().BeTrue();
+
+        // With nothing selected the former device no longer drives mapping.
+        raw.Push(new RawKeyEvent(0x30, true, 2, 7));
+        host.Drain(10);
+        store.Get(KeyId.FromScanCode(0x30)).Value.Should().Be(0f);
+    }
+
+    [Fact]
+    public async Task Selection_restored_at_initialize_binds_device_id_from_adapter_arrival()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var dev = MakeDevice();
+        var enumerator = new InMemoryDeviceEnumerator(new[] { dev });
+        DeviceRegistry registry = new(dev.Identity, Array.Empty<KeyCalibration>());
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+        selector.SelectedDevice.Should().Be(dev); // silent rebind, no Selected event
+
+        var store = new KeyStateStore();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+
+        // The adapter announces the already-present device at startup; that
+        // arrival must bind the selected device's id.
+        raw.Push(new RawInputDeviceChanged(dev.Identity, Attached: true, dev.DevicePath, DeviceId: 5));
+
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 5));
+        host.Drain(10);
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(1f);
     }
 
     [Fact]
@@ -165,9 +321,10 @@ public class InputHostTests
 
         await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, devA, deviceId: 1);
 
         // Hold a key
-        var down = new RawKeyEvent(0x1E, IsDown: true, 1, 0);
+        var down = new RawKeyEvent(0x1E, IsDown: true, 1, 1);
         raw.Push(in down);
         host.Drain(10);
 
@@ -195,8 +352,9 @@ public class InputHostTests
 
         await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, devA, deviceId: 1);
 
-        var down = new RawKeyEvent(0x1E, IsDown: true, 1, 0);
+        var down = new RawKeyEvent(0x1E, IsDown: true, 1, 1);
         raw.Push(in down);
         host.Drain(10);
 
@@ -207,7 +365,7 @@ public class InputHostTests
         store.IsGated(KeyId.FromScanCode(0x1E)).Should().BeTrue();
 
         // Now release the key — the store clears the gate on key-up.
-        var up = new RawKeyEvent(0x1E, IsDown: false, 2, 0);
+        var up = new RawKeyEvent(0x1E, IsDown: false, 2, 1);
         raw.Push(in up);
         host.Drain(10);
 
@@ -310,9 +468,10 @@ public class InputHostTests
 
         await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, devA, deviceId: 1);
 
         // Press a key, attach a new device → key gets ignored.
-        raw.Push(new RawKeyEvent(0x1E, true, 1, 0));
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 1));
         host.Drain(10);
 
         store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(1f);
@@ -326,7 +485,7 @@ public class InputHostTests
 
         // Synthetic "down repeat" coming in while gated must not re-press.
         // (No real keyup yet — gate still active.)
-        raw.Push(new RawKeyEvent(0x1E, true, 3, 0));
+        raw.Push(new RawKeyEvent(0x1E, true, 3, 1));
         host.Drain(10);
 
         store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(0f);
@@ -348,9 +507,10 @@ public class InputHostTests
 
         await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, devA, deviceId: 1);
 
         // Hold at 1.0.
-        raw.Push(new RawKeyEvent(0x1E, true, 1, 0));
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 1));
         host.Drain(10);
         store.Get(key).Value.Should().Be(1f);
 
@@ -360,13 +520,13 @@ public class InputHostTests
         store.Get(key).Value.Should().Be(0f);
 
         // Physical release: stays zero and the gate clears.
-        raw.Push(new RawKeyEvent(0x1E, false, 2, 0));
+        raw.Push(new RawKeyEvent(0x1E, false, 2, 1));
         host.Drain(10);
         store.Get(key).Value.Should().Be(0f);
         store.IsGated(key).Should().BeFalse();
 
         // Next press drives output again.
-        raw.Push(new RawKeyEvent(0x1E, true, 3, 0));
+        raw.Push(new RawKeyEvent(0x1E, true, 3, 1));
         host.Drain(10);
         store.Get(key).Value.Should().Be(1f);
     }
@@ -383,19 +543,20 @@ public class InputHostTests
 
         await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, devA, deviceId: 1);
 
-        raw.Push(new RawKeyEvent(0x1E, true, 1, 0));
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 1));
         host.Drain(10);
         store.Get(key).Value.Should().Be(1f);
 
         // Unplug mid-press: the held key must not stay latched at full.
-        raw.Push(new RawInputDeviceChanged(devA.Identity, Attached: false, devA.DevicePath));
+        raw.Push(new RawInputDeviceChanged(devA.Identity, Attached: false, devA.DevicePath, DeviceId: 1));
 
         store.Get(key).Value.Should().Be(0f);
         store.IsGated(key).Should().BeTrue();
 
         // A subsequent auto-repeat down must not re-press.
-        raw.Push(new RawKeyEvent(0x1E, true, 2, 0));
+        raw.Push(new RawKeyEvent(0x1E, true, 2, 1));
         host.Drain(10);
         store.Get(key).Value.Should().Be(0f);
     }
@@ -405,7 +566,8 @@ public class InputHostTests
     {
         var ring = MakeRing();
         var raw = new FakeRawInputAdapter(ring);
-        var selector = MakeSelector();
+        var dev = MakeDevice();
+        var selector = MakeSelector(dev);
         var store = new KeyStateStore();
         var probe = new FaultingHidProbe(new IOException("late"), failOnStart: false);
         var analogKey = KeyId.FromScanCode(0x11);
@@ -413,9 +575,10 @@ public class InputHostTests
 
         await using var host = new InputHost(raw, probe, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, dev, deviceId: 3);
 
         store.Set(analogKey, 0.8f, KeyProvenance.Analog);
-        raw.Push(new RawKeyEvent(0x1E, true, 1, 0));
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 3));
         host.Drain(10);
 
         // Mid-session HID fault must not leave stale analog depths behind.
