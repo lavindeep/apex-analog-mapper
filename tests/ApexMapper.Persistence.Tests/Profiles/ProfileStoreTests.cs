@@ -147,4 +147,36 @@ public class ProfileStoreTests : IDisposable
         // schema on the next Save, not during load.
         File.ReadAllText(path).Should().Contain("\"version\": 1");
     }
+
+    [Fact]
+    public void LoadAll_migrates_a_v1_document_containing_a_line_comment()
+    {
+        // The store's serializer tolerates comments, so a v1 file with one must migrate and load
+        // rather than throwing out of the migration step and taking every profile down with it.
+        var withComment = LegacyV1Json.Replace(
+            "\"version\": 1,",
+            "\"version\": 1, // legacy profile\n");
+        File.WriteAllText(Path.Combine(_dir, "legacy.json"), withComment);
+        var store = new ProfileStore(new ProfileStoreOptions(_dir));
+
+        var loaded = store.LoadAll();
+
+        loaded.Should().ContainSingle();
+        loaded[0].Id.Should().Be("legacy");
+    }
+
+    [Fact]
+    public void LoadAll_migrates_a_v1_document_containing_a_trailing_comma()
+    {
+        var withTrailingComma = LegacyV1Json.Replace(
+            "\"notes\": null\n",
+            "\"notes\": null,\n");
+        File.WriteAllText(Path.Combine(_dir, "legacy.json"), withTrailingComma);
+        var store = new ProfileStore(new ProfileStoreOptions(_dir));
+
+        var loaded = store.LoadAll();
+
+        loaded.Should().ContainSingle();
+        loaded[0].Id.Should().Be("legacy");
+    }
 }

@@ -167,6 +167,18 @@ public class ProfileStoreRecoveryTests : IDisposable
     public void Parse_classifies_any_newer_version_as_newer_schema_regardless_of_payload(string text)
         => ProfileStore.Parse(text).Status.Should().Be(ParseStatus.NewerSchema);
 
+    [Fact]
+    public void Parse_classifies_a_throwing_migration_step_as_corrupt()
+    {
+        var v1 = "{\"version\":1,\"payload\":null}";
+        ProfileStore.Parse(v1, (_, _, _) => throw new System.Text.Json.JsonException("bad"))
+            .Status.Should().Be(ParseStatus.Corrupt);
+        ProfileStore.Parse(v1, (_, _, _) => throw new ArgumentException("bad"))
+            .Status.Should().Be(ParseStatus.Corrupt);
+        ProfileStore.Parse(v1, (_, _, _) => throw new InvalidOperationException("bad"))
+            .Status.Should().Be(ParseStatus.Corrupt);
+    }
+
     private static string DocWithCurve(string curveJson) => $$"""
         {
           "version": 2,

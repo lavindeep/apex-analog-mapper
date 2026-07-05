@@ -103,7 +103,9 @@ public sealed class ProfileStore
         catch { return ParseStatus.Corrupt; }
     }
 
-    internal static ParseResult<Profile> Parse(string text)
+    internal static ParseResult<Profile> Parse(string text) => Parse(text, ProfileMigrator.Migrate);
+
+    internal static ParseResult<Profile> Parse(string text, Func<string, int, int, string?> migrate)
     {
         // Classify from the version header alone before touching the payload: a newer
         // document's payload may be shaped in a way this build cannot deserialize, and must
@@ -118,7 +120,18 @@ public sealed class ProfileStore
         // 0 < version < current: run the forward-only migration pipeline, then re-parse.
         // A missing migration step means the document is old but readable; it is left in
         // place rather than quarantined so its content survives for a build that can read it.
-        var migrated = ProfileMigrator.Migrate(text, version, CurrentSchemaVersion);
+        // A step that throws on malformed content is a corrupt document, not a crash: uphold
+        // Parse's never-throws contract so one bad file cannot take down every profile load.
+        string? migrated;
+        try
+        {
+            migrated = migrate(text, version, CurrentSchemaVersion);
+        }
+        catch (Exception e) when (e is JsonException or ArgumentException or InvalidOperationException)
+        {
+            return new ParseResult<Profile>(ParseStatus.Corrupt, null);
+        }
+
         if (migrated is null) return new ParseResult<Profile>(ParseStatus.UnmigratableSchema, null);
         return DeserializeCurrent(migrated);
     }

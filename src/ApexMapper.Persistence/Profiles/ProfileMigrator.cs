@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace ApexMapper.Persistence.Profiles;
@@ -17,10 +18,18 @@ internal static class ProfileMigrator
             [1] = BumpVersionTo2,
         };
 
+    // Accept exactly what the rest of the pipeline accepts: the store's serializer and the
+    // version-header reader both tolerate comments and trailing commas, so the migrator must too.
+    private static readonly JsonDocumentOptions LenientOptions = new()
+    {
+        CommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
     // v1 payloads are structurally valid v2 payloads; only the version header advances.
     private static string BumpVersionTo2(string json)
     {
-        var node = JsonNode.Parse(json)
+        var node = JsonNode.Parse(json, documentOptions: LenientOptions)
             ?? throw new InvalidOperationException("Cannot migrate a null profile document.");
         node["version"] = 2;
         return node.ToJsonString();
