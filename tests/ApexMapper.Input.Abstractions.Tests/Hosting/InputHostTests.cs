@@ -646,6 +646,34 @@ public class InputHostTests
     }
 
     [Fact]
+    public async Task Windows_style_detach_with_empty_path_identifies_selected_device_by_id()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var dev = MakeDevice("dev://a", "SN-A");
+        var selector = MakeSelector(dev);
+        var store = new KeyStateStore();
+        var key = KeyId.FromScanCode(0x1E);
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, dev, deviceId: 1);
+
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 1));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+
+        // On Windows the device path is often unretrievable by removal time,
+        // and the HID enumerator can lag the raw-input notification: the
+        // event carries only the id. The sweep must still fire.
+        var unknownIdentity = new DeviceIdentity(0, 0, null, null, null);
+        raw.Push(new RawInputDeviceChanged(unknownIdentity, Attached: false, DevicePath: "", DeviceId: 1));
+
+        store.Get(key).Value.Should().Be(0f);
+        store.IsGated(key).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task FaultedAnalog_sweeps_analog_keys_but_leaves_digital_keys_alone()
     {
         var ring = MakeRing();
