@@ -327,9 +327,14 @@ public sealed class InputHost : IAsyncDisposable
             return entry.Id;
         }
 
-        // Enumerator and raw-input paths for the same device can differ
-        // in form; fall back to a unique VID/PID match among announced
-        // keyboards. Ambiguity resolves to 0 (drop all) — fail-safe.
+        // Enumerator and raw-input paths for the same device can differ in
+        // form; fall back to a VID/PID match — but only when that VID/PID is
+        // provably a single physical unit: exactly one candidate among the
+        // raw-input arrivals AND exactly one among the enumerator's
+        // discovered devices. With identical twins attached, the selected
+        // unit's own entry may be the missing one, so a "unique" map match
+        // could bind its sibling. Any ambiguity resolves to 0 (drop all)
+        // until topology settles — fail-safe.
         var id = 0;
         foreach (var candidate in _deviceIdsByPath.Values)
         {
@@ -345,6 +350,21 @@ public sealed class InputHost : IAsyncDisposable
             }
             id = candidate.Id;
         }
-        return id;
+
+        if (id == 0)
+        {
+            return 0;
+        }
+
+        var discoveredMatches = 0;
+        foreach (var device in _deviceSelector.Discovered)
+        {
+            if (device.Identity.VendorId == selected.Identity.VendorId &&
+                device.Identity.ProductId == selected.Identity.ProductId)
+            {
+                discoveredMatches++;
+            }
+        }
+        return discoveredMatches == 1 ? id : 0;
     }
 }

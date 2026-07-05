@@ -770,6 +770,54 @@ public class InputHostTests
     }
 
     [Fact]
+    public async Task Vid_pid_fallback_refuses_to_bind_when_an_identical_twin_is_discovered()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var devA = MakeDevice("dev://a", "SN-A");
+        var devB = MakeDevice("dev://b", "SN-B"); // identical model, second unit
+        var selector = MakeSelector(devA, devB);
+        var store = new KeyStateStore();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+
+        // Only the twin has announced a raw-input arrival (under a path form
+        // the exact lookup cannot match); the selected unit's own entry is
+        // missing. The twin must not become "unique" and drive mapping.
+        raw.Push(new RawInputDeviceChanged(devB.Identity, Attached: true, "raw://kbd/b", DeviceId: 9));
+        selector.Select(devA);
+
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 9));
+        host.Drain(10);
+
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(0f);
+    }
+
+    [Fact]
+    public async Task Vid_pid_fallback_still_binds_the_only_attached_unit()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var dev = MakeDevice("dev://a", "SN-A");
+        var selector = MakeSelector(dev);
+        var store = new KeyStateStore();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+
+        // Raw-input and enumerator path forms differ, but this VID/PID is a
+        // single physical unit on both sides — the fallback may bind it.
+        raw.Push(new RawInputDeviceChanged(dev.Identity, Attached: true, "raw://kbd/1", DeviceId: 5));
+        selector.Select(dev);
+
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 5));
+        host.Drain(10);
+
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(1f);
+    }
+
+    [Fact]
     public async Task FaultedAnalog_sweeps_analog_keys_but_leaves_digital_keys_alone()
     {
         var ring = MakeRing();
