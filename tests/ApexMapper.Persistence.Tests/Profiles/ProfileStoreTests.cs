@@ -170,6 +170,21 @@ public class ProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public void Saving_a_loaded_v1_profile_stamps_the_current_schema_and_reloads_clean()
+    {
+        var path = Path.Combine(_dir, "legacy.json");
+        File.WriteAllText(path, LegacyV1Json);
+        var store = new ProfileStore(new ProfileStoreOptions(_dir));
+
+        var loaded = store.LoadAll().Single();
+        store.Save(loaded);
+
+        File.ReadAllText(path).Should().Contain("\"version\": 2");
+        store.LoadAll(out var reports);
+        reports.Should().BeEmpty("the rewritten profile is at the current schema and loads cleanly");
+    }
+
+    [Fact]
     public void LoadAll_migrates_a_v1_document_containing_a_line_comment()
     {
         // The store's serializer tolerates comments, so a v1 file with one must migrate and load
