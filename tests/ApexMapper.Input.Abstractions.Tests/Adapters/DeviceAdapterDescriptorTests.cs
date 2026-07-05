@@ -30,8 +30,10 @@ public class DeviceAdapterDescriptorTests
                 ByteOffset: 4,
                 BitWidth: 8,
                 Normalization: NormalizationKind.Inverted,
-                RawMin: 255,
-                RawMax: 0),
+                // Ascending authoring: raw_max is the physical-rest reading for
+                // inverted travel, raw_min is full press.
+                RawMin: 0,
+                RawMax: 255),
         },
         NoiseFloor: 0.02f,
         RestWindow: 0.05f,

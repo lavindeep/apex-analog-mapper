@@ -111,16 +111,25 @@ public static class DeviceAdapterStore
         }
 
         var keyMap = descriptor.KeyMap;
-        if (keyMap.Count > 1)
+        var seen = new HashSet<ushort>(keyMap.Count);
+        for (var i = 0; i < keyMap.Count; i++)
         {
-            var seen = new HashSet<ushort>(keyMap.Count);
-            for (var i = 0; i < keyMap.Count; i++)
+            var entry = keyMap[i];
+
+            // Bounds must be authored ascending: raw_min is the reading at physical
+            // rest, raw_max at full press. CalibrationCurve.Normalize keys inverted
+            // travel off this convention (it swaps the endpoints by Kind), so a
+            // descending or zero-span entry silently produces wrong deflection.
+            if (entry.RawMin >= entry.RawMax)
             {
-                if (!seen.Add(keyMap[i].ScanCode))
-                {
-                    throw new InvalidDataException(
-                        $"Device adapter '{descriptor.Id}' contains duplicate key_map scan_code 0x{keyMap[i].ScanCode:X4}.");
-                }
+                throw new InvalidDataException(
+                    $"Device adapter '{descriptor.Id}' key_map scan_code 0x{entry.ScanCode:X4} has raw_min ({entry.RawMin}) >= raw_max ({entry.RawMax}); bounds must be ascending (rest < full press).");
+            }
+
+            if (!seen.Add(entry.ScanCode))
+            {
+                throw new InvalidDataException(
+                    $"Device adapter '{descriptor.Id}' contains duplicate key_map scan_code 0x{entry.ScanCode:X4}.");
             }
         }
 

@@ -128,6 +128,29 @@ public class DeviceAdapterStoreTests
         }
     }
 
+    [Theory]
+    [InlineData(255, 0)]   // descending: full-press value authored as raw_min
+    [InlineData(128, 128)] // degenerate: zero span
+    public void LoadFromFile_throws_InvalidDataException_when_raw_bounds_not_ascending(int rawMin, int rawMax)
+    {
+        var bad = MakeDescriptor(new[]
+        {
+            new KeyMapEntry(0x001E, 4, 8, NormalizationKind.Inverted, RawMin: rawMin, RawMax: rawMax),
+        });
+
+        var path = Path.Combine(Path.GetTempPath(), $"apex-adapter-bounds-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, JsonSerialization.Serialize(bad));
+            var act = () => DeviceAdapterStore.LoadFromFile(path);
+            act.Should().Throw<InvalidDataException>();
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
     [Fact]
     public void LoadFromFile_throws_InvalidDataException_when_vendor_or_product_id_invalid()
     {
@@ -154,7 +177,9 @@ public class DeviceAdapterStoreTests
         var d = MakeDescriptor(new[]
         {
             new KeyMapEntry(0x001E, ByteOffset: 4, BitWidth: 8, Normalization: NormalizationKind.Linear, RawMin: 0, RawMax: 255),
-            new KeyMapEntry(0x0020, ByteOffset: 5, BitWidth: 8, Normalization: NormalizationKind.Inverted, RawMin: 255, RawMax: 0),
+            // Ascending authoring (raw_min < raw_max) is now required. For inverted
+            // travel raw_max is the physical-rest reading and raw_min is full press.
+            new KeyMapEntry(0x0020, ByteOffset: 5, BitWidth: 8, Normalization: NormalizationKind.Inverted, RawMin: 0, RawMax: 255),
         });
 
         var fields = DeviceAdapterStore.ToFields(d);
@@ -170,15 +195,20 @@ public class DeviceAdapterStoreTests
         f0.Curve.Kind.Should().Be(NormalizationKind.Linear);
         // NoiseBand = NoiseFloor * (Max - Rest) = 0.02 * 255 = 5.1
         f0.Curve.NoiseBand.Should().BeApproximately(0.02f * 255f, 1e-4f);
+        // Linear travel: raw at physical rest (raw_min) normalizes to 0, full press
+        // (raw_max) to 1.
+        f0.Curve.Normalize(0f).Should().BeApproximately(0f, 1e-4f);
+        f0.Curve.Normalize(255f).Should().BeApproximately(1f, 1e-4f);
 
         var f1 = fields[1];
         f1.Key.Should().Be(KeyId.FromScanCode(0x0020));
         f1.ByteOffset.Should().Be(5);
-        f1.Curve.Rest.Should().Be(255f);
-        f1.Curve.Max.Should().Be(0f);
         f1.Curve.Kind.Should().Be(NormalizationKind.Inverted);
-        // Use absolute span for noise band
         f1.Curve.NoiseBand.Should().BeApproximately(0.02f * 255f, 1e-4f);
+        // Inverted travel reads high at physical rest and falls toward full press,
+        // so raw_max (255) is the rest reading -> 0 and raw_min (0) is full press -> 1.
+        f1.Curve.Normalize(255f).Should().BeApproximately(0f, 1e-4f);
+        f1.Curve.Normalize(0f).Should().BeApproximately(1f, 1e-4f);
     }
 
     [Fact]
