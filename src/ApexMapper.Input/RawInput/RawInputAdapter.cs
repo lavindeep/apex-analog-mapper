@@ -38,6 +38,8 @@ public sealed class RawInputAdapter : IRawInputAdapter
 
     public Task StartAsync(CancellationToken ct)
     {
+        Exception? faultToThrow = null;
+        var started = false;
         lock (_lifecycleLock)
         {
             if (Interlocked.CompareExchange(ref _started, 1, 0) != 0)
@@ -45,7 +47,8 @@ public sealed class RawInputAdapter : IRawInputAdapter
                 return Task.CompletedTask;
             }
 
-            SetStatus(BackendStatus.Starting, null);
+            started = true;
+            _status = BackendStatus.Starting;
 
             var ready = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -60,18 +63,34 @@ public sealed class RawInputAdapter : IRawInputAdapter
             try
             {
                 ready.Task.Wait(ct);
+                _status = BackendStatus.Running;
             }
             catch (AggregateException ae) when (ae.InnerException is not null)
             {
                 _started = 0;
                 _pumpThread = null;
-                SetStatus(BackendStatus.FaultedDigital, ae.InnerException.Message);
-                throw ae.InnerException;
+                _status = BackendStatus.FaultedDigital;
+                faultToThrow = ae.InnerException;
             }
-
-            SetStatus(BackendStatus.Running, null);
-            return Task.CompletedTask;
         }
+
+        // Raise transitions after releasing the lock: a StatusChanged handler
+        // must never run while we hold _lifecycleLock, or it could deadlock by
+        // re-entering Start/Stop or taking a lock in the opposite order.
+        if (started)
+        {
+            RaiseStatusChanged(BackendStatus.Starting, null);
+        }
+        if (faultToThrow is not null)
+        {
+            RaiseStatusChanged(BackendStatus.FaultedDigital, faultToThrow.Message);
+            throw faultToThrow;
+        }
+        if (started)
+        {
+            RaiseStatusChanged(BackendStatus.Running, null);
+        }
+        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken ct)
@@ -85,19 +104,25 @@ public sealed class RawInputAdapter : IRawInputAdapter
                 return Task.CompletedTask;
             }
 
-            SetStatus(BackendStatus.Stopping, null);
+            _status = BackendStatus.Stopping;
             thread = _pumpThread;
             threadId = _pumpThreadId;
             _pumpThread = null;
         }
 
+        RaiseStatusChanged(BackendStatus.Stopping, null);
+
         if (thread is not null && threadId != 0)
         {
             PostThreadMessageW(threadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
-            thread.Join();
+            // Bounded join: never let Stop/Dispose block forever if the pump
+            // fails to exit its message loop. The pump is a background thread,
+            // so any straggler is torn down with the process.
+            thread.Join(TimeSpan.FromSeconds(2));
         }
 
-        SetStatus(BackendStatus.Stopped, null);
+        _status = BackendStatus.Stopped;
+        RaiseStatusChanged(BackendStatus.Stopped, null);
         return Task.CompletedTask;
     }
 
@@ -106,9 +131,8 @@ public sealed class RawInputAdapter : IRawInputAdapter
         await StopAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
-    private void SetStatus(BackendStatus status, string? reason)
+    private void RaiseStatusChanged(BackendStatus status, string? reason)
     {
-        _status = status;
         StatusChanged?.Invoke(this, new BackendStatusChanged(BackendKind.RawInput, status, reason));
     }
 
