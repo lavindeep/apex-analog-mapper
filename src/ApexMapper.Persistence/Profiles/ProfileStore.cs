@@ -48,6 +48,13 @@ public sealed class ProfileStore
         AtomicFile.SweepStaleTemps(_options.Directory);
         var path = Path.Combine(_options.Directory, profile.Id + ".json");
 
+        // Never downgrade a file written by a newer schema version by rotating and clobbering it.
+        if (File.Exists(path) && ReadStatus(path) == ParseStatus.NewerSchema)
+        {
+            throw new InvalidOperationException(
+                $"Refusing to overwrite '{path}': it was written by a newer schema version than {CurrentSchemaVersion}.");
+        }
+
         var doc = new VersionedDocument<Profile>(CurrentSchemaVersion, profile);
         var json = JsonSerializer.Serialize(doc, Options);
 
@@ -67,6 +74,12 @@ public sealed class ProfileStore
         }
     }
 
+    private static ParseStatus ReadStatus(string path)
+    {
+        try { return Parse(File.ReadAllText(path)).Status; }
+        catch { return ParseStatus.Corrupt; }
+    }
+
     internal static ParseResult<Profile> Parse(string text)
     {
         VersionedDocument<Profile>? doc;
@@ -79,15 +92,33 @@ public sealed class ProfileStore
             return new ParseResult<Profile>(ParseStatus.Corrupt, null);
         }
 
-        if (doc is null || doc.Payload is null || doc.Version <= 0)
+        if (doc is null || doc.Version <= 0)
             return new ParseResult<Profile>(ParseStatus.Corrupt, null);
-        if (doc.Version == CurrentSchemaVersion)
-            return new ParseResult<Profile>(ParseStatus.Ok, doc.Payload);
+        // Classify by version before inspecting the payload: a newer document's payload may be
+        // shaped in a way this build cannot deserialize, and must not be misread as corrupt.
         if (doc.Version > CurrentSchemaVersion)
             return new ParseResult<Profile>(ParseStatus.NewerSchema, null);
+        if (doc.Version == CurrentSchemaVersion)
+        {
+            return doc.Payload is null
+                ? new ParseResult<Profile>(ParseStatus.Corrupt, null)
+                : new ParseResult<Profile>(ParseStatus.Ok, doc.Payload);
+        }
 
-        // 0 < version < current: forward migration is wired in a later step; treat as unusable for now.
-        return new ParseResult<Profile>(ParseStatus.Corrupt, null);
+        // 0 < version < current: run the forward-only migration pipeline, then re-parse.
+        var migrated = ProfileMigrator.Migrate(text, doc.Version, CurrentSchemaVersion);
+        if (migrated is null) return new ParseResult<Profile>(ParseStatus.Corrupt, null);
+        try
+        {
+            var upgraded = JsonSerializer.Deserialize<VersionedDocument<Profile>>(migrated, Options);
+            if (upgraded?.Payload is null || upgraded.Version != CurrentSchemaVersion)
+                return new ParseResult<Profile>(ParseStatus.Corrupt, null);
+            return new ParseResult<Profile>(ParseStatus.Ok, upgraded.Payload);
+        }
+        catch
+        {
+            return new ParseResult<Profile>(ParseStatus.Corrupt, null);
+        }
     }
 
     private static JsonSerializerOptions CreateOptions()

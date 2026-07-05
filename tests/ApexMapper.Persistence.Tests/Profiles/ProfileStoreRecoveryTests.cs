@@ -79,6 +79,36 @@ public class ProfileStoreRecoveryTests : IDisposable
         File.Exists(Path_ + ".bak.1").Should().BeTrue("corrupt backup must not be deleted");
     }
 
+    [Fact]
+    public void LoadAll_reports_newer_schema_files_and_leaves_them_untouched()
+    {
+        var newer = "{\"version\": 999, \"payload\": null}";
+        File.WriteAllText(Path_, newer);
+        var store = new ProfileStore(new ProfileStoreOptions(_dir));
+
+        var loaded = store.LoadAll(out var reports);
+
+        loaded.Should().BeEmpty();
+        reports.Should().ContainSingle();
+        reports[0].Outcome.Should().Be(RecoveryOutcome.NewerSchema);
+        File.Exists(Path_ + ".corrupt").Should().BeFalse("a newer-schema file is not corrupt");
+        File.ReadAllText(Path_).Should().Be(newer, "the file must be left untouched");
+    }
+
+    [Fact]
+    public void Save_refuses_to_overwrite_a_newer_schema_file()
+    {
+        var newer = "{\"version\": 999, \"payload\": null}";
+        File.WriteAllText(Path_, newer);
+        var store = new ProfileStore(new ProfileStoreOptions(_dir));
+
+        var act = () => store.Save(Make("racing"));
+
+        act.Should().Throw<InvalidOperationException>();
+        File.ReadAllText(Path_).Should().Be(newer, "the newer file must not be clobbered");
+        File.Exists(Path_ + ".bak.1").Should().BeFalse("no backup generation should be consumed");
+    }
+
     private static bool Store_Parses(string path)
         => ProfileStore.Parse(File.ReadAllText(path)).Status == ParseStatus.Ok;
 }
