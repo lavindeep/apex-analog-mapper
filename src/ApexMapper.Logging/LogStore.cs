@@ -90,37 +90,53 @@ public sealed class LogStore : IDisposable
         // maxFiles counts the active file too, so there are (maxFiles - 1) archive slots:
         // app.log.1 … app.log.(maxFiles-1).
         var archives = _maxFiles - 1;
-        if (archives <= 0)
-        {
-            // No archive slots configured: discard the active file's contents.
-            try { if (File.Exists(ActivePath)) File.Delete(ActivePath); }
-            catch (IOException) { RotationSkips++; }
-            return;
-        }
-
-        // Move the active file aside first. A reader holding it without FileShare.Delete
-        // (e.g. the diagnostics log tail on Windows) makes this throw IOException; when it
-        // does, skip rotation for this write rather than churning archives or throwing out
-        // of Write. On POSIX the rename succeeds even under a reader, so this is a no-op there.
         var staged = Path.Combine(_dir, $"{_baseFile}.rotating");
+
+        // The entire rotation is one guarded unit. A reader holding any of these files
+        // without FileShare.Delete (e.g. the diagnostics log tail on Windows) makes a move
+        // or delete throw IOException; when that happens anywhere in the sequence, count a
+        // skip and let Write keep appending to the active file instead of throwing. On
+        // POSIX renames succeed even under a reader, so the guard is a no-op there.
+        // A partial rotation is safe: shifts run highest-slot-first and a failure aborts
+        // the remaining moves, so an older generation never overwrites a newer one — at
+        // worst the chain is left with a hole that later rotations shift past.
         try
         {
+            if (archives <= 0)
+            {
+                // No archive slots configured: discard the active file's contents.
+                if (File.Exists(staged)) File.Delete(staged);
+                if (File.Exists(ActivePath)) File.Delete(ActivePath);
+                return;
+            }
+
             if (File.Exists(staged)) File.Delete(staged);
-            if (File.Exists(ActivePath)) _move(ActivePath, staged);
+            if (File.Exists(ActivePath))
+            {
+                _move(ActivePath, staged);
+                ArchiveStaged(staged, archives);
+            }
         }
         catch (IOException)
         {
             RotationSkips++;
-            return;
         }
+    }
 
+    /// <summary>Shifts the archive chain up one slot and moves the staged file into <c>.1</c>.</summary>
+    private void ArchiveStaged(string staged, int archives)
+    {
         var oldest = Path.Combine(_dir, $"{_baseFile}.{archives}");
         if (File.Exists(oldest)) File.Delete(oldest);
         for (var i = archives - 1; i >= 1; i--)
         {
             var src = Path.Combine(_dir, $"{_baseFile}.{i}");
             var dst = Path.Combine(_dir, $"{_baseFile}.{i + 1}");
-            if (File.Exists(src)) _move(src, dst);
+            if (!File.Exists(src)) continue;
+            // A slot left occupied by an earlier partial rotation holds older content than
+            // the generation moving in; drop it so the chain self-heals instead of wedging.
+            if (File.Exists(dst)) File.Delete(dst);
+            _move(src, dst);
         }
         _move(staged, Path.Combine(_dir, $"{_baseFile}.1"));
     }

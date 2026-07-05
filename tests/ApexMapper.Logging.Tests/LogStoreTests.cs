@@ -64,4 +64,49 @@ public class LogStoreTests : IDisposable
         File.Exists(Path.Combine(_dir, "app.log")).Should().BeTrue();
         File.Exists(Path.Combine(_dir, "app.log.1")).Should().BeFalse();
     }
+
+    [Fact]
+    public void Write_does_not_throw_when_the_final_archive_move_fails()
+    {
+        // Only the staged->newest-archive move fails (e.g. a reader holds app.log.1).
+        using var log = new LogStore(_dir, "app.log", maxBytes: 64, maxFiles: 3,
+            move: (src, dst) =>
+            {
+                if (dst.EndsWith(".1", StringComparison.Ordinal)) throw new IOException("archive slot is locked");
+                File.Move(src, dst);
+            });
+
+        Action write = () =>
+        {
+            for (var i = 0; i < 100; i++) log.Write(LogLevel.Info, "abcdefghij " + i);
+            log.Flush();
+        };
+
+        write.Should().NotThrow();
+        log.RotationSkips.Should().BeGreaterThan(0);
+        File.Exists(Path.Combine(_dir, "app.log")).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Write_does_not_throw_when_an_archive_shift_fails_mid_chain()
+    {
+        // A shift inside the archive chain fails (e.g. a reader holds app.log.3).
+        File.WriteAllText(Path.Combine(_dir, "app.log.2"), "generation two\n");
+        using var log = new LogStore(_dir, "app.log", maxBytes: 64, maxFiles: 4,
+            move: (src, dst) =>
+            {
+                if (dst.EndsWith(".3", StringComparison.Ordinal)) throw new IOException("archive slot is locked");
+                File.Move(src, dst);
+            });
+
+        Action write = () =>
+        {
+            for (var i = 0; i < 100; i++) log.Write(LogLevel.Info, "abcdefghij " + i);
+            log.Flush();
+        };
+
+        write.Should().NotThrow();
+        log.RotationSkips.Should().BeGreaterThan(0);
+        File.Exists(Path.Combine(_dir, "app.log")).Should().BeTrue();
+    }
 }
