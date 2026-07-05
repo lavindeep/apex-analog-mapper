@@ -127,6 +127,18 @@ public sealed class InputHost : IAsyncDisposable
             var keyId = KeyId.FromScanCode(ev.ScanCode);
             _store.Set(keyId, ev.IsDown ? 1f : 0f, KeyProvenance.Digital);
         }
+
+        // A selection change that landed mid-loop published its new id and
+        // then swept — but this loop may have admitted an event under the
+        // stale snapshot AFTER that sweep. Re-sweep on change: an event
+        // admitted under the stale id is either pre-sweep (zeroed by the
+        // change's sweep) or post-sweep (caught here), and a pressed write
+        // cannot survive both sweeps because gated keys swallow presses.
+        // Cheap and idempotent; runs only on the rare mid-drain change.
+        if (_selectedDeviceId != selectedId)
+        {
+            _store.GateHeldKeys();
+        }
         return drained;
     }
 
@@ -261,8 +273,17 @@ public sealed class InputHost : IAsyncDisposable
                 // Any mapping-relevant transition gates held keys so nothing
                 // stays latched across it (a key held on the previously
                 // selected board must release once before pressing again).
-                _store.GateHeldKeys();
+                //
+                // Ordering contract with Drain: publish the new id FIRST,
+                // then sweep. A Drain in flight with the old snapshot can
+                // admit events until it observes the new id; sweeping after
+                // the publish guarantees any event it admitted before the
+                // sweep is zeroed, and anything it admits after is caught by
+                // Drain's own post-loop re-sweep. Sweep-before-publish would
+                // leave a window where a stale-id down lands after the sweep
+                // and latches.
                 UpdateSelectedDeviceId();
+                _store.GateHeldKeys();
                 break;
         }
     }
@@ -285,39 +306,45 @@ public sealed class InputHost : IAsyncDisposable
 
     private void UpdateSelectedDeviceId()
     {
-        _selectedDeviceId = _deviceSelector.SelectedDevice is { } selected
-            ? ResolveDeviceId(selected)
-            : 0;
-    }
-
-    private int ResolveDeviceId(DiscoveredDevice selected)
-    {
+        // Recompute-and-publish is serialized under the map lock: this runs
+        // on the adapter's pump thread and on the UI thread, and without the
+        // lock a pump recompute that read a still-live selection could
+        // overwrite the 0 a concurrent Unselect just published. Off the hot
+        // path — Drain only reads the volatile field.
         lock (_deviceIdsLock)
         {
-            if (_deviceIdsByPath.TryGetValue(selected.DevicePath, out var entry))
-            {
-                return entry.Id;
-            }
-
-            // Enumerator and raw-input paths for the same device can differ
-            // in form; fall back to a unique VID/PID match among announced
-            // keyboards. Ambiguity resolves to 0 (drop all) — fail-safe.
-            var id = 0;
-            foreach (var candidate in _deviceIdsByPath.Values)
-            {
-                if (candidate.Identity.VendorId != selected.Identity.VendorId ||
-                    candidate.Identity.ProductId != selected.Identity.ProductId)
-                {
-                    continue;
-                }
-
-                if (id != 0)
-                {
-                    return 0;
-                }
-                id = candidate.Id;
-            }
-            return id;
+            _selectedDeviceId = _deviceSelector.SelectedDevice is { } selected
+                ? ResolveDeviceId(selected)
+                : 0;
         }
+    }
+
+    // Caller must hold _deviceIdsLock.
+    private int ResolveDeviceId(DiscoveredDevice selected)
+    {
+        if (_deviceIdsByPath.TryGetValue(selected.DevicePath, out var entry))
+        {
+            return entry.Id;
+        }
+
+        // Enumerator and raw-input paths for the same device can differ
+        // in form; fall back to a unique VID/PID match among announced
+        // keyboards. Ambiguity resolves to 0 (drop all) — fail-safe.
+        var id = 0;
+        foreach (var candidate in _deviceIdsByPath.Values)
+        {
+            if (candidate.Identity.VendorId != selected.Identity.VendorId ||
+                candidate.Identity.ProductId != selected.Identity.ProductId)
+            {
+                continue;
+            }
+
+            if (id != 0)
+            {
+                return 0;
+            }
+            id = candidate.Id;
+        }
+        return id;
     }
 }
