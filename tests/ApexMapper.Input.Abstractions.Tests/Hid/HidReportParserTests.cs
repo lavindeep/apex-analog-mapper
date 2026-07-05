@@ -161,6 +161,67 @@ public class HidReportParserTests
     }
 
     [Fact]
+    public void Numbered_report_offsets_payload_by_the_report_id_byte()
+    {
+        var key = K(0x11);
+        var store = MakeStore(key);
+        // Field payload offset is authored relative to the report data (0); on a
+        // numbered device the OS prepends the report id at buffer[0].
+        var fields = new[] { new HidReportField(key, ByteOffset: 0, BitWidth: 8, Curve: Linear8) };
+        var parser = new HidReportParser(fields, reportId: 0x05);
+
+        Span<byte> report = stackalloc byte[] { 0x05, 0x80 };
+        parser.ParseInto(report, store);
+
+        store.Get(key).Value.Should().BeApproximately(128f / 255f, 1e-4f);
+    }
+
+    [Fact]
+    public void Unnumbered_report_reads_payload_from_offset_zero()
+    {
+        var key = K(0x11);
+        var store = MakeStore(key);
+        var fields = new[] { new HidReportField(key, ByteOffset: 0, BitWidth: 8, Curve: Linear8) };
+        var parser = new HidReportParser(fields); // reportId defaults to 0
+
+        Span<byte> report = stackalloc byte[] { 0x80 };
+        parser.ParseInto(report, store);
+
+        store.Get(key).Value.Should().BeApproximately(128f / 255f, 1e-4f);
+    }
+
+    [Fact]
+    public void Numbered_report_with_mismatched_id_is_ignored()
+    {
+        var key = K(0x11);
+        var store = MakeStore(key);
+        var fields = new[] { new HidReportField(key, ByteOffset: 0, BitWidth: 8, Curve: Linear8) };
+        var parser = new HidReportParser(fields, reportId: 0x05);
+
+        // A report for a different id must not write our field.
+        Span<byte> report = stackalloc byte[] { 0x07, 0xFF };
+        parser.ParseInto(report, store);
+
+        store.Get(key).Should().Be(KeyState.Rest);
+    }
+
+    [Fact]
+    public void Numbered_report_16bit_field_reads_shifted_little_endian_pair()
+    {
+        var key = K(0x1E);
+        var store = MakeStore(key);
+        var curve16 = new CalibrationCurve(0f, 65535f, 4f, NormalizationKind.Linear);
+        var fields = new[] { new HidReportField(key, ByteOffset: 0, BitWidth: 16, Curve: curve16) };
+        var parser = new HidReportParser(fields, reportId: 0x0A);
+
+        // buffer[0]=id, buffer[1..2]=payload = 0x7FFF little-endian.
+        Span<byte> report = stackalloc byte[] { 0x0A, 0xFF, 0x7F };
+        parser.ParseInto(report, store);
+
+        store.Get(key).Value.Should().BeApproximately(32767f / 65535f, 1e-4f);
+    }
+
+    [Fact]
     public void Ctor_throws_when_fields_null()
     {
         var act = () => new HidReportParser(null!);
