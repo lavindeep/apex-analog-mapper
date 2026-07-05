@@ -168,45 +168,51 @@ public class KeyStateStoreGatingTests
     }
 
     [Fact]
-    public async Task Indexed_gate_racing_pressed_writes_never_leaves_stuck_output()
+    public void Indexed_gate_racing_pressed_writes_never_leaves_stuck_output()
     {
         var key = K(0x11);
         var idx = new KeyIndex(new[] { key });
         var store = new KeyStateStore(idx);
 
-        const int rounds = 500;
+        // A dedicated thread hammers pressed writes non-stop so that a sweep
+        // almost always lands inside a writer's read-check-write window. Once
+        // GateHeldKeys returns, the only legal cell state until the next
+        // release is gated+zero: the writer never releases, so any probe that
+        // observes an un-gated or non-zero cell means a racing pressed write
+        // clobbered the gate.
+        var stopWriter = false;
+        var writer = new Thread(() =>
+        {
+            while (!Volatile.Read(ref stopWriter))
+            {
+                store.Set(key, 1f, KeyProvenance.Digital);
+            }
+        })
+        { IsBackground = true };
+        writer.Start();
+
+        const int rounds = 20_000;
+        var violations = 0;
         for (var round = 0; round < rounds; round++)
         {
-            // The key is already held before the sweep starts, so the sweep
-            // must observe it and gate it even while presses keep arriving.
-            store.Set(key, 1f, KeyProvenance.Digital);
+            SpinWait.SpinUntil(() => store.Get(key).Value > 0f);
 
-            using var start = new ManualResetEventSlim(false);
-            var writer = Task.Run(() =>
-            {
-                start.Wait();
-                for (var i = 0; i < 64; i++)
-                {
-                    store.Set(key, 1f, KeyProvenance.Digital);
-                }
-            });
-
-            start.Set();
             store.GateHeldKeys();
-            await writer;
 
-            // Invariant: after the sweep, pressed writes racing it must not
-            // leave the gate clear with a pre-gate press still driving output.
-            store.IsGated(key).Should().BeTrue();
-            store.Get(key).Value.Should().Be(0f);
+            for (var probe = 0; probe < 8; probe++)
+            {
+                if (!store.IsGated(key) || store.Get(key).Value != 0f)
+                {
+                    violations++;
+                }
+            }
 
-            // A pressed write after the race is still swallowed.
-            store.Set(key, 1f, KeyProvenance.Digital);
-            store.Get(key).Value.Should().Be(0f);
-
-            // Release resets for the next round.
+            // Release resets for the next round; the writer re-presses.
             store.Set(key, 0f, KeyProvenance.Digital);
-            store.IsGated(key).Should().BeFalse();
         }
+
+        Volatile.Write(ref stopWriter, true);
+        writer.Join();
+        violations.Should().Be(0, "a sweep must never lose the gate to a racing pressed write");
     }
 }

@@ -154,7 +154,9 @@ public sealed class InputHost : IAsyncDisposable
             }
 
             // A faulted probe stops reporting; sweep its stale depths so no
-            // analog key keeps driving output.
+            // analog key keeps driving output. Deliberately fires on every
+            // FaultedAnalog event, not just the first: duplicate sweeps are
+            // idempotent and fail-safe (output can only drop to zero).
             _store.GateHeldKeys(KeyProvenance.Analog);
         }
         StatusChanged?.Invoke(this, e);

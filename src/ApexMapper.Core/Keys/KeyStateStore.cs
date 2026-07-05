@@ -7,6 +7,12 @@ namespace ApexMapper.Core.Keys;
 /// While a key is gated, any pressed write (value &gt; 0) from any source is
 /// ignored; a write of exactly 0 — a digital key-up or a fully-released
 /// analog report — clears the gate and the next press works normally.
+/// <para>
+/// Threading: only the <see cref="KeyIndex"/>-backed mode is safe for
+/// concurrent use (single volatile-read snapshots, CAS mutations). The
+/// dictionary-backed default is single-threaded only; a threaded host such
+/// as InputHost must be composed with an indexed store.
+/// </para>
 /// </summary>
 public sealed class KeyStateStore
 {
