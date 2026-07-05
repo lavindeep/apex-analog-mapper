@@ -1,4 +1,3 @@
-using ApexMapper.Core.Engine;
 using ApexMapper.Core.Keys;
 using ApexMapper.Input.Abstractions.Backends;
 using ApexMapper.Input.Abstractions.Devices;
@@ -13,11 +12,7 @@ public sealed class InputHost : IAsyncDisposable
     private readonly DeviceSelector _deviceSelector;
     private readonly SpscRingBuffer<RawKeyEvent> _ring;
     private readonly KeyStateStore _store;
-    private readonly HoldGate _holdGate;
     private readonly ILogSink? _log;
-
-    private readonly HashSet<KeyId> _heldKeys = new();
-    private readonly object _heldLock = new();
 
     private BackendStatus _digitalStatus = BackendStatus.Stopped;
     private BackendStatus _analogStatus = BackendStatus.Stopped;
@@ -30,7 +25,6 @@ public sealed class InputHost : IAsyncDisposable
         DeviceSelector deviceSelector,
         SpscRingBuffer<RawKeyEvent> ring,
         KeyStateStore store,
-        HoldGate holdGate,
         ILogSink? log = null)
     {
         _rawInput = rawInput ?? throw new ArgumentNullException(nameof(rawInput));
@@ -38,7 +32,6 @@ public sealed class InputHost : IAsyncDisposable
         _deviceSelector = deviceSelector ?? throw new ArgumentNullException(nameof(deviceSelector));
         _ring = ring ?? throw new ArgumentNullException(nameof(ring));
         _store = store ?? throw new ArgumentNullException(nameof(store));
-        _holdGate = holdGate ?? throw new ArgumentNullException(nameof(holdGate));
         _log = log;
 
         _digitalStatus = _rawInput.Status;
@@ -103,24 +96,11 @@ public sealed class InputHost : IAsyncDisposable
         int drained = 0;
         while (drained < maxEvents && _ring.TryDequeue(out var ev))
         {
+            // The store enforces the held-key rule: gated keys swallow
+            // pressed writes (including auto-repeat downs) and a key-up
+            // clears the gate.
             var keyId = KeyId.FromScanCode(ev.ScanCode);
-            if (_holdGate.IsIgnored(keyId))
-            {
-                if (!ev.IsDown)
-                {
-                    _holdGate.NotifyKeyReleased(keyId);
-                    lock (_heldLock) { _heldKeys.Remove(keyId); }
-                }
-            }
-            else
-            {
-                _store.Set(keyId, ev.IsDown ? 1f : 0f, KeyProvenance.Digital);
-                lock (_heldLock)
-                {
-                    if (ev.IsDown) _heldKeys.Add(keyId);
-                    else _heldKeys.Remove(keyId);
-                }
-            }
+            _store.Set(keyId, ev.IsDown ? 1f : 0f, KeyProvenance.Digital);
             drained++;
         }
         return drained;
@@ -192,14 +172,6 @@ public sealed class InputHost : IAsyncDisposable
     {
         if (e.ChangeKind != DeviceTopologyChangeKind.Attached) return;
 
-        KeyId[] snapshot;
-        lock (_heldLock)
-        {
-            snapshot = _heldKeys.ToArray();
-        }
-        if (snapshot.Length > 0)
-        {
-            _holdGate.GateHeldKeys(snapshot);
-        }
+        _store.GateHeldKeys();
     }
 }

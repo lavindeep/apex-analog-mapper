@@ -1,4 +1,3 @@
-using ApexMapper.Core.Engine;
 using ApexMapper.Core.Keys;
 using ApexMapper.Input.Abstractions.Adapters;
 using ApexMapper.Input.Abstractions.Backends;
@@ -58,9 +57,8 @@ public class HidFallbackIntegrationTests
         DeviceRegistry registry = new(null, Array.Empty<KeyCalibration>());
         var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
         selector.Initialize();
-        var holdGate = new HoldGate();
 
-        await using var host = new InputHost(raw, probe, selector, ring, store, holdGate);
+        await using var host = new InputHost(raw, probe, selector, ring, store);
 
         Func<Task> act = () => host.StartAsync(CancellationToken.None);
         await act.Should().NotThrowAsync();

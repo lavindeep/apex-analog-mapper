@@ -142,6 +142,25 @@ public class HidReportParserTests
     }
 
     [Fact]
+    public void Gated_key_is_left_at_zero_by_analog_reports()
+    {
+        var key = K(0x11);
+        var store = MakeStore(key);
+        var fields = new[] { new HidReportField(key, ByteOffset: 0, BitWidth: 8, Curve: Linear8) };
+        var parser = new HidReportParser(fields);
+
+        store.Set(key, 0.9f, KeyProvenance.Analog);
+        store.GateHeldKeys();
+
+        // Analog reports must not bypass the held-key gate.
+        Span<byte> report = stackalloc byte[] { 0xFF };
+        parser.ParseInto(report, store);
+
+        store.Get(key).Value.Should().Be(0f);
+        store.IsGated(key).Should().BeTrue();
+    }
+
+    [Fact]
     public void Ctor_throws_when_fields_null()
     {
         var act = () => new HidReportParser(null!);

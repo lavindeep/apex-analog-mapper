@@ -1,4 +1,3 @@
-using ApexMapper.Core.Engine;
 using ApexMapper.Core.Keys;
 using ApexMapper.Input.Abstractions.Adapters;
 using ApexMapper.Input.Abstractions.Backends;
@@ -95,10 +94,9 @@ public class InputHostTests
         var raw = new FakeRawInputAdapter(ring);
         var selector = MakeSelector();
         var store = new KeyStateStore();
-        var holdGate = new HoldGate();
         var log = new InMemoryLogSink();
 
-        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate, log);
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, log);
 
         await host.StartAsync(CancellationToken.None);
 
@@ -114,9 +112,8 @@ public class InputHostTests
         var raw = new FakeRawInputAdapter(ring);
         var selector = MakeSelector();
         var store = new KeyStateStore();
-        var holdGate = new HoldGate();
 
-        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate);
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
 
         var ev = new RawKeyEvent(ScanCode: 0x1E, IsDown: true, TimestampTicks: 1, DeviceHandleIndex: 0);
@@ -137,9 +134,8 @@ public class InputHostTests
         var raw = new FakeRawInputAdapter(ring);
         var selector = MakeSelector();
         var store = new KeyStateStore();
-        var holdGate = new HoldGate();
 
-        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate);
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
 
         var down = new RawKeyEvent(0x1E, IsDown: true, 1, 0);
@@ -155,7 +151,7 @@ public class InputHostTests
     }
 
     [Fact]
-    public async Task HoldGate_engages_on_device_attach_for_currently_held_keys()
+    public async Task Device_attach_gates_and_zeroes_currently_held_keys()
     {
         var ring = MakeRing();
         var raw = new FakeRawInputAdapter(ring);
@@ -166,9 +162,8 @@ public class InputHostTests
         selector.Initialize();
 
         var store = new KeyStateStore();
-        var holdGate = new HoldGate();
 
-        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate);
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
 
         // Hold a key
@@ -181,11 +176,12 @@ public class InputHostTests
         enumerator.Add(devB);
         selector.Refresh();
 
-        holdGate.IsIgnored(KeyId.FromScanCode(0x1E)).Should().BeTrue();
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(0f);
+        store.IsGated(KeyId.FromScanCode(0x1E)).Should().BeTrue();
     }
 
     [Fact]
-    public async Task HoldGate_releases_on_keyup_after_attach_gated()
+    public async Task Keyup_after_attach_gating_clears_gate_and_stays_zero()
     {
         var ring = MakeRing();
         var raw = new FakeRawInputAdapter(ring);
@@ -196,9 +192,8 @@ public class InputHostTests
         selector.Initialize();
 
         var store = new KeyStateStore();
-        var holdGate = new HoldGate();
 
-        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate);
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
 
         var down = new RawKeyEvent(0x1E, IsDown: true, 1, 0);
@@ -209,14 +204,15 @@ public class InputHostTests
         enumerator.Add(devB);
         selector.Refresh();
 
-        holdGate.IsIgnored(KeyId.FromScanCode(0x1E)).Should().BeTrue();
+        store.IsGated(KeyId.FromScanCode(0x1E)).Should().BeTrue();
 
-        // Now release the key — drain should NotifyKeyReleased.
+        // Now release the key — the store clears the gate on key-up.
         var up = new RawKeyEvent(0x1E, IsDown: false, 2, 0);
         raw.Push(in up);
         host.Drain(10);
 
-        holdGate.IsIgnored(KeyId.FromScanCode(0x1E)).Should().BeFalse();
+        store.IsGated(KeyId.FromScanCode(0x1E)).Should().BeFalse();
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(0f);
     }
 
     [Fact]
@@ -226,11 +222,10 @@ public class InputHostTests
         var raw = new FakeRawInputAdapter(ring);
         var selector = MakeSelector();
         var store = new KeyStateStore();
-        var holdGate = new HoldGate();
         var log = new InMemoryLogSink();
         var probe = new FaultingHidProbe(new IOException("analog probe blocked by gg"));
 
-        await using var host = new InputHost(raw, probe, selector, ring, store, holdGate, log);
+        await using var host = new InputHost(raw, probe, selector, ring, store, log);
 
         // Must not throw.
         await host.StartAsync(CancellationToken.None);
@@ -249,11 +244,10 @@ public class InputHostTests
         var raw = new FakeRawInputAdapter(ring);
         var selector = MakeSelector();
         var store = new KeyStateStore();
-        var holdGate = new HoldGate();
         var probe = new FaultingHidProbe(new IOException("kaboom"));
         var events = new List<BackendStatusChanged>();
 
-        await using var host = new InputHost(raw, probe, selector, ring, store, holdGate);
+        await using var host = new InputHost(raw, probe, selector, ring, store);
         host.StatusChanged += (_, e) => events.Add(e);
 
         await host.StartAsync(CancellationToken.None);
@@ -268,11 +262,10 @@ public class InputHostTests
         var raw = new FakeRawInputAdapter(ring);
         var selector = MakeSelector();
         var store = new KeyStateStore();
-        var holdGate = new HoldGate();
         var probe = new FaultingHidProbe(new IOException("late"), failOnStart: false);
         var events = new List<BackendStatusChanged>();
 
-        await using var host = new InputHost(raw, probe, selector, ring, store, holdGate);
+        await using var host = new InputHost(raw, probe, selector, ring, store);
         host.StatusChanged += (_, e) => events.Add(e);
 
         await host.StartAsync(CancellationToken.None);
@@ -293,10 +286,9 @@ public class InputHostTests
         var raw = new FakeRawInputAdapter(ring);
         var selector = MakeSelector();
         var store = new KeyStateStore();
-        var holdGate = new HoldGate();
         var probe = new FaultingHidProbe(new IOException("gg"));
 
-        await using var host = new InputHost(raw, probe, selector, ring, store, holdGate);
+        await using var host = new InputHost(raw, probe, selector, ring, store);
 
         Func<Task> act = () => host.StartAsync(CancellationToken.None);
 
@@ -304,7 +296,7 @@ public class InputHostTests
     }
 
     [Fact]
-    public async Task Drain_skips_ignored_keys_does_not_write_to_store()
+    public async Task Gated_key_ignores_auto_repeat_downs_until_released()
     {
         var ring = MakeRing();
         var raw = new FakeRawInputAdapter(ring);
@@ -315,9 +307,8 @@ public class InputHostTests
         selector.Initialize();
 
         var store = new KeyStateStore();
-        var holdGate = new HoldGate();
 
-        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, holdGate);
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
         await host.StartAsync(CancellationToken.None);
 
         // Press a key, attach a new device → key gets ignored.
@@ -330,12 +321,53 @@ public class InputHostTests
         enumerator.Add(devB);
         selector.Refresh();
 
-        // Synthetic "down repeat" coming in while ignored should not change store.
+        // Gating must zero the held key immediately.
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(0f);
+
+        // Synthetic "down repeat" coming in while gated must not re-press.
         // (No real keyup yet — gate still active.)
         raw.Push(new RawKeyEvent(0x1E, true, 3, 0));
         host.Drain(10);
 
-        // Store should still reflect the earlier write — the ignored event is suppressed.
-        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(1f);
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(0f);
+    }
+
+    [Fact]
+    public async Task Held_key_across_attach_gate_full_sequence_recovers_after_release()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var devA = MakeDevice("dev://a", "SN-A");
+        var enumerator = new InMemoryDeviceEnumerator(new[] { devA });
+        DeviceRegistry registry = new(null, Array.Empty<KeyCalibration>());
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+
+        var store = new KeyStateStore();
+        var key = KeyId.FromScanCode(0x1E);
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+
+        // Hold at 1.0.
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 0));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+
+        // Gate transition (device attach) zeroes the held key.
+        enumerator.Add(MakeDevice("dev://b", "SN-B"));
+        selector.Refresh();
+        store.Get(key).Value.Should().Be(0f);
+
+        // Physical release: stays zero and the gate clears.
+        raw.Push(new RawKeyEvent(0x1E, false, 2, 0));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(0f);
+        store.IsGated(key).Should().BeFalse();
+
+        // Next press drives output again.
+        raw.Push(new RawKeyEvent(0x1E, true, 3, 0));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
     }
 }
