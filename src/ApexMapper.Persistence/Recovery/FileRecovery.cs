@@ -64,7 +64,11 @@ internal static class FileRecovery
         return false;
     }
 
-    private static void Quarantine(string path)
+    /// <summary>
+    /// Moves the file at <paramref name="path"/> aside as <c>path.corrupt</c> evidence,
+    /// replacing any older quarantine. Best effort: on failure the file stays in place.
+    /// </summary>
+    internal static void Quarantine(string path)
     {
         // A missing primary may mean a previous quarantine already holds the evidence;
         // never touch the existing quarantine file in that case.

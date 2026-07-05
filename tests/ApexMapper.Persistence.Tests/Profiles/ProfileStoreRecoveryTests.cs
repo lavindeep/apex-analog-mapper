@@ -181,6 +181,23 @@ public class ProfileStoreRecoveryTests : IDisposable
         File.Exists(Path_ + ".bak.1").Should().BeFalse("no backup generation should be consumed");
     }
 
+    [Fact]
+    public void Save_over_a_corrupt_primary_quarantines_it_instead_of_rotating_it_into_backups()
+    {
+        var store = new ProfileStore(new ProfileStoreOptions(_dir, BackupCount: 5));
+        store.Save(Make("racing"));
+        store.Save(Make("racing"));
+        store.Save(Make("racing")); // bak.1 and bak.2 both hold good generations
+        var goodBak1 = File.ReadAllText(Path_ + ".bak.1");
+        File.WriteAllText(Path_, "{ corrupt bytes");
+
+        store.Save(Make("racing"));
+
+        File.ReadAllText(Path_ + ".corrupt").Should().Be("{ corrupt bytes", "the corrupt bytes must be preserved as evidence");
+        File.ReadAllText(Path_ + ".bak.1").Should().Be(goodBak1, "a corrupt primary must not consume a good backup generation");
+        Store_Parses(Path_).Should().BeTrue("the new content must be written as the primary");
+    }
+
     private static bool Store_Parses(string path)
         => ProfileStore.Parse(File.ReadAllText(path)).Status == ParseStatus.Ok;
 }

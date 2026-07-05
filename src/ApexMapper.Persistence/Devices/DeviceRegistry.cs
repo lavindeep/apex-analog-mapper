@@ -38,8 +38,10 @@ public sealed record DeviceRegistry(
         Directory.CreateDirectory(dir);
         AtomicFile.SweepStaleTemps(dir);
 
+        var existing = File.Exists(path) ? ReadStatus(path) : (ParseStatus?)null;
+
         // Never downgrade a file written by a newer schema version by rotating and clobbering it.
-        if (File.Exists(path) && ReadStatus(path) == ParseStatus.NewerSchema)
+        if (existing == ParseStatus.NewerSchema)
         {
             throw new InvalidOperationException(
                 $"Refusing to overwrite '{path}': it was written by a newer schema version than {CurrentSchemaVersion}.");
@@ -50,7 +52,16 @@ public sealed record DeviceRegistry(
         var tmp = AtomicFile.WriteTemp(path, JsonSerialization.Serialize(doc));
         try
         {
-            if (File.Exists(path)) BackupRotation.Rotate(path, backupCount);
+            if (existing == ParseStatus.Corrupt)
+            {
+                // A corrupt primary holds no good generation to preserve: quarantine it as
+                // evidence instead of rotating its bytes into the backup chain.
+                FileRecovery.Quarantine(path);
+            }
+            else if (File.Exists(path))
+            {
+                BackupRotation.Rotate(path, backupCount);
+            }
             AtomicFile.Commit(tmp, path);
         }
         catch

@@ -155,6 +155,24 @@ public class DeviceRegistryTests : IDisposable
     }
 
     [Fact]
+    public void Save_over_a_corrupt_primary_quarantines_it_instead_of_rotating_it_into_backups()
+    {
+        var reg = new DeviceRegistry(new DeviceIdentity(1, 1, null, null, null), Array.Empty<KeyCalibration>());
+        DeviceRegistry.Save(Path, reg);
+        DeviceRegistry.Save(Path, reg);
+        DeviceRegistry.Save(Path, reg); // bak.1 and bak.2 both hold good generations
+        var goodBak1 = File.ReadAllText(Path + ".bak.1");
+        File.WriteAllText(Path, "{ corrupt bytes");
+
+        DeviceRegistry.Save(Path, reg);
+
+        File.ReadAllText(Path + ".corrupt").Should().Be("{ corrupt bytes", "the corrupt bytes must be preserved as evidence");
+        File.ReadAllText(Path + ".bak.1").Should().Be(goodBak1, "a corrupt primary must not consume a good backup generation");
+        DeviceRegistry.Load(Path, out var recovery).SelectedDevice.Should().Be(reg.SelectedDevice);
+        recovery.Should().BeNull("the rewritten primary must load cleanly");
+    }
+
+    [Fact]
     public void Save_refuses_to_overwrite_a_newer_schema_file()
     {
         var newer = "{\"version\": 999, \"payload\": null}";

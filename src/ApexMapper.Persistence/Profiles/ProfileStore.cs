@@ -62,8 +62,10 @@ public sealed class ProfileStore
         AtomicFile.SweepStaleTemps(_options.Directory);
         var path = Path.Combine(_options.Directory, profile.Id + ".json");
 
+        var existing = File.Exists(path) ? ReadStatus(path) : (ParseStatus?)null;
+
         // Never downgrade a file written by a newer schema version by rotating and clobbering it.
-        if (File.Exists(path) && ReadStatus(path) == ParseStatus.NewerSchema)
+        if (existing == ParseStatus.NewerSchema)
         {
             throw new InvalidOperationException(
                 $"Refusing to overwrite '{path}': it was written by a newer schema version than {CurrentSchemaVersion}.");
@@ -78,7 +80,16 @@ public sealed class ProfileStore
         var tmp = AtomicFile.WriteTemp(path, json);
         try
         {
-            if (File.Exists(path)) BackupRotation.Rotate(path, _options.BackupCount);
+            if (existing == ParseStatus.Corrupt)
+            {
+                // A corrupt primary holds no good generation to preserve: quarantine it as
+                // evidence instead of rotating its bytes into the backup chain.
+                FileRecovery.Quarantine(path);
+            }
+            else if (File.Exists(path))
+            {
+                BackupRotation.Rotate(path, _options.BackupCount);
+            }
             AtomicFile.Commit(tmp, path);
         }
         catch
