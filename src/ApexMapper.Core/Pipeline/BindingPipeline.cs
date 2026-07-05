@@ -6,6 +6,17 @@ using ApexMapper.Core.Socd;
 
 namespace ApexMapper.Core.Pipeline;
 
+/// <summary>
+/// Evaluates all bindings each tick into a <see cref="VirtualPadState"/>.
+/// </summary>
+/// <remarks>
+/// The per-binding stage order is <b>ramp → deadzone/curve → SOCD</b>, which is deliberately not
+/// the spec's literal deadzone → curve → ramp wording. Ramps run first so the shaping curve sees a
+/// continuous 0..1 signal: a digital key only ever reports 0 or 1, and a curve applied to a bare
+/// 0/1 step would be a no-op (it can only remap the two endpoints). Ramping first turns the step
+/// into a smooth ramp the curve can actually shape, then SOCD resolves the two ramped/shaped sides
+/// of an axis pair into a single signed value.
+/// </remarks>
 public sealed class BindingPipeline
 {
     private static readonly double TicksToMicros = 1_000_000.0 / Stopwatch.Frequency;
