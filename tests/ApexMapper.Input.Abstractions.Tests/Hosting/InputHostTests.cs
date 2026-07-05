@@ -120,6 +120,38 @@ public class InputHostTests
     }
 
     [Fact]
+    public async Task Drain_surfaces_ring_dropped_count_and_logs_first_overflow()
+    {
+        var ring = MakeRing(capacity: 2);
+        var raw = new FakeRawInputAdapter(ring);
+        var dev = MakeDevice();
+        var selector = MakeSelector(dev);
+        var store = new KeyStateStore();
+        var log = new InMemoryLogSink();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store, log);
+        await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, dev, deviceId: 7);
+
+        // Capacity 2: the third and fourth pushes overflow and are dropped.
+        for (var i = 0; i < 4; i++)
+        {
+            raw.Push(new RawKeyEvent(ScanCode: 0x1E, IsDown: true, TimestampTicks: i, DeviceId: 7));
+        }
+
+        host.DroppedInputEvents.Should().Be(2);
+
+        host.Drain(10);
+
+        host.DroppedInputEvents.Should().Be(2);
+        log.Lines.Should().ContainSingle(l => l.Contains("overflow") && l.Contains("dropped 2"));
+
+        // A second drain must not re-log the same overflow.
+        host.Drain(10);
+        log.Lines.Count(l => l.Contains("overflow")).Should().Be(1);
+    }
+
+    [Fact]
     public async Task Drain_pushes_digital_keydown_from_selected_device_to_store()
     {
         var ring = MakeRing();

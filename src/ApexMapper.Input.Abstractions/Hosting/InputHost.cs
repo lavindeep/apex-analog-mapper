@@ -20,6 +20,10 @@ public sealed class InputHost : IAsyncDisposable
     private string? _analogFallbackReason;
     private int _disposed;
 
+    // True once the input ring has reported at least one dropped event and we
+    // have logged it. Touched only on the Drain (tick) thread.
+    private bool _ringOverflowLogged;
+
     // DeviceId of the selected device's raw-input source; 0 = no selection
     // (or not yet announced by the adapter), which drops every digital event.
     // Written on the adapter/UI threads, read by Drain on the tick thread.
@@ -64,6 +68,11 @@ public sealed class InputHost : IAsyncDisposable
     public BackendStatus AnalogStatus => _analogStatus;
     public string? AnalogFallbackReason => _analogFallbackReason;
 
+    // Number of raw-input events the ring has dropped because it was full — a
+    // sign the tick loop is not draining fast enough. Surfaces the otherwise
+    // invisible SpscRingBuffer.DroppedCount for diagnostics/status.
+    public long DroppedInputEvents => _ring.DroppedCount;
+
     public event EventHandler<BackendStatusChanged>? StatusChanged;
 
     public async Task StartAsync(CancellationToken ct)
@@ -106,6 +115,14 @@ public sealed class InputHost : IAsyncDisposable
     public int Drain(int maxEvents)
     {
         if (maxEvents <= 0) return 0;
+
+        // Surface a ring overflow once: dropped digital events mean the tick
+        // loop fell behind and some key transitions were lost.
+        if (!_ringOverflowLogged && _ring.DroppedCount > 0)
+        {
+            _ringOverflowLogged = true;
+            _log?.Warn($"input ring overflow: dropped {_ring.DroppedCount} raw event(s)");
+        }
 
         var selectedId = _selectedDeviceId;
         int drained = 0;
