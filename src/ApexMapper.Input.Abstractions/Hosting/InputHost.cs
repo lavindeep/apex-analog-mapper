@@ -209,11 +209,11 @@ public sealed class InputHost : IAsyncDisposable
             }
         }
 
-        if (!e.Attached)
+        if (!e.Attached && IsSelectedDevice(e))
         {
-            // Unplug mid-press must not leave keys latched. Device-identity
-            // filtering is a separate upcoming change; until then any keyboard
-            // detach sweeps all held keys — a safe over-approximation.
+            // The selected device vanishing mid-press must not leave keys
+            // latched. A non-selected keyboard unplugging is not a mapping
+            // transition and must not zero live input.
             _store.GateHeldKeys();
         }
 
@@ -240,6 +240,22 @@ public sealed class InputHost : IAsyncDisposable
                 UpdateSelectedDeviceId();
                 break;
         }
+    }
+
+    private bool IsSelectedDevice(RawInputDeviceChanged e)
+    {
+        var selectedId = _selectedDeviceId;
+        if (e.DeviceId != 0 && e.DeviceId == selectedId)
+        {
+            return true;
+        }
+
+        // Windows removals may only carry the id (the path is often gone by
+        // the time we query it); fakes and legacy sources may only carry the
+        // path. Either credential identifies the selected device.
+        return e.DevicePath.Length != 0 &&
+            _deviceSelector.SelectedDevice is { } selected &&
+            string.Equals(selected.DevicePath, e.DevicePath, StringComparison.OrdinalIgnoreCase);
     }
 
     private void UpdateSelectedDeviceId()

@@ -562,6 +562,46 @@ public class InputHostTests
     }
 
     [Fact]
+    public async Task Detach_of_non_selected_device_does_not_sweep_held_keys()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var devA = MakeDevice("dev://a", "SN-A");
+        var devB = MakeDevice("dev://b", "SN-B");
+        var enumerator = new InMemoryDeviceEnumerator(new[] { devA, devB });
+        DeviceRegistry registry = new(null, Array.Empty<KeyCalibration>());
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+
+        var store = new KeyStateStore();
+        var key = KeyId.FromScanCode(0x1E);
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+        raw.Push(new RawInputDeviceChanged(devB.Identity, Attached: true, devB.DevicePath, DeviceId: 2));
+        AttachAndSelect(raw, selector, devA, deviceId: 1);
+
+        // Racing on the selected board.
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 1));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+
+        // Someone unplugs the spare keyboard: not a mapping transition.
+        enumerator.Remove(devB);
+        raw.Push(new RawInputDeviceChanged(devB.Identity, Attached: false, devB.DevicePath, DeviceId: 2));
+
+        store.Get(key).Value.Should().Be(1f);
+        store.IsGated(key).Should().BeFalse();
+        selector.SelectedDevice.Should().Be(devA);
+
+        // The selected board keeps driving output as if nothing happened.
+        raw.Push(new RawKeyEvent(0x1E, false, 2, 1));
+        raw.Push(new RawKeyEvent(0x1E, true, 3, 1));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+    }
+
+    [Fact]
     public async Task FaultedAnalog_sweeps_analog_keys_but_leaves_digital_keys_alone()
     {
         var ring = MakeRing();
