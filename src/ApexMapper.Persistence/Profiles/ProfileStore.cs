@@ -1,6 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using ApexMapper.Core.Curves;
 using ApexMapper.Core.Engine;
 using ApexMapper.Persistence.Atomic;
 using ApexMapper.Persistence.Json;
@@ -143,22 +141,8 @@ public sealed class ProfileStore
     private static JsonSerializerOptions CreateOptions()
     {
         var o = new JsonSerializerOptions(JsonSerialization.Options);
-        o.Converters.Add(new LinearOnlyCurveConverter());
+        o.Converters.Add(new SingleKeyBindingConverter());
+        o.Converters.Add(new AxisPairBindingConverter());
         return o;
-    }
-
-    private sealed class LinearOnlyCurveConverter : JsonConverter<ICurve>
-    {
-        public override ICurve? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-        {
-            if (reader.TokenType == JsonTokenType.Null) return LinearCurve.Instance;
-            throw new JsonException("Curve deserialization is limited to null (linear) in Phase 1.");
-        }
-
-        public override void Write(Utf8JsonWriter writer, ICurve value, JsonSerializerOptions options)
-        {
-            if (value is LinearCurve) { writer.WriteNullValue(); return; }
-            throw new JsonException("Curve serialization is limited to LinearCurve in Phase 1.");
-        }
     }
 }

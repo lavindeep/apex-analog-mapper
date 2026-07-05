@@ -54,6 +54,17 @@ public sealed class PiecewiseCubicCurve : ICurve
         _tangents = ComputeMonotonicTangents(_xs, _ys);
     }
 
+    /// <summary>The control points this curve was built from, for serialization.</summary>
+    public IReadOnlyList<(float X, float Y)> Points
+    {
+        get
+        {
+            var points = new (float X, float Y)[_xs.Length];
+            for (var i = 0; i < _xs.Length; i++) points[i] = (_xs[i], _ys[i]);
+            return points;
+        }
+    }
+
     public float Map(float input)
     {
         if (input <= 0f) return _ys[0] < 0f ? 0f : _ys[0];

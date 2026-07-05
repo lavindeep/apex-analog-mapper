@@ -50,6 +50,33 @@ public class ProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public void Save_then_LoadAll_round_trips_a_per_binding_curve_and_deadzone()
+    {
+        var cubic = new PiecewiseCubicCurve(new[] { (0f, 0f), (0.5f, 0.3f), (1f, 1f) });
+        var shaped = new DeadzoneCurve(cubic, innerDeadzone: 0.1f, outerDeadzone: 0.9f);
+        var profile = SampleProfile() with
+        {
+            SingleBindings = new[]
+            {
+                new SingleKeyBinding(KeyId.FromScanCode(0x11), BindingTarget.RightTrigger, shaped, 120f, 0f),
+            },
+        };
+
+        var store = new ProfileStore(new ProfileStoreOptions(_dir));
+        store.Save(profile);
+        var loaded = store.LoadAll().Single();
+
+        var curve = loaded.SingleBindings[0].Curve.Should().BeOfType<DeadzoneCurve>().Subject;
+        curve.InnerDeadzone.Should().BeApproximately(0.1f, 1e-6f);
+        curve.OuterDeadzone.Should().BeApproximately(0.9f, 1e-6f);
+        curve.Inner.Should().BeOfType<PiecewiseCubicCurve>();
+        foreach (var x in new[] { 0.05f, 0.2f, 0.5f, 0.8f, 0.95f })
+        {
+            curve.Map(x).Should().BeApproximately(shaped.Map(x), 1e-5f);
+        }
+    }
+
+    [Fact]
     public void Save_writes_one_file_per_profile()
     {
         var store = new ProfileStore(new ProfileStoreOptions(_dir));

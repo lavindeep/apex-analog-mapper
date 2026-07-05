@@ -31,6 +31,10 @@ public sealed class DeadzoneCurve : ICurve
         _range = outerDeadzone - innerDeadzone;
     }
 
+    public ICurve Inner => _inner;
+    public float InnerDeadzone => _innerDeadzone;
+    public float OuterDeadzone => _outerDeadzone;
+
     public float Map(float input)
     {
         if (input <= _innerDeadzone) return 0f;

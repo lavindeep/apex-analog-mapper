@@ -167,6 +167,45 @@ public class ProfileStoreRecoveryTests : IDisposable
     public void Parse_classifies_any_newer_version_as_newer_schema_regardless_of_payload(string text)
         => ProfileStore.Parse(text).Status.Should().Be(ParseStatus.NewerSchema);
 
+    private static string DocWithCurve(string curveJson) => $$"""
+        {
+          "version": 2,
+          "payload": {
+            "id": "curved", "name": "Curved",
+            "device": { "vendor_id": 1, "product_id": 1, "serial_number": null, "product_name_pattern": null },
+            "game": { "executable_name": null, "window_title_pattern": null, "steam_app_id": null },
+            "activation": { "scope": "foreground_only", "focus_loss_debounce_ms": 500, "auto_enable": false, "requires_opt_in_for_protected_games": true },
+            "single_bindings": [
+              { "source": { "scan_code": 17 }, "target": "right_trigger", "curve": {{curveJson}}, "press_ramp_ms": 0, "release_ramp_ms": 0 }
+            ],
+            "axis_bindings": [], "notes": null
+          }
+        }
+        """;
+
+    [Fact]
+    public void Parse_accepts_a_valid_monotone_curve()
+    {
+        var text = DocWithCurve("[[0,0],[0.5,0.3],[1,1]]");
+        ProfileStore.Parse(text).Status.Should().Be(ParseStatus.Ok);
+    }
+
+    [Theory]
+    // More than eight control points.
+    [InlineData("[[0,0],[0.1,0.1],[0.2,0.2],[0.3,0.3],[0.4,0.4],[0.5,0.5],[0.6,0.6],[0.7,0.7],[1,1]]")]
+    // x not strictly increasing.
+    [InlineData("[[0,0],[0.5,0.5],[0.3,0.7],[1,1]]")]
+    // Endpoints not anchored at x=0 and x=1.
+    [InlineData("[[0.1,0],[1,1]]")]
+    // y outside the unit range.
+    [InlineData("[[0,0],[0.5,1.5],[1,1]]")]
+    // Non-monotone (falling) y.
+    [InlineData("[[0,0],[0.5,0.8],[1,0.4]]")]
+    // Malformed control point (three elements).
+    [InlineData("[[0,0,0],[1,1]]")]
+    public void Parse_rejects_an_invalid_curve_as_corrupt(string curveJson)
+        => ProfileStore.Parse(DocWithCurve(curveJson)).Status.Should().Be(ParseStatus.Corrupt);
+
     [Fact]
     public void Save_refuses_to_overwrite_a_newer_schema_file()
     {
