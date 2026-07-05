@@ -2,6 +2,7 @@ using ApexMapper.Core.Keys;
 using ApexMapper.Input.Abstractions.Adapters;
 using ApexMapper.Input.Abstractions.Calibration;
 using ApexMapper.Input.Abstractions.Hid;
+using ApexMapper.Persistence.Devices;
 using ApexMapper.Persistence.Json;
 
 namespace ApexMapper.Input.Abstractions.Tests.Adapters;
@@ -178,6 +179,52 @@ public class DeviceAdapterStoreTests
         f1.Curve.Kind.Should().Be(NormalizationKind.Inverted);
         // Use absolute span for noise band
         f1.Curve.NoiseBand.Should().BeApproximately(0.02f * 255f, 1e-4f);
+    }
+
+    [Fact]
+    public void ToCalibrationOverrides_maps_persisted_calibration_to_linear_curves()
+    {
+        var calibrations = new[]
+        {
+            new KeyCalibration(KeyId.FromScanCode(0x001E), RestValue: 12f, MaxPressValue: 220f, NoiseBand: 3f),
+            new KeyCalibration(KeyId.FromScanCode(0x0020), RestValue: 5f, MaxPressValue: 250f, NoiseBand: 1.5f),
+        };
+
+        var overrides = DeviceAdapterStore.ToCalibrationOverrides(calibrations);
+
+        overrides.Should().HaveCount(2);
+        var c0 = overrides[KeyId.FromScanCode(0x001E)];
+        c0.Rest.Should().Be(12f);
+        c0.Max.Should().Be(220f);
+        c0.NoiseBand.Should().Be(3f);
+        c0.Kind.Should().Be(NormalizationKind.Linear);
+        overrides[KeyId.FromScanCode(0x0020)].Max.Should().Be(250f);
+    }
+
+    [Fact]
+    public void ToCalibrationOverrides_feeds_ToFields_so_persisted_calibration_wins()
+    {
+        var d = MakeDescriptor(new[]
+        {
+            new KeyMapEntry(0x001E, 4, 8, NormalizationKind.Linear, 0, 255),
+        });
+        var calibrations = new[]
+        {
+            new KeyCalibration(KeyId.FromScanCode(0x001E), RestValue: 20f, MaxPressValue: 180f, NoiseBand: 2f),
+        };
+
+        var overrides = DeviceAdapterStore.ToCalibrationOverrides(calibrations);
+        var fields = DeviceAdapterStore.ToFields(d, overrides);
+
+        fields[0].Curve.Rest.Should().Be(20f);
+        fields[0].Curve.Max.Should().Be(180f);
+        fields[0].Curve.NoiseBand.Should().Be(2f);
+    }
+
+    [Fact]
+    public void ToCalibrationOverrides_empty_list_yields_empty_map()
+    {
+        DeviceAdapterStore.ToCalibrationOverrides(Array.Empty<KeyCalibration>()).Should().BeEmpty();
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using System.Reflection;
 using ApexMapper.Core.Keys;
 using ApexMapper.Input.Abstractions.Calibration;
 using ApexMapper.Input.Abstractions.Hid;
+using ApexMapper.Persistence.Devices;
 using ApexMapper.Persistence.Json;
 
 namespace ApexMapper.Input.Abstractions.Adapters;
@@ -63,6 +64,33 @@ public static class DeviceAdapterStore
         }
 
         return fields;
+    }
+
+    /// <summary>
+    /// Translates persisted per-device <see cref="KeyCalibration"/> entries into
+    /// the <see cref="CalibrationCurve"/> overrides <see cref="ToFields"/> accepts,
+    /// so a calibrated device uses its measured rest/press/noise instead of the
+    /// adapter defaults. The persisted record carries no travel direction, so the
+    /// resulting curves are <see cref="NormalizationKind.Linear"/>; capturing an
+    /// inverted-travel calibration is left to the phase-4 calibration wizard.
+    /// </summary>
+    public static IReadOnlyDictionary<KeyId, CalibrationCurve> ToCalibrationOverrides(
+        IReadOnlyList<KeyCalibration> calibrations)
+    {
+        ArgumentNullException.ThrowIfNull(calibrations);
+
+        var map = new Dictionary<KeyId, CalibrationCurve>(calibrations.Count);
+        for (var i = 0; i < calibrations.Count; i++)
+        {
+            var c = calibrations[i];
+            map[c.Key] = new CalibrationCurve(
+                Rest: c.RestValue,
+                Max: c.MaxPressValue,
+                NoiseBand: c.NoiseBand,
+                Kind: NormalizationKind.Linear);
+        }
+
+        return map;
     }
 
     private static DeviceAdapterDescriptor Parse(string json)

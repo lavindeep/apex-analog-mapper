@@ -19,6 +19,7 @@ public sealed class HidAnalogProbe : IHidAnalogProbe
     private readonly KeyStateStore _store;
     private readonly int _reportLength;
     private readonly int _consecutiveFailureThreshold;
+    private readonly IReadOnlyList<KeyCalibration>? _calibrations;
 
     private readonly object _lifecycleLock = new();
     private readonly object _statusLock = new();
@@ -30,12 +31,20 @@ public sealed class HidAnalogProbe : IHidAnalogProbe
     private BackendStatus _status = BackendStatus.Stopped;
     private int _disposed;
 
+    /// <param name="calibrations">
+    /// Persisted per-device calibration for the selected device (from the device
+    /// registry), applied over the adapter's default curves. Null or empty leaves
+    /// the adapter defaults in place. The composition root (phase-4) is
+    /// responsible for handing this probe the calibration list that belongs to
+    /// the device it is opening.
+    /// </param>
     public HidAnalogProbe(
         IHidDevice device,
         DeviceAdapterDescriptor adapter,
         KeyStateStore store,
         int reportLength,
-        int consecutiveFailureThreshold = 5)
+        int consecutiveFailureThreshold = 5,
+        IReadOnlyList<KeyCalibration>? calibrations = null)
     {
         ArgumentNullException.ThrowIfNull(device);
         ArgumentNullException.ThrowIfNull(adapter);
@@ -55,6 +64,7 @@ public sealed class HidAnalogProbe : IHidAnalogProbe
         _store = store;
         _reportLength = reportLength;
         _consecutiveFailureThreshold = consecutiveFailureThreshold;
+        _calibrations = calibrations;
     }
 
     public DeviceIdentity Device => _device.Identity;
@@ -99,7 +109,10 @@ public sealed class HidAnalogProbe : IHidAnalogProbe
                 return Task.CompletedTask;
             }
 
-            var fields = DeviceAdapterStore.ToFields(_adapter);
+            var overrides = _calibrations is { Count: > 0 }
+                ? DeviceAdapterStore.ToCalibrationOverrides(_calibrations)
+                : null;
+            var fields = DeviceAdapterStore.ToFields(_adapter, overrides);
             var parser = new HidReportParser(fields, _adapter.ReportId);
             var loop = new HidPollLoop(
                 stream,
