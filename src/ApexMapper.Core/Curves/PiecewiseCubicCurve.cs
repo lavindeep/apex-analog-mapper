@@ -28,6 +28,20 @@ public sealed class PiecewiseCubicCurve : ICurve
                 throw new ArgumentException("X values must be strictly increasing.", nameof(points));
             }
         }
+        for (var i = 0; i < points.Count; i++)
+        {
+            if (points[i].Y < 0f || points[i].Y > 1f)
+            {
+                throw new ArgumentException("Y values must be within [0, 1].", nameof(points));
+            }
+        }
+        for (var i = 1; i < points.Count; i++)
+        {
+            if (points[i].Y < points[i - 1].Y)
+            {
+                throw new ArgumentException("Y values must be non-decreasing.", nameof(points));
+            }
+        }
 
         var n = points.Count;
         _xs = new float[n];
@@ -71,7 +85,15 @@ public sealed class PiecewiseCubicCurve : ICurve
         var m = new float[n];
         m[0] = d[0];
         m[^1] = d[^1];
-        for (var i = 1; i < n - 1; i++) m[i] = (d[i - 1] + d[i]) / 2f;
+        for (var i = 1; i < n - 1; i++)
+        {
+            // Fritsch-Carlson sign rule: at a local extremum or flat spot — adjacent secants
+            // of opposite sign, or either secant zero — the tangent must be zero to keep the
+            // interpolant monotone and free of overshoot.
+            m[i] = d[i - 1] == 0f || d[i] == 0f || MathF.Sign(d[i - 1]) != MathF.Sign(d[i])
+                ? 0f
+                : (d[i - 1] + d[i]) / 2f;
+        }
 
         for (var i = 0; i < n - 1; i++)
         {

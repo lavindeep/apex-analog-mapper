@@ -55,4 +55,33 @@ public class PiecewiseCubicCurveTests
         Action b = () => _ = new PiecewiseCubicCurve(new[] { (0.1f, 0f), (1f, 1f) });
         b.Should().Throw<ArgumentException>();
     }
+
+    [Fact]
+    public void Rejects_y_outside_unit_range()
+    {
+        Action high = () => _ = new PiecewiseCubicCurve(new[] { (0f, 0f), (0.5f, 1.5f), (1f, 1f) });
+        high.Should().Throw<ArgumentException>();
+
+        Action low = () => _ = new PiecewiseCubicCurve(new[] { (0f, -0.1f), (1f, 1f) });
+        low.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Rejects_non_monotone_y()
+    {
+        // Audit overshoot repro: falling y between control points must not construct.
+        Action a = () => _ = new PiecewiseCubicCurve(new[] { (0f, 0f), (0.5f, 0.8f), (1f, 0.4f) });
+        a.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Flat_then_steep_stays_below_control_points_no_overshoot()
+    {
+        // Segment [0.4, 0.6] is nearly flat while its neighbours are steep, driving the
+        // secant ratio s into (9, 90). The circle limiter must clamp the tangents so the
+        // interpolant does not bulge. Pins the clamped output tightly enough that weakening
+        // the limiter threshold from s>9 to s>90 (unclamped) is caught.
+        var curve = new PiecewiseCubicCurve(new[] { (0f, 0f), (0.4f, 0.35f), (0.6f, 0.4f), (1f, 1f) });
+        curve.Map(0.56f).Should().BeApproximately(0.38124f, 5e-4f);
+    }
 }
