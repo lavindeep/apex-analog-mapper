@@ -76,8 +76,11 @@ public class LogStoreTests : IDisposable
         log.Write(LogLevel.Info, "second line"); // pushes past maxBytes: exactly one rotation
         log.Flush();
 
+        // "app.log.*" also matches "app.log" itself (Win32 DOS wildcard semantics) and the
+        // active file is still held open by the writer — enumerate archive generations only.
         var archives = Directory.GetFiles(_dir, "app.log.*")
-            .Where(f => !f.EndsWith(".rotating", StringComparison.Ordinal))
+            .Where(f => !f.EndsWith(".rotating", StringComparison.Ordinal)
+                && !string.Equals(Path.GetFileName(f), "app.log", StringComparison.Ordinal))
             .Select(File.ReadAllText);
         archives.Should().Contain(
             c => c.Contains("stranded generation"),
