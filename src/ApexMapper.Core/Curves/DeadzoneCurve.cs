@@ -15,6 +15,16 @@ public sealed class DeadzoneCurve : ICurve
                 $"Invalid deadzones: inner={innerDeadzone}, outer={outerDeadzone}. " +
                 "Required: 0 <= inner < outer <= 1.");
         }
+
+        // The inner curve is stretched across [inner, outer] and clamped to 1 at and beyond the
+        // outer edge. Unless the inner curve itself reaches 1 at its top, the output jumps
+        // discontinuously at the boundary; reject such a curve rather than ship the cliff.
+        if (MathF.Abs(inner.Map(1f) - 1f) > 1e-4f)
+        {
+            throw new ArgumentException(
+                $"Inner curve must reach 1 at input 1 for boundary continuity; got {inner.Map(1f)}.",
+                nameof(inner));
+        }
         _inner = inner;
         _innerDeadzone = innerDeadzone;
         _outerDeadzone = outerDeadzone;
