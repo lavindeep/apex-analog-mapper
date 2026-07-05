@@ -161,11 +161,16 @@ public sealed class InputHost : IAsyncDisposable
 
     private void OnRawDeviceChanged(object? sender, RawInputDeviceChanged e)
     {
-        if (e.Attached)
+        if (!e.Attached)
         {
-            try { _deviceSelector.Refresh(); }
-            catch (Exception ex) { _log?.Warn("device selector refresh failed: " + ex.Message); }
+            // Unplug mid-press must not leave keys latched. Device-identity
+            // filtering is a separate upcoming change; until then any keyboard
+            // detach sweeps all held keys — a safe over-approximation.
+            _store.GateHeldKeys();
         }
+
+        try { _deviceSelector.Refresh(); }
+        catch (Exception ex) { _log?.Warn("device selector refresh failed: " + ex.Message); }
     }
 
     private void OnDeviceTopologyChanged(object? sender, DeviceTopologyChanged e)

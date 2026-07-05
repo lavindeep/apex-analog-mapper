@@ -370,4 +370,33 @@ public class InputHostTests
         host.Drain(10);
         store.Get(key).Value.Should().Be(1f);
     }
+
+    [Fact]
+    public async Task Device_detach_sweeps_held_keys_to_zero()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var devA = MakeDevice("dev://a", "SN-A");
+        var selector = MakeSelector(devA);
+        var store = new KeyStateStore();
+        var key = KeyId.FromScanCode(0x1E);
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 0));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+
+        // Unplug mid-press: the held key must not stay latched at full.
+        raw.Push(new RawInputDeviceChanged(devA.Identity, Attached: false, devA.DevicePath));
+
+        store.Get(key).Value.Should().Be(0f);
+        store.IsGated(key).Should().BeTrue();
+
+        // A subsequent auto-repeat down must not re-press.
+        raw.Push(new RawKeyEvent(0x1E, true, 2, 0));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(0f);
+    }
 }
