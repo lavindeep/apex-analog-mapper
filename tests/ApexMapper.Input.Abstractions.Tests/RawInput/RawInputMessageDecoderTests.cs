@@ -18,12 +18,17 @@ public class RawInputMessageDecoderTests
         return bytes;
     }
 
+    // Each stateless case uses a fresh decoder; only the Pause sequence needs a
+    // shared instance to carry the E1 lead-in state across two decodes.
+    private static bool Decode(byte[] buffer, int deviceId, long timestampTicks, out RawKeyEvent ev)
+        => new RawInputMessageDecoder().TryDecode(buffer, deviceId, timestampTicks, out ev);
+
     [Fact]
     public void Normal_key_down_decodes_scancode_and_isdown_true()
     {
         var buffer = RawKeyboard(makeCode: 0x1E, flags: 0);
 
-        var ok = RawInputMessageDecoder.TryDecode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
 
         ok.Should().BeTrue();
         ev.ScanCode.Should().Be((ushort)0x001E);
@@ -35,7 +40,7 @@ public class RawInputMessageDecoderTests
     {
         var buffer = RawKeyboard(makeCode: 0x1E, flags: RI_KEY_BREAK);
 
-        var ok = RawInputMessageDecoder.TryDecode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
 
         ok.Should().BeTrue();
         ev.ScanCode.Should().Be((ushort)0x001E);
@@ -47,7 +52,7 @@ public class RawInputMessageDecoderTests
     {
         var buffer = RawKeyboard(makeCode: 0x4D, flags: RI_KEY_E0);
 
-        var ok = RawInputMessageDecoder.TryDecode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
 
         ok.Should().BeTrue();
         ev.ScanCode.Should().Be((ushort)0xE04D);
@@ -59,7 +64,7 @@ public class RawInputMessageDecoderTests
     {
         var buffer = RawKeyboard(makeCode: 0x4D, flags: (ushort)(RI_KEY_E0 | RI_KEY_BREAK));
 
-        var ok = RawInputMessageDecoder.TryDecode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
 
         ok.Should().BeTrue();
         ev.ScanCode.Should().Be((ushort)0xE04D);
@@ -71,7 +76,7 @@ public class RawInputMessageDecoderTests
     {
         var buffer = RawKeyboard(makeCode: 0x1D, flags: RI_KEY_E1);
 
-        var ok = RawInputMessageDecoder.TryDecode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
 
         ok.Should().BeTrue();
         ev.ScanCode.Should().Be((ushort)0xE11D);
@@ -83,7 +88,7 @@ public class RawInputMessageDecoderTests
     {
         var buffer = RawKeyboard(makeCode: 0xFF, flags: 0);
 
-        var ok = RawInputMessageDecoder.TryDecode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
 
         ok.Should().BeFalse();
         ev.Should().Be(default(RawKeyEvent));
@@ -94,7 +99,7 @@ public class RawInputMessageDecoderTests
     {
         var buffer = RawKeyboard(makeCode: 0x0000, flags: 0);
 
-        var ok = RawInputMessageDecoder.TryDecode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
 
         ok.Should().BeFalse();
         ev.Should().Be(default(RawKeyEvent));
@@ -105,7 +110,7 @@ public class RawInputMessageDecoderTests
     {
         var buffer = RawKeyboard(makeCode: 0x1E, flags: 0);
 
-        var ok = RawInputMessageDecoder.TryDecode(buffer, deviceId: 0x4_0000, timestampTicks: 12345L, out var ev);
+        var ok = Decode(buffer, deviceId: 0x4_0000, timestampTicks: 12345L, out var ev);
 
         ok.Should().BeTrue();
         ev.TimestampTicks.Should().Be(12345L);
@@ -117,7 +122,7 @@ public class RawInputMessageDecoderTests
     {
         var shortBuffer = new byte[3];
 
-        var ok = RawInputMessageDecoder.TryDecode(shortBuffer, deviceId: 0, timestampTicks: 0, out var ev);
+        var ok = Decode(shortBuffer, deviceId: 0, timestampTicks: 0, out var ev);
 
         ok.Should().BeFalse();
         ev.Should().Be(default(RawKeyEvent));
@@ -128,7 +133,88 @@ public class RawInputMessageDecoderTests
     {
         var buffer = RawKeyboard(makeCode: 0x011E, flags: 0);
 
-        var ok = RawInputMessageDecoder.TryDecode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+
+        ok.Should().BeTrue();
+        ev.ScanCode.Should().Be((ushort)0x001E);
+    }
+
+    [Theory]
+    [InlineData((ushort)0x2A)] // E0 2A fake LeftShift
+    [InlineData((ushort)0x36)] // E0 36 fake RightShift
+    public void E0_fake_shift_make_is_swallowed(ushort makeCode)
+    {
+        var buffer = RawKeyboard(makeCode, flags: RI_KEY_E0);
+
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+
+        ok.Should().BeFalse();
+        ev.Should().Be(default(RawKeyEvent));
+    }
+
+    [Theory]
+    [InlineData((ushort)0x2A)]
+    [InlineData((ushort)0x36)]
+    public void E0_fake_shift_break_is_swallowed(ushort makeCode)
+    {
+        var buffer = RawKeyboard(makeCode, flags: (ushort)(RI_KEY_E0 | RI_KEY_BREAK));
+
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+
+        ok.Should().BeFalse();
+        ev.Should().Be(default(RawKeyEvent));
+    }
+
+    [Fact]
+    public void Real_left_shift_without_E0_still_decodes()
+    {
+        var buffer = RawKeyboard(makeCode: 0x2A, flags: 0);
+
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+
+        ok.Should().BeTrue();
+        ev.ScanCode.Should().Be((ushort)0x002A);
+    }
+
+    [Fact]
+    public void Pause_filler_numlock_scancode_is_swallowed_after_E1_lead_in()
+    {
+        // Pause arrives as E1 1D (lead-in) then a bare 0x45 (== NumLock's scancode).
+        var decoder = new RawInputMessageDecoder();
+
+        var leadIn = RawKeyboard(makeCode: 0x1D, flags: RI_KEY_E1);
+        decoder.TryDecode(leadIn, deviceId: 0, timestampTicks: 0, out var leadEv).Should().BeTrue();
+        leadEv.ScanCode.Should().Be((ushort)0xE11D);
+
+        var filler = RawKeyboard(makeCode: 0x45, flags: 0);
+        var ok = decoder.TryDecode(filler, deviceId: 0, timestampTicks: 0, out var fillerEv);
+
+        ok.Should().BeFalse();
+        fillerEv.Should().Be(default(RawKeyEvent));
+    }
+
+    [Fact]
+    public void Standalone_numlock_decodes_when_no_pause_lead_in_precedes_it()
+    {
+        var buffer = RawKeyboard(makeCode: 0x45, flags: 0);
+
+        var ok = Decode(buffer, deviceId: 0, timestampTicks: 0, out var ev);
+
+        ok.Should().BeTrue();
+        ev.ScanCode.Should().Be((ushort)0x0045);
+    }
+
+    [Fact]
+    public void Pause_lead_in_does_not_swallow_a_following_non_filler_key()
+    {
+        var decoder = new RawInputMessageDecoder();
+
+        var leadIn = RawKeyboard(makeCode: 0x1D, flags: RI_KEY_E1);
+        decoder.TryDecode(leadIn, deviceId: 0, timestampTicks: 0, out _).Should().BeTrue();
+
+        // A normal key right after the lead-in must pass through untouched.
+        var normal = RawKeyboard(makeCode: 0x1E, flags: 0);
+        var ok = decoder.TryDecode(normal, deviceId: 0, timestampTicks: 0, out var ev);
 
         ok.Should().BeTrue();
         ev.ScanCode.Should().Be((ushort)0x001E);

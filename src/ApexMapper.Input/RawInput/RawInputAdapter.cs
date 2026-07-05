@@ -17,6 +17,9 @@ public sealed class RawInputAdapter : IRawInputAdapter
     // Touched only on the pump thread (WM_INPUT / WM_INPUT_DEVICE_CHANGE).
     private readonly RawInputDeviceIdMap _deviceIds = new();
 
+    // Stateful decoder (Pause/Break lead-in tracking); pump thread only.
+    private readonly RawInputMessageDecoder _decoder = new();
+
     private Thread? _pumpThread;
     private uint _pumpThreadId;
     private int _started;
@@ -231,7 +234,7 @@ public sealed class RawInputAdapter : IRawInputAdapter
         var keyboardSpan = new ReadOnlySpan<byte>(p + keyboardOffset, keyboardLength);
         var deviceId = _deviceIds.GetOrAdd(header.Device);
         var timestamp = Stopwatch.GetTimestamp();
-        if (RawInputMessageDecoder.TryDecode(keyboardSpan, deviceId, timestamp, out var ev))
+        if (_decoder.TryDecode(keyboardSpan, deviceId, timestamp, out var ev))
         {
             _ring.TryEnqueue(in ev);
         }
