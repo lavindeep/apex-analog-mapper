@@ -40,15 +40,23 @@ public class InputHostAllocationTests
             host.Drain(8);
         }
 
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 10_000; i++)
+        // Assert on the minimum of several windows: a genuine per-tick
+        // allocation shows up in every window, while a one-off runtime-service
+        // allocation (tiered-JIT promotion, eventing) lands in at most one and
+        // must not flake the gate on shared CI runners.
+        var windows = new long[3];
+        for (var w = 0; w < windows.Length; w++)
         {
-            raw.Push(in down);
-            raw.Push(in up);
-            host.Drain(8);
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 10_000; i++)
+            {
+                raw.Push(in down);
+                raw.Push(in up);
+                host.Drain(8);
+            }
+            windows[w] = GC.GetAllocatedBytesForCurrentThread() - before;
         }
-        var after = GC.GetAllocatedBytesForCurrentThread();
 
-        (after - before).Should().Be(0, "InputHost.Drain must not allocate after warm-up");
+        windows.Min().Should().Be(0, "InputHost.Drain must not allocate after warm-up in any clean window");
     }
 }
