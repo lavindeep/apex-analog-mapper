@@ -44,11 +44,48 @@ public class ProfileResolverTests
     public void Window_title_beats_generic()
     {
         var generic = MakeProfile("generic", new GameMatcher(null, null, null));
-        var titled = MakeProfile("titled", new GameMatcher(null, "Forza.*", null));
+        var titled = MakeProfile("titled", new GameMatcher(null, "Forza Horizon 5", null));
         var resolver = new ProfileResolver(new[] { generic, titled });
 
         var ctx = new ForegroundContext("game.exe", "Forza Horizon 5", null);
         resolver.Resolve(ctx, manualPinId: null).Should().Be(titled);
+    }
+
+    [Fact]
+    public void Window_title_matches_case_insensitively()
+    {
+        var generic = MakeProfile("generic", new GameMatcher(null, null, null));
+        var titled = MakeProfile("titled", new GameMatcher(null, "Forza Horizon 5", null));
+        var resolver = new ProfileResolver(new[] { generic, titled });
+
+        var ctx = new ForegroundContext("game.exe", "forza horizon 5", null);
+        resolver.Resolve(ctx, manualPinId: null).Should().Be(titled);
+    }
+
+    [Fact]
+    public void Window_title_requires_exact_equality_not_substring()
+    {
+        // "Forza" would have matched the old unanchored regex against this title; exact
+        // equality no longer treats it as a match.
+        var generic = MakeProfile("generic", new GameMatcher(null, null, null));
+        var titled = MakeProfile("titled", new GameMatcher(null, "Forza", null));
+        var resolver = new ProfileResolver(new[] { generic, titled });
+
+        var ctx = new ForegroundContext("game.exe", "Forza Horizon 5", null);
+        resolver.Resolve(ctx, manualPinId: null).Should().Be(generic);
+    }
+
+    [Fact]
+    public void Malformed_window_title_string_never_throws()
+    {
+        // An unbalanced-bracket string was a fatal regex before; it is now just a title that
+        // does not equal the foreground title, and Resolve completes without throwing.
+        var generic = MakeProfile("generic", new GameMatcher(null, null, null));
+        var titled = MakeProfile("titled", new GameMatcher(null, "[unclosed(group", null));
+        var resolver = new ProfileResolver(new[] { generic, titled });
+
+        var ctx = new ForegroundContext("game.exe", "Some Window", null);
+        resolver.Resolve(ctx, manualPinId: null).Should().Be(generic);
     }
 
     [Fact]

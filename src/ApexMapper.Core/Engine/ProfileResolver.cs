@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace ApexMapper.Core.Engine;
 
 public sealed class ProfileResolver
@@ -44,7 +42,10 @@ public sealed class ProfileResolver
 
         if (g.WindowTitlePattern is not null && ctx.WindowTitle is not null)
         {
-            if (Regex.IsMatch(ctx.WindowTitle, g.WindowTitlePattern, RegexOptions.IgnoreCase))
+            // Spec: exact (case-insensitive) window-title equality — never a substring or regex
+            // match, which would misfire on unrelated windows and could throw on a malformed
+            // pattern mid-resolve.
+            if (string.Equals(g.WindowTitlePattern, ctx.WindowTitle, StringComparison.OrdinalIgnoreCase))
                 return ProfilePrecedence.WindowTitle;
         }
 
