@@ -35,8 +35,6 @@ internal static class ProfileMigrator
         return node.ToJsonString();
     }
 
-    public static bool CanMigrate(int version) => version >= 1 && version <= ProfileStore.CurrentSchemaVersion;
-
     /// <summary>
     /// Advances <paramref name="json"/> from <paramref name="fromVersion"/> up to
     /// <paramref name="toVersion"/> by applying each registered forward step in order. Returns the
