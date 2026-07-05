@@ -213,6 +213,8 @@ public class ProfileStoreRecoveryTests : IDisposable
     [InlineData("[[0,0],[0.5,1.5],[1,1]]")]
     // Non-monotone (falling) y.
     [InlineData("[[0,0],[0.5,0.8],[1,0.4]]")]
+    // Top control point below 1: un-round-trippable (deadzone continuity cliff).
+    [InlineData("[[0,0],[1,0.6]]")]
     // Malformed control point (three elements).
     [InlineData("[[0,0,0],[1,1]]")]
     public void Parse_rejects_an_invalid_curve_as_corrupt(string curveJson)

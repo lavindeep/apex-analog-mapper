@@ -67,6 +67,16 @@ public class PiecewiseCubicCurveTests
     }
 
     [Fact]
+    public void Rejects_a_top_control_point_below_one()
+    {
+        // A curve whose last point does not reach 1 cannot round-trip: composing it into a
+        // DeadzoneCurve fails the outer-edge continuity check. Reject it at construction so an
+        // un-round-trippable curve is unrepresentable.
+        Action a = () => _ = new PiecewiseCubicCurve(new[] { (0f, 0f), (1f, 0.6f) });
+        a.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void Rejects_non_monotone_y()
     {
         // Audit overshoot repro: falling y between control points must not construct.

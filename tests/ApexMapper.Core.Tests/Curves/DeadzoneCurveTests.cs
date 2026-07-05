@@ -45,11 +45,18 @@ public class DeadzoneCurveTests
     [Fact]
     public void Rejects_inner_curve_that_does_not_reach_one()
     {
-        // Audit repro: an inner curve ending below 1 leaves a discontinuous jump at the
-        // outer edge (0.5999 -> 1.0). It must be rejected at construction.
-        var endsAtPointSix = new PiecewiseCubicCurve(new[] { (0f, 0f), (1f, 0.6f) });
+        // An inner curve ending below 1 leaves a discontinuous jump at the outer edge
+        // (0.6 -> 1.0). It must be rejected at construction.
+        var endsAtPointSix = new ConstantCurve(0.6f);
         Action a = () => _ = new DeadzoneCurve(endsAtPointSix, innerDeadzone: 0f, outerDeadzone: 1f);
         a.Should().Throw<ArgumentException>();
+    }
+
+    private sealed class ConstantCurve : ICurve
+    {
+        private readonly float _value;
+        public ConstantCurve(float value) => _value = value;
+        public float Map(float input) => _value;
     }
 
     [Fact]

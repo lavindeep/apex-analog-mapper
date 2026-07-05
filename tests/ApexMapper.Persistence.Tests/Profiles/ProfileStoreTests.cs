@@ -77,6 +77,27 @@ public class ProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public void Save_never_produces_a_file_its_own_LoadAll_quarantines()
+    {
+        // A curve that survives construction must survive its own round-trip: Save must never
+        // emit a file the next LoadAll would classify corrupt and quarantine.
+        var cubic = new PiecewiseCubicCurve(new[] { (0f, 0f), (0.5f, 0.3f), (1f, 1f) });
+        var profile = SampleProfile() with
+        {
+            SingleBindings = new[]
+            {
+                new SingleKeyBinding(KeyId.FromScanCode(0x11), BindingTarget.RightTrigger, cubic, 0f, 0f),
+            },
+        };
+        var store = new ProfileStore(new ProfileStoreOptions(_dir));
+        store.Save(profile);
+
+        store.LoadAll(out var reports);
+
+        reports.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Save_writes_one_file_per_profile()
     {
         var store = new ProfileStore(new ProfileStoreOptions(_dir));

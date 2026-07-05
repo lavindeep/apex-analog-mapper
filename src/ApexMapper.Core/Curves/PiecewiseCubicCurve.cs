@@ -35,6 +35,14 @@ public sealed class PiecewiseCubicCurve : ICurve
                 throw new ArgumentException("Y values must be within [0, 1].", nameof(points));
             }
         }
+        // The top point must reach 1 (same tolerance the deadzone continuity check uses): a
+        // curve topping out below 1 leaves a discontinuous jump when wrapped in a DeadzoneCurve,
+        // so it can never round-trip through persistence. A low first point is allowed — that is
+        // a deliberate anti-deadzone offset, not a boundary cliff.
+        if (MathF.Abs(points[^1].Y - 1f) > 1e-4f)
+        {
+            throw new ArgumentException("The last control point's Y must be 1.", nameof(points));
+        }
         for (var i = 1; i < points.Count; i++)
         {
             if (points[i].Y < points[i - 1].Y)
