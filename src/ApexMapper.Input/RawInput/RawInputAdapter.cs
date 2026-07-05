@@ -209,7 +209,9 @@ public sealed class RawInputAdapter : IRawInputAdapter
         {
             case WM_INPUT:
                 HandleRawInput(lParam);
-                handled = true;
+                // WM_INPUT's contract requires the app to call DefWindowProc for
+                // cleanup, so leave handled = false to let HwndSource forward it to
+                // the original window proc after we have read the payload.
                 return IntPtr.Zero;
 
             case WM_INPUT_DEVICE_CHANGE:
