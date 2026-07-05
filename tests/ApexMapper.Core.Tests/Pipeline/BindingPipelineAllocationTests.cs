@@ -33,4 +33,36 @@ public class BindingPipelineAllocationTests
 
         (after - before).Should().Be(0, "BindingPipeline.Tick must not allocate after warm-up");
     }
+
+    [Fact]
+    public void Steady_state_tick_does_not_allocate_with_a_shaped_curve_and_stronger_analog_socd()
+    {
+        var shaped = new DeadzoneCurve(
+            new PiecewiseCubicCurve(new[] { (0f, 0f), (0.5f, 0.3f), (1f, 1f) }),
+            innerDeadzone: 0.1f,
+            outerDeadzone: 0.9f);
+        var singles = new[]
+        {
+            new SingleKeyBinding(KeyId.FromScanCode(0x11), BindingTarget.RightTrigger, shaped, 120f, 0f),
+        };
+        var axes = new[]
+        {
+            new AxisPairBinding(KeyId.FromScanCode(0x1E), KeyId.FromScanCode(0x20), BindingTarget.LeftStickX, shaped, 80f, 80f, SocdMode.StrongerAnalogWins),
+        };
+        var pipeline = new BindingPipeline(singles, axes);
+        var store = new KeyStateStore();
+        store.Set(KeyId.FromScanCode(0x11), 1f, KeyProvenance.Digital);
+        // Both axis sides active so the stronger-analog hysteresis path runs every tick.
+        store.Set(KeyId.FromScanCode(0x1E), 0.6f, KeyProvenance.Analog);
+        store.Set(KeyId.FromScanCode(0x20), 0.8f, KeyProvenance.Analog);
+
+        var pad = default(VirtualPadState);
+        for (var i = 0; i < 1000; i++) pipeline.Tick(store, 1f, ref pad);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 10_000; i++) pipeline.Tick(store, 1f, ref pad);
+        var after = GC.GetAllocatedBytesForCurrentThread();
+
+        (after - before).Should().Be(0, "shaped-curve + stronger-analog SOCD tick must not allocate after warm-up");
+    }
 }
