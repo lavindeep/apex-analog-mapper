@@ -75,4 +75,49 @@ public class ProfileStoreTests : IDisposable
         var store = new ProfileStore(new ProfileStoreOptions(_dir));
         store.LoadAll().Should().BeEmpty();
     }
+
+    private const string LegacyV1Json = """
+        {
+          "version": 1,
+          "payload": {
+            "id": "legacy",
+            "name": "Legacy",
+            "device": { "vendor_id": 4152, "product_id": 5660, "serial_number": null, "product_name_pattern": null },
+            "game": { "executable_name": null, "window_title_pattern": null, "steam_app_id": null },
+            "activation": { "scope": "foreground_only", "focus_loss_debounce_ms": 500, "auto_enable": false, "requires_opt_in_for_protected_games": true },
+            "single_bindings": [
+              { "source": { "scan_code": 17 }, "target": "right_trigger", "curve": null, "press_ramp_ms": 120, "release_ramp_ms": 0 }
+            ],
+            "axis_bindings": [],
+            "notes": null
+          }
+        }
+        """;
+
+    [Fact]
+    public void LoadAll_migrates_a_v1_document_to_a_usable_profile()
+    {
+        File.WriteAllText(Path.Combine(_dir, "legacy.json"), LegacyV1Json);
+        var store = new ProfileStore(new ProfileStoreOptions(_dir));
+
+        var loaded = store.LoadAll();
+
+        loaded.Should().ContainSingle();
+        loaded[0].Id.Should().Be("legacy");
+        loaded[0].SingleBindings.Should().ContainSingle(b => b.Target == BindingTarget.RightTrigger);
+    }
+
+    [Fact]
+    public void LoadAll_migrates_lazily_and_leaves_the_v1_file_untouched_on_disk()
+    {
+        var path = Path.Combine(_dir, "legacy.json");
+        File.WriteAllText(path, LegacyV1Json);
+        var store = new ProfileStore(new ProfileStoreOptions(_dir));
+
+        store.LoadAll();
+
+        // Migration is applied in memory only; the on-disk file is rewritten to the current
+        // schema on the next Save, not during load.
+        File.ReadAllText(path).Should().Contain("\"version\": 1");
+    }
 }

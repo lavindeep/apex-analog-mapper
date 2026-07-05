@@ -10,7 +10,7 @@ namespace ApexMapper.Persistence.Profiles;
 
 public sealed class ProfileStore
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     private static readonly JsonSerializerOptions Options = CreateOptions();
 

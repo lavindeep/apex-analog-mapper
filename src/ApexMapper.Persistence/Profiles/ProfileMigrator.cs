@@ -1,16 +1,30 @@
+using System.Text.Json.Nodes;
+
 namespace ApexMapper.Persistence.Profiles;
 
 /// <summary>
 /// Forward-only migration pipeline for versioned profile documents. Each step transforms a
-/// document's raw JSON from one schema version to the next. There are no historical versions to
-/// migrate yet, so the production step set is empty; the plumbing is exercised via the
-/// <see cref="Migrate(string, int, int, IReadOnlyDictionary{int, Func{string, string}})"/>
-/// overload with injected steps.
+/// document's raw JSON from one schema version to the next. The v1 -> v2 step only bumps the
+/// version header: v2 added the optional per-binding <c>inner_deadzone</c>, <c>outer_deadzone</c>
+/// and <c>curve</c> fields, all of which default when absent, so a v1 payload is already a valid
+/// v2 payload.
 /// </summary>
 internal static class ProfileMigrator
 {
     private static readonly IReadOnlyDictionary<int, Func<string, string>> Steps
-        = new Dictionary<int, Func<string, string>>();
+        = new Dictionary<int, Func<string, string>>
+        {
+            [1] = BumpVersionTo2,
+        };
+
+    // v1 payloads are structurally valid v2 payloads; only the version header advances.
+    private static string BumpVersionTo2(string json)
+    {
+        var node = JsonNode.Parse(json)
+            ?? throw new InvalidOperationException("Cannot migrate a null profile document.");
+        node["version"] = 2;
+        return node.ToJsonString();
+    }
 
     public static bool CanMigrate(int version) => version >= 1 && version <= ProfileStore.CurrentSchemaVersion;
 
