@@ -4,6 +4,7 @@ using ApexMapper.Core.Curves;
 using ApexMapper.Core.Engine;
 using ApexMapper.Persistence.Atomic;
 using ApexMapper.Persistence.Json;
+using ApexMapper.Persistence.Recovery;
 
 namespace ApexMapper.Persistence.Profiles;
 
@@ -17,14 +18,27 @@ public sealed class ProfileStore
 
     public ProfileStore(ProfileStoreOptions options) => _options = options;
 
-    public IReadOnlyList<Profile> LoadAll()
+    public IReadOnlyList<Profile> LoadAll() => LoadAll(out _);
+
+    /// <summary>
+    /// Loads every profile in the directory, recovering corrupt files from their rolling
+    /// backups where possible. <paramref name="recoveries"/> receives one entry per file that
+    /// was recovered, quarantined, or skipped as a newer schema; clean loads produce no entry.
+    /// </summary>
+    public IReadOnlyList<Profile> LoadAll(out IReadOnlyList<RecoveryReport> recoveries)
     {
         System.IO.Directory.CreateDirectory(_options.Directory);
+        AtomicFile.SweepStaleTemps(_options.Directory);
         var result = new List<Profile>();
-        foreach (var file in System.IO.Directory.EnumerateFiles(_options.Directory, "*.json"))
+        var reports = new List<RecoveryReport>();
+        // Materialize first: recovery renames files (quarantine/restore) mid-scan.
+        foreach (var file in System.IO.Directory.GetFiles(_options.Directory, "*.json"))
         {
-            if (TryLoad(file, out var p)) result.Add(p);
+            var (loaded, value, report) = FileRecovery.Load(file, _options.BackupCount, Parse);
+            if (report is not null) reports.Add(report);
+            if (loaded) result.Add(value!);
         }
+        recoveries = reports;
         return result;
     }
 
@@ -53,21 +67,27 @@ public sealed class ProfileStore
         }
     }
 
-    private static bool TryLoad(string path, out Profile profile)
+    internal static ParseResult<Profile> Parse(string text)
     {
-        profile = null!;
+        VersionedDocument<Profile>? doc;
         try
         {
-            var text = File.ReadAllText(path);
-            var doc = JsonSerializer.Deserialize<VersionedDocument<Profile>>(text, Options);
-            if (doc is null || doc.Version != CurrentSchemaVersion || doc.Payload is null) return false;
-            profile = doc.Payload;
-            return true;
+            doc = JsonSerializer.Deserialize<VersionedDocument<Profile>>(text, Options);
         }
         catch
         {
-            return false;
+            return new ParseResult<Profile>(ParseStatus.Corrupt, null);
         }
+
+        if (doc is null || doc.Payload is null || doc.Version <= 0)
+            return new ParseResult<Profile>(ParseStatus.Corrupt, null);
+        if (doc.Version == CurrentSchemaVersion)
+            return new ParseResult<Profile>(ParseStatus.Ok, doc.Payload);
+        if (doc.Version > CurrentSchemaVersion)
+            return new ParseResult<Profile>(ParseStatus.NewerSchema, null);
+
+        // 0 < version < current: forward migration is wired in a later step; treat as unusable for now.
+        return new ParseResult<Profile>(ParseStatus.Corrupt, null);
     }
 
     private static JsonSerializerOptions CreateOptions()
