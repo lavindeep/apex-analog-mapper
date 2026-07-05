@@ -100,7 +100,8 @@ public sealed class ProfileStore
     private static ParseStatus ReadStatus(string path)
     {
         try { return Parse(File.ReadAllText(path)).Status; }
-        catch { return ParseStatus.Corrupt; }
+        catch (Exception e) when (e is JsonException or ArgumentException)
+        { return ParseStatus.Corrupt; }
     }
 
     internal static ParseResult<Profile> Parse(string text) => Parse(text, ProfileMigrator.Migrate);
@@ -145,7 +146,7 @@ public sealed class ProfileStore
                 ? new ParseResult<Profile>(ParseStatus.Corrupt, null)
                 : new ParseResult<Profile>(ParseStatus.Ok, doc.Payload);
         }
-        catch
+        catch (Exception e) when (e is JsonException or ArgumentException)
         {
             return new ParseResult<Profile>(ParseStatus.Corrupt, null);
         }
