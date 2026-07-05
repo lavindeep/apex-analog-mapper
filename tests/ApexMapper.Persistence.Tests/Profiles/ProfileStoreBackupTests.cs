@@ -52,4 +52,31 @@ public class ProfileStoreBackupTests : IDisposable
         store.Save(Make("racing"));
         Directory.GetFiles(_dir, "*.bak.*").Should().BeEmpty();
     }
+
+    [Fact]
+    public void Rotation_drops_backups_beyond_the_keep_count()
+    {
+        var path = Path.Combine(_dir, "racing.json");
+        var store = new ProfileStore(new ProfileStoreOptions(_dir, BackupCount: 2));
+        store.Save(Make("racing"));
+        // Plant a stray over-count backup as if the keep-count had been higher before.
+        File.WriteAllText(path + ".bak.3", "stale");
+        store.Save(Make("racing"));
+        File.Exists(path + ".bak.3").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Newest_backup_holds_the_previous_primary_content()
+    {
+        var path = Path.Combine(_dir, "racing.json");
+        var store = new ProfileStore(new ProfileStoreOptions(_dir, BackupCount: 3));
+        store.Save(Make("racing") with { Name = "first" });
+        var primaryAfterFirst = File.ReadAllText(path);
+        store.Save(Make("racing") with { Name = "second" });
+
+        // A single save consumes exactly one generation, and .bak.1 is the prior primary verbatim.
+        File.Exists(path + ".bak.2").Should().BeFalse();
+        File.ReadAllText(path + ".bak.1").Should().Be(primaryAfterFirst);
+        File.ReadAllText(path).Should().Contain("second");
+    }
 }

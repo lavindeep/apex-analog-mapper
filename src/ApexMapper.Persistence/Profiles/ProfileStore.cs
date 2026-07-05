@@ -31,32 +31,26 @@ public sealed class ProfileStore
     public void Save(Profile profile)
     {
         System.IO.Directory.CreateDirectory(_options.Directory);
+        AtomicFile.SweepStaleTemps(_options.Directory);
         var path = Path.Combine(_options.Directory, profile.Id + ".json");
-        if (File.Exists(path)) RotateBackups(path);
 
         var doc = new VersionedDocument<Profile>(CurrentSchemaVersion, profile);
         var json = JsonSerializer.Serialize(doc, Options);
-        AtomicFile.WriteAllText(path, json);
-    }
 
-    private void RotateBackups(string path)
-    {
-        for (var i = _options.BackupCount; i >= 2; i--)
+        // Stage the new content durably first, so a failed write never consumes a backup
+        // generation. Only once the temp is written do we rotate the current primary into a
+        // backup and swap the new content in.
+        var tmp = AtomicFile.WriteTemp(path, json);
+        try
         {
-            var src = path + ".bak." + (i - 1);
-            var dst = path + ".bak." + i;
-            if (File.Exists(src))
-            {
-                if (File.Exists(dst)) File.Delete(dst);
-                File.Move(src, dst);
-            }
+            if (File.Exists(path)) BackupRotation.Rotate(path, _options.BackupCount);
+            AtomicFile.Commit(tmp, path);
         }
-        var firstBackup = path + ".bak.1";
-        if (File.Exists(firstBackup)) File.Delete(firstBackup);
-        File.Copy(path, firstBackup);
-
-        var overflow = path + ".bak." + (_options.BackupCount + 1);
-        if (File.Exists(overflow)) File.Delete(overflow);
+        catch
+        {
+            AtomicFile.DiscardTemp(tmp);
+            throw;
+        }
     }
 
     private static bool TryLoad(string path, out Profile profile)
