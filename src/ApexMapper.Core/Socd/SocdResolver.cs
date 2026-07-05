@@ -4,6 +4,11 @@ public static class SocdResolver
 {
     private const float ActiveThreshold = 1e-4f;
 
+    // StrongerAnalogWins hysteresis band, expressed in normalized axis depth. Once a side wins
+    // it keeps the axis until the opposing side leads by more than this margin, so sensor jitter
+    // around equality can no longer flap the output between the two sides (or to neutral).
+    private const float HysteresisBand = 0.02f;
+
     public static float Resolve(SocdMode mode, float negative, float positive, ref SocdState state)
     {
         var negActive = negative > ActiveThreshold;
@@ -25,6 +30,7 @@ public static class SocdResolver
         if (!negActive && !posActive)
         {
             state.LastActivated = SocdState.None;
+            state.StrongerWinner = SocdState.None;
         }
 
         state.PrevNegActive = negActive;
@@ -37,15 +43,42 @@ public static class SocdResolver
         return mode switch
         {
             SocdMode.Neutral => 0f,
-            SocdMode.StrongerAnalogWins => Math.Abs(positive - negative) < ActiveThreshold
-                ? 0f
-                : positive > negative ? positive : -negative,
+            SocdMode.StrongerAnalogWins => ResolveStrongerAnalog(negative, positive, ref state),
             SocdMode.LastInputWins => state.LastActivated switch
             {
                 SocdState.Positive => positive,
                 SocdState.Negative => -negative,
                 _ => 0f,
             },
+            _ => 0f,
+        };
+    }
+
+    // Both sides are active. Keep the current winner until the other side leads by more than the
+    // hysteresis band; with no established winner, require a clear lead before committing (an exact
+    // or sub-band tie stays neutral).
+    private static float ResolveStrongerAnalog(float negative, float positive, ref SocdState state)
+    {
+        var winner = state.StrongerWinner;
+        if (winner == SocdState.Positive)
+        {
+            if (negative - positive > HysteresisBand) winner = SocdState.Negative;
+        }
+        else if (winner == SocdState.Negative)
+        {
+            if (positive - negative > HysteresisBand) winner = SocdState.Positive;
+        }
+        else
+        {
+            if (positive - negative > HysteresisBand) winner = SocdState.Positive;
+            else if (negative - positive > HysteresisBand) winner = SocdState.Negative;
+        }
+
+        state.StrongerWinner = winner;
+        return winner switch
+        {
+            SocdState.Positive => positive,
+            SocdState.Negative => -negative,
             _ => 0f,
         };
     }
