@@ -11,6 +11,10 @@ internal static class FileRecovery
 {
     internal static (bool Loaded, T? Value, RecoveryReport? Report) Load<T>(
         string path, int backupCount, Func<string, ParseResult<T>> parse)
+        => Load(path, backupCount, parse, File.Move);
+
+    internal static (bool Loaded, T? Value, RecoveryReport? Report) Load<T>(
+        string path, int backupCount, Func<string, ParseResult<T>> parse, Action<string, string> move)
     {
         // A missing primary (crash between quarantine and restore, or accidental deletion)
         // falls through to the backup walk rather than short-circuiting to defaults.
@@ -28,7 +32,7 @@ internal static class FileRecovery
         }
 
         // Primary is corrupt: preserve it as evidence before attempting recovery.
-        Quarantine(path);
+        var quarantined = Quarantine(path, move);
 
         for (var i = 1; i <= backupCount; i++)
         {
@@ -37,9 +41,14 @@ internal static class FileRecovery
             var candidate = ReadAndParse(backup, parse);
             if (candidate.Status != ParseStatus.Ok) continue;
 
-            // Restore the good backup as the new primary.
-            try { AtomicFile.WriteAllBytes(path, File.ReadAllBytes(backup)); }
-            catch { /* best effort: the profile still loaded from the backup */ }
+            if (quarantined)
+            {
+                // Restore the good backup as the new primary.
+                try { AtomicFile.WriteAllBytes(path, File.ReadAllBytes(backup)); }
+                catch { /* best effort: the profile still loaded from the backup */ }
+            }
+            // else: the corrupt primary could not be moved aside and is the only evidence;
+            // recover in memory only and let the next load retry the quarantine.
             return (true, candidate.Value, new RecoveryReport(backup, RecoveryOutcome.RecoveredFromBackup));
         }
 
@@ -68,19 +77,31 @@ internal static class FileRecovery
     /// Moves the file at <paramref name="path"/> aside as <c>path.corrupt</c> evidence,
     /// replacing any older quarantine. Best effort: on failure the file stays in place.
     /// </summary>
-    internal static void Quarantine(string path)
+    internal static void Quarantine(string path) => Quarantine(path, File.Move);
+
+    /// <summary>
+    /// True when the file was moved aside (or was already gone); false when the rename
+    /// failed and the file is still in place as the only copy of the evidence.
+    /// </summary>
+    private static bool Quarantine(string path, Action<string, string> move)
     {
         // A missing primary may mean a previous quarantine already holds the evidence;
         // never touch the existing quarantine file in that case.
-        if (!File.Exists(path)) return;
+        if (!File.Exists(path)) return true;
 
         var quarantine = path + ".corrupt";
         try
         {
             // Overwrite an older quarantine, but never delete the current corrupt primary silently.
             if (File.Exists(quarantine)) File.Delete(quarantine);
-            File.Move(path, quarantine);
+            move(path, quarantine);
+            return true;
         }
-        catch { /* if we cannot quarantine, leave the primary in place rather than lose evidence */ }
+        catch
+        {
+            // Cannot move the evidence aside: leave the primary in place, and make sure the
+            // caller does not overwrite it with a restored backup.
+            return false;
+        }
     }
 }
