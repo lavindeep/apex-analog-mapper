@@ -44,4 +44,24 @@ public class LogStoreTests : IDisposable
         var files = Directory.GetFiles(_dir, "app.log*");
         files.Length.Should().BeLessThanOrEqualTo(2);
     }
+
+    [Fact]
+    public void Skips_rotation_and_counts_it_when_active_file_cannot_be_moved()
+    {
+        // Simulate a reader holding the active file: moving it aside throws IOException.
+        using var log = new LogStore(_dir, "app.log", maxBytes: 64, maxFiles: 3,
+            move: (_, _) => throw new IOException("active file is locked by a reader"));
+
+        Action write = () =>
+        {
+            for (var i = 0; i < 100; i++) log.Write(LogLevel.Info, "abcdefghij " + i);
+            log.Flush();
+        };
+
+        write.Should().NotThrow();
+        log.RotationSkips.Should().BeGreaterThan(0);
+        // Content keeps accumulating in the active file rather than being lost or archived.
+        File.Exists(Path.Combine(_dir, "app.log")).Should().BeTrue();
+        File.Exists(Path.Combine(_dir, "app.log.1")).Should().BeFalse();
+    }
 }
