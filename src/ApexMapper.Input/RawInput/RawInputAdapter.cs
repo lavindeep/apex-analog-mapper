@@ -39,6 +39,7 @@ public sealed class RawInputAdapter : IRawInputAdapter
     public Task StartAsync(CancellationToken ct)
     {
         Exception? faultToThrow = null;
+        OperationCanceledException? cancellation = null;
         var started = false;
         lock (_lifecycleLock)
         {
@@ -72,6 +73,27 @@ public sealed class RawInputAdapter : IRawInputAdapter
                 _status = BackendStatus.FaultedDigital;
                 faultToThrow = ae.InnerException;
             }
+            catch (OperationCanceledException oce)
+            {
+                // ready.Task.Wait(ct) throws OCE when the caller cancels. Left
+                // uncaught it would escape with _started still latched, the pump
+                // still alive, and Status frozen at Starting — freezing the adapter
+                // so a later StartAsync no-ops. Tear down like the failure path:
+                // best-effort signal the pump to exit (it may still be initializing,
+                // so its thread id can be 0), join it bounded, reset, and surface a
+                // terminal Stopped before rethrowing to honor the cancellation.
+                var pump = _pumpThread;
+                var pumpId = _pumpThreadId;
+                if (pump is not null && pumpId != 0)
+                {
+                    PostThreadMessageW(pumpId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+                    pump.Join(TimeSpan.FromSeconds(2));
+                }
+                _started = 0;
+                _pumpThread = null;
+                _status = BackendStatus.Stopped;
+                cancellation = oce;
+            }
         }
 
         // Raise transitions after releasing the lock: a StatusChanged handler
@@ -85,6 +107,11 @@ public sealed class RawInputAdapter : IRawInputAdapter
         {
             RaiseStatusChanged(BackendStatus.FaultedDigital, faultToThrow.Message);
             throw faultToThrow;
+        }
+        if (cancellation is not null)
+        {
+            RaiseStatusChanged(BackendStatus.Stopped, null);
+            throw cancellation;
         }
         if (started)
         {
