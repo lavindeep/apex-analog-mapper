@@ -52,8 +52,11 @@ internal sealed class HidSharpStreamAdapter : IHidStream
         var rented = ArrayPool<byte>.Shared.Rent(buffer.Length);
         try
         {
-            // HidSharp.GetFeature(buffer, offset, count) fills the buffer; copy the
-            // requested length back out.
+            // The pooled buffer arrives with arbitrary bytes. HidSharp reads
+            // buffer[0] as the report id being requested, so copy the caller's
+            // buffer in first (as SetFeature does) — this conveys the requested
+            // report id and a clean request payload instead of pool garbage.
+            buffer.CopyTo(rented);
             _stream.GetFeature(rented, 0, buffer.Length);
             new ReadOnlySpan<byte>(rented, 0, buffer.Length).CopyTo(buffer);
         }
