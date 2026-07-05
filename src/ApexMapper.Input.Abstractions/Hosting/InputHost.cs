@@ -196,21 +196,46 @@ public sealed class InputHost : IAsyncDisposable
     {
         lock (_deviceIdsLock)
         {
-            if (e.DevicePath.Length != 0)
+            if (e.Attached)
             {
-                if (e.Attached)
+                if (e.DevicePath.Length != 0)
                 {
                     _deviceIdsByPath[e.DevicePath] = (e.DeviceId, e.Device);
                 }
-                else
+            }
+            else
+            {
+                if (e.DevicePath.Length != 0)
                 {
                     _deviceIdsByPath.Remove(e.DevicePath);
+                }
+
+                // Windows removals often carry only the id — the path is
+                // unretrievable by removal time. Purge by id as well, or a
+                // stale path entry keeps resolving the vanished unit's id
+                // and its orphaned events stay admissible.
+                if (e.DeviceId != 0)
+                {
+                    foreach (var entry in _deviceIdsByPath)
+                    {
+                        if (entry.Value.Id == e.DeviceId)
+                        {
+                            _deviceIdsByPath.Remove(entry.Key);
+                        }
+                    }
                 }
             }
         }
 
         if (!e.Attached && IsSelectedDevice(e))
         {
+            // Fail-safe: stop admitting the vanished unit's events NOW. The
+            // HID enumerator can lag the raw-input removal, so the Refresh
+            // below may keep the selection alive; a later Refresh or attach
+            // reconciles and re-publishes the id. Publish the drop before
+            // sweeping so no event admitted after the sweep can re-latch.
+            _selectedDeviceId = 0;
+
             // The selected device vanishing mid-press must not leave keys
             // latched. A non-selected keyboard unplugging is not a mapping
             // transition and must not zero live input.

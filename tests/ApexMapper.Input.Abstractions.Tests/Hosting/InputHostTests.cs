@@ -674,6 +674,102 @@ public class InputHostTests
     }
 
     [Fact]
+    public async Task Id_only_removal_of_selected_device_drops_pending_and_future_events()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var dev = MakeDevice("dev://a", "SN-A");
+        var selector = MakeSelector(dev);
+        var store = new KeyStateStore();
+        var key = KeyId.FromScanCode(0x1E);
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, dev, deviceId: 1);
+
+        // The down is enqueued but not yet drained when the removal lands.
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 1));
+
+        // Windows-style removal: id only, no path. The HID enumerator lags
+        // the raw-input notification, so Refresh keeps the selection alive —
+        // the host must still stop admitting the vanished unit's events.
+        var unknownIdentity = new DeviceIdentity(0, 0, null, null, null);
+        raw.Push(new RawInputDeviceChanged(unknownIdentity, Attached: false, DevicePath: "", DeviceId: 1));
+
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(0f);
+
+        // Later events under the orphaned id must keep being dropped.
+        raw.Push(new RawKeyEvent(0x1E, true, 2, 1));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(0f);
+    }
+
+    [Fact]
+    public async Task Id_only_removal_purges_stale_map_entry_so_replug_rebinds()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var dev = MakeDevice("dev://a", "SN-A");
+        var selector = MakeSelector(dev);
+        var store = new KeyStateStore();
+        var key = KeyId.FromScanCode(0x1E);
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+
+        // The adapter announces the device under a raw-input path whose form
+        // differs from the enumerator's, so binding goes through the VID/PID
+        // fallback rather than the exact-path lookup.
+        raw.Push(new RawInputDeviceChanged(dev.Identity, Attached: true, "raw://kbd/1", DeviceId: 1));
+        selector.Select(dev);
+
+        raw.Push(new RawKeyEvent(0x1E, true, 1, 1));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+
+        // Id-only removal, then a replug under a fresh raw-input path and id.
+        var unknownIdentity = new DeviceIdentity(0, 0, null, null, null);
+        raw.Push(new RawInputDeviceChanged(unknownIdentity, Attached: false, DevicePath: "", DeviceId: 1));
+        raw.Push(new RawInputDeviceChanged(dev.Identity, Attached: true, "raw://kbd/2", DeviceId: 4));
+
+        // The stale id must be gone: were it still mapped, the fallback would
+        // see two candidates and refuse to bind the replugged unit.
+        raw.Push(new RawKeyEvent(0x1E, false, 2, 4));
+        host.Drain(10);
+        store.IsGated(key).Should().BeFalse();
+        raw.Push(new RawKeyEvent(0x1E, true, 3, 4));
+        host.Drain(10);
+        store.Get(key).Value.Should().Be(1f);
+
+        // And the orphaned id itself no longer drives mapping.
+        raw.Push(new RawKeyEvent(0x30, true, 4, 1));
+        host.Drain(10);
+        store.Get(KeyId.FromScanCode(0x30)).Value.Should().Be(0f);
+    }
+
+    [Fact]
+    public async Task Events_with_device_id_zero_are_dropped_while_a_selection_exists()
+    {
+        var ring = MakeRing();
+        var raw = new FakeRawInputAdapter(ring);
+        var dev = MakeDevice();
+        var selector = MakeSelector(dev);
+        var store = new KeyStateStore();
+
+        await using var host = new InputHost(raw, hidProbe: null, selector, ring, store);
+        await host.StartAsync(CancellationToken.None);
+        AttachAndSelect(raw, selector, dev, deviceId: 7);
+
+        // Injected input (e.g. SendInput) arrives with no device id. It must
+        // never drive mapping, even while a selection is active.
+        raw.Push(new RawKeyEvent(0x1E, true, 1, DeviceId: 0));
+        host.Drain(10);
+
+        store.Get(KeyId.FromScanCode(0x1E)).Value.Should().Be(0f);
+    }
+
+    [Fact]
     public async Task FaultedAnalog_sweeps_analog_keys_but_leaves_digital_keys_alone()
     {
         var ring = MakeRing();
