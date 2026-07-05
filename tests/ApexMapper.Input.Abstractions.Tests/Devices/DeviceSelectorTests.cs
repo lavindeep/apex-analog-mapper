@@ -13,9 +13,10 @@ public class DeviceSelectorTests
         int vid = 0x1038,
         int pid = 0x161C,
         string? serial = null,
+        string? product = "Apex Pro",
         bool analog = true)
         => new(
-            new DeviceIdentity(vid, pid, serial ?? path, "SteelSeries", "Apex Pro"),
+            new DeviceIdentity(vid, pid, serial, "SteelSeries", product),
             path,
             analog);
 
@@ -96,13 +97,140 @@ public class DeviceSelectorTests
         var b = Dev("b", serial: "SN-B");
         var enumerator = new InMemoryDeviceEnumerator(new[] { a, b });
         DeviceRegistry registry = new(
-            new DeviceIdentity(0x1038, 0x161C, "SN-B", null, null),
+            new DeviceIdentity(0x1038, 0x161C, "SN-B", "SteelSeries", "Apex Pro"),
             Array.Empty<KeyCalibration>());
 
         var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
         selector.Initialize();
 
         selector.SelectedDevice.Should().Be(b);
+    }
+
+    [Fact]
+    public void Initialize_match_rejects_differing_product_name()
+    {
+        var b = Dev("b", serial: "SN-B", product: "Apex Pro");
+        var enumerator = new InMemoryDeviceEnumerator(new[] { b });
+        DeviceRegistry registry = new(
+            new DeviceIdentity(0x1038, 0x161C, "SN-B", "SteelSeries", "Apex Pro 2"),
+            Array.Empty<KeyCalibration>());
+
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+
+        selector.SelectedDevice.Should().BeNull();
+    }
+
+    [Fact]
+    public void Initialize_match_accepts_both_product_names_null()
+    {
+        var b = Dev("b", serial: "SN-B", product: null);
+        var enumerator = new InMemoryDeviceEnumerator(new[] { b });
+        DeviceRegistry registry = new(
+            new DeviceIdentity(0x1038, 0x161C, "SN-B", "SteelSeries", null),
+            Array.Empty<KeyCalibration>());
+
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+
+        selector.SelectedDevice.Should().Be(b);
+    }
+
+    [Fact]
+    public void Initialize_match_accepts_both_serials_null_on_vid_pid_and_product()
+    {
+        var b = Dev("b", serial: null);
+        var enumerator = new InMemoryDeviceEnumerator(new[] { b });
+        DeviceRegistry registry = new(
+            new DeviceIdentity(0x1038, 0x161C, null, "SteelSeries", "Apex Pro"),
+            Array.Empty<KeyCalibration>());
+
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+
+        selector.SelectedDevice.Should().Be(b);
+        selector.AmbiguousMatch.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("SN-B", null)]
+    [InlineData(null, "SN-B")]
+    public void Initialize_match_rejects_serial_present_on_only_one_side(
+        string? deviceSerial, string? savedSerial)
+    {
+        var b = Dev("b", serial: deviceSerial);
+        var enumerator = new InMemoryDeviceEnumerator(new[] { b });
+        DeviceRegistry registry = new(
+            new DeviceIdentity(0x1038, 0x161C, savedSerial, "SteelSeries", "Apex Pro"),
+            Array.Empty<KeyCalibration>());
+
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+
+        selector.SelectedDevice.Should().BeNull();
+    }
+
+    [Fact]
+    public void Ambiguous_serial_less_match_picks_first_by_device_path_and_flags_it()
+    {
+        // Enumeration order must not decide: the tie breaks on the stable
+        // ordinal device-path order.
+        var z = Dev("path-z", serial: null);
+        var a = Dev("path-a", serial: null);
+        var enumerator = new InMemoryDeviceEnumerator(new[] { z, a });
+        DeviceRegistry registry = new(
+            new DeviceIdentity(0x1038, 0x161C, null, "SteelSeries", "Apex Pro"),
+            Array.Empty<KeyCalibration>());
+
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+
+        selector.SelectedDevice.Should().Be(a);
+        selector.AmbiguousMatch.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Explicit_select_clears_the_ambiguous_flag()
+    {
+        var z = Dev("path-z", serial: null);
+        var a = Dev("path-a", serial: null);
+        var enumerator = new InMemoryDeviceEnumerator(new[] { z, a });
+        DeviceRegistry registry = new(
+            new DeviceIdentity(0x1038, 0x161C, null, "SteelSeries", "Apex Pro"),
+            Array.Empty<KeyCalibration>());
+
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+        selector.AmbiguousMatch.Should().BeTrue();
+
+        selector.Select(z);
+
+        selector.AmbiguousMatch.Should().BeFalse();
+        selector.SelectedDevice.Should().Be(z);
+    }
+
+    [Fact]
+    public void Auto_reselect_on_refresh_flags_ambiguity()
+    {
+        var b = Dev("path-b", serial: null);
+        var enumerator = new InMemoryDeviceEnumerator(new[] { b });
+        DeviceRegistry registry = new(b.Identity, Array.Empty<KeyCalibration>());
+
+        var selector = new DeviceSelector(enumerator, () => registry, r => registry = r);
+        selector.Initialize();
+        selector.AmbiguousMatch.Should().BeFalse();
+
+        enumerator.Remove(b);
+        selector.Refresh();
+
+        // The device comes back alongside an indistinguishable twin.
+        var twin = Dev("path-a", serial: null);
+        enumerator.Add(twin);
+        enumerator.Add(b);
+        selector.Refresh();
+
+        selector.SelectedDevice.Should().Be(twin); // first by ordinal path
+        selector.AmbiguousMatch.Should().BeTrue();
     }
 
     [Fact]

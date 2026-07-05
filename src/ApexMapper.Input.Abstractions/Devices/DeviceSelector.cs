@@ -27,6 +27,16 @@ public sealed class DeviceSelector
 
     public DeviceIdentity? SelectedIdentity => SelectedDevice?.Identity;
 
+    /// <summary>
+    /// True when the current selection came from an automatic identity match
+    /// that had more than one indistinguishable candidate (same VID/PID and
+    /// product, no serial to tell them apart). The tie breaks
+    /// deterministically on ordinal device-path order; the UI can surface
+    /// this flag so the user confirms the right unit. Cleared by an explicit
+    /// <see cref="Select"/> or <see cref="Unselect"/>.
+    /// </summary>
+    public bool AmbiguousMatch { get; private set; }
+
     public event EventHandler<DeviceTopologyChanged>? Changed;
 
     public void Initialize()
@@ -37,7 +47,8 @@ public sealed class DeviceSelector
 
         if (_lastRegistry.SelectedDevice is { } savedIdentity)
         {
-            SelectedDevice = FindMatch(savedIdentity);
+            SelectedDevice = FindMatch(savedIdentity, out var ambiguous);
+            AmbiguousMatch = ambiguous;
         }
     }
 
@@ -94,9 +105,10 @@ public sealed class DeviceSelector
 
         if (SelectedDevice is null &&
             _lastRegistry.SelectedDevice is { } saved &&
-            FindMatch(saved) is { } rebound)
+            FindMatch(saved, out var ambiguous) is { } rebound)
         {
             SelectedDevice = rebound;
+            AmbiguousMatch = ambiguous;
             Changed?.Invoke(this, new DeviceTopologyChanged(DeviceTopologyChangeKind.Selected, rebound));
         }
     }
@@ -110,6 +122,7 @@ public sealed class DeviceSelector
         }
 
         SelectedDevice = device;
+        AmbiguousMatch = false;
         Changed?.Invoke(this, new DeviceTopologyChanged(DeviceTopologyChangeKind.Selected, device));
         PersistSelection(device.Identity);
     }
@@ -120,6 +133,7 @@ public sealed class DeviceSelector
         if (previous is null && _lastRegistry.SelectedDevice is null) return;
 
         SelectedDevice = null;
+        AmbiguousMatch = false;
         if (previous is not null)
         {
             Changed?.Invoke(this, new DeviceTopologyChanged(DeviceTopologyChangeKind.Unselected, previous));
@@ -134,22 +148,43 @@ public sealed class DeviceSelector
         _saveRegistry(next);
     }
 
-    private DiscoveredDevice? FindMatch(DeviceIdentity saved)
+    private DiscoveredDevice? FindMatch(DeviceIdentity saved, out bool ambiguous)
     {
+        DiscoveredDevice? best = null;
+        var matches = 0;
         foreach (var device in _discovered)
         {
-            if (IdentityMatches(device.Identity, saved))
+            if (!IdentityMatches(device.Identity, saved))
             {
-                return device;
+                continue;
+            }
+
+            matches++;
+            if (best is null || string.CompareOrdinal(device.DevicePath, best.DevicePath) < 0)
+            {
+                best = device;
             }
         }
-        return null;
+
+        ambiguous = matches > 1;
+        return best;
     }
 
+    /// <summary>
+    /// Saved-identity match rule: VendorId and ProductId must be equal;
+    /// ProductName must be ordinally equal (null only matches null); serials
+    /// must be ordinally equal when both sides have one, and a device with no
+    /// serial matches a saved identity with no serial on VID/PID + product
+    /// alone. A serial present on exactly one side is NOT a match: if a
+    /// firmware update changes serial exposure we cannot distinguish "same
+    /// unit" from "another unit of the same model", and auto-driving the
+    /// wrong keyboard is worse than requiring one manual re-select.
+    /// </summary>
     private static bool IdentityMatches(DeviceIdentity a, DeviceIdentity b)
     {
         if (a.VendorId != b.VendorId) return false;
         if (a.ProductId != b.ProductId) return false;
+        if (!string.Equals(a.ProductName, b.ProductName, StringComparison.Ordinal)) return false;
         return string.Equals(a.SerialNumber, b.SerialNumber, StringComparison.Ordinal);
     }
 }
