@@ -73,6 +73,12 @@ public static class DeviceAdapterStore
     /// adapter defaults. The persisted record carries no travel direction, so the
     /// resulting curves are <see cref="NormalizationKind.Linear"/>; capturing an
     /// inverted-travel calibration is left to the phase-4 calibration wizard.
+    /// <para>
+    /// Duplicate keys resolve last-wins by list order (the latest calibration entry
+    /// for a key overwrites earlier ones), unlike adapter key maps whose duplicate
+    /// scan codes are rejected at parse time — a calibration list is a chronological
+    /// capture log, so re-measuring a key is expected to supersede.
+    /// </para>
     /// </summary>
     public static IReadOnlyDictionary<KeyId, CalibrationCurve> ToCalibrationOverrides(
         IReadOnlyList<KeyCalibration> calibrations)

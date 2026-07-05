@@ -258,6 +258,27 @@ public class DeviceAdapterStoreTests
     }
 
     [Fact]
+    public void ToCalibrationOverrides_duplicate_keys_resolve_last_wins()
+    {
+        // A calibration list is a chronological capture log; re-measuring a key is
+        // expected to supersede, so the latest entry wins (unlike adapter key maps,
+        // whose duplicate scan codes are rejected).
+        var key = KeyId.FromScanCode(0x001E);
+        var calibrations = new[]
+        {
+            new KeyCalibration(key, RestValue: 1f, MaxPressValue: 100f, NoiseBand: 1f),
+            new KeyCalibration(key, RestValue: 9f, MaxPressValue: 200f, NoiseBand: 2f),
+        };
+
+        var overrides = DeviceAdapterStore.ToCalibrationOverrides(calibrations);
+
+        overrides.Should().HaveCount(1);
+        overrides[key].Rest.Should().Be(9f);
+        overrides[key].Max.Should().Be(200f);
+        overrides[key].NoiseBand.Should().Be(2f);
+    }
+
+    [Fact]
     public void ToFields_honors_per_key_calibration_override()
     {
         var d = MakeDescriptor(new[]
