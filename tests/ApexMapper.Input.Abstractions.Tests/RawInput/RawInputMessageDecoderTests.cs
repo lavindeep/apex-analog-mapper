@@ -219,4 +219,53 @@ public class RawInputMessageDecoderTests
         ok.Should().BeTrue();
         ev.ScanCode.Should().Be((ushort)0x001E);
     }
+
+    [Fact]
+    public void Pause_lead_in_from_one_device_does_not_swallow_another_devices_numlock()
+    {
+        // One decoder serves every keyboard (RIDEV_INPUTSINK). A device's Pause
+        // lead-in must not consume a DIFFERENT device's real NumLock, nor leak the
+        // lead-in device's real filler as a phantom NumLock afterwards.
+        var decoder = new RawInputMessageDecoder();
+        const int deviceA = 1;
+        const int deviceB = 2;
+
+        // Device A emits the Pause lead-in (E1 1D).
+        decoder.TryDecode(RawKeyboard(0x1D, RI_KEY_E1), deviceA, 0, out _).Should().BeTrue();
+
+        // Device B's real NumLock (bare 0x45) must pass through untouched.
+        var okB = decoder.TryDecode(RawKeyboard(0x45, 0), deviceB, 0, out var evB);
+        okB.Should().BeTrue();
+        evB.ScanCode.Should().Be((ushort)0x0045);
+        evB.DeviceId.Should().Be(deviceB);
+
+        // Device A's actual Pause filler (bare 0x45) is still swallowed.
+        var okA = decoder.TryDecode(RawKeyboard(0x45, 0), deviceA, 0, out var evA);
+        okA.Should().BeFalse();
+        evA.Should().Be(default(RawKeyEvent));
+    }
+
+    [Fact]
+    public void Interleaved_lead_in_does_not_swallow_another_devices_numlock_break()
+    {
+        // Cross-device interleave must not desynchronize make/break: a real NumLock
+        // DOWN followed by another device's lead-in must not swallow the matching
+        // NumLock BREAK, or the key latches down forever.
+        var decoder = new RawInputMessageDecoder();
+        const int deviceA = 1;
+        const int deviceB = 2;
+
+        // Device B presses NumLock for real (no lead-in) -> DOWN emits.
+        decoder.TryDecode(RawKeyboard(0x45, 0), deviceB, 0, out var down).Should().BeTrue();
+        down.IsDown.Should().BeTrue();
+
+        // Device A's Pause lead-in arrives in between.
+        decoder.TryDecode(RawKeyboard(0x1D, RI_KEY_E1), deviceA, 0, out _).Should().BeTrue();
+
+        // Device B releases NumLock -> BREAK must still emit.
+        var okUp = decoder.TryDecode(RawKeyboard(0x45, RI_KEY_BREAK), deviceB, 0, out var up);
+        okUp.Should().BeTrue();
+        up.ScanCode.Should().Be((ushort)0x0045);
+        up.IsDown.Should().BeFalse();
+    }
 }

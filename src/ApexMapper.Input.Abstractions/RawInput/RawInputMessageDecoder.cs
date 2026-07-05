@@ -18,8 +18,9 @@ namespace ApexMapper.Input.Abstractions.RawInput;
 /// shift presses and are dropped.</item>
 /// </list>
 /// </para>
-/// One instance per input source — the Pause state machine is single-threaded
-/// and must be driven from a single pump thread.
+/// One instance drives every keyboard on the single pump thread; the Pause
+/// state machine is keyed by device id (so one keyboard's lead-in cannot
+/// swallow another's real NumLock) and must be driven single-threaded.
 /// </summary>
 public sealed class RawInputMessageDecoder
 {
@@ -28,9 +29,13 @@ public sealed class RawInputMessageDecoder
     private const byte PauseLeadIn = 0x1D;  // E1 1D ... (Pause/Break prefix)
     private const byte PauseFiller = 0x45;  // ... 45 (also NumLock's bare scancode)
 
-    // Set once an E1-prefixed 0x1D (Pause lead-in) is decoded; the very next
-    // event, if a bare 0x45, is the Pause filler and must be swallowed.
-    private bool _expectPauseFiller;
+    // Device id of the keyboard whose E1-prefixed 0x1D (Pause lead-in) was last
+    // decoded; the next bare 0x45 FROM THAT SAME DEVICE is the Pause filler and
+    // must be swallowed. Null when no lead-in is pending. Keyed per device because
+    // a single decoder instance serves every keyboard (RIDEV_INPUTSINK), so a
+    // filler expectation set by one device must never consume another device's
+    // real NumLock (nor leave the first device's real filler to leak as a phantom).
+    private int? _pauseFillerDeviceId;
 
     public bool TryDecode(
         ReadOnlySpan<byte> rawKeyboard,
@@ -52,9 +57,16 @@ public sealed class RawInputMessageDecoder
         if ((flags & 0x4) != 0) prefix = 0xE1;
         else if ((flags & 0x2) != 0) prefix = 0xE0;
 
-        // Consume the "next event is the Pause filler" expectation exactly once.
-        var expectingPauseFiller = _expectPauseFiller;
-        _expectPauseFiller = false;
+        // The Pause filler expectation is per-device: only the keyboard that sent
+        // the E1 1D lead-in can produce the bare 0x45 filler that follows it. An
+        // event from any OTHER device leaves the pending state untouched; an event
+        // from the SAME device consumes it (whether or not it turns out to be the
+        // filler), matching the single-decode semantics of the old flag.
+        var expectingPauseFiller = _pauseFillerDeviceId == deviceId;
+        if (expectingPauseFiller)
+        {
+            _pauseFillerDeviceId = null;
+        }
 
         // Pause/Break: the bare 0x45 trailing an E1 1D lead-in shares NumLock's
         // scancode. Swallow it so Pause never leaks a phantom NumLock event.
@@ -72,7 +84,7 @@ public sealed class RawInputMessageDecoder
 
         if (prefix == 0xE1 && baseScanCode == PauseLeadIn)
         {
-            _expectPauseFiller = true;
+            _pauseFillerDeviceId = deviceId;
         }
 
         var keyId = ScanCodeEncoder.Encode(prefix, baseScanCode);
