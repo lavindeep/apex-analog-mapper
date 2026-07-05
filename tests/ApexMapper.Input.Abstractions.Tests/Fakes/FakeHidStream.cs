@@ -17,6 +17,10 @@ public sealed class FakeHidStream : IHidStream
 
     public int GetFeatureCallCount { get; private set; }
 
+    // The buffer[0] byte seen on the most recent GetFeature call — the report id
+    // the caller requested (0 when none was seeded).
+    public byte LastGetFeatureRequestByte { get; private set; }
+
     public IReadOnlyList<byte[]> SetFeatureCalls => _setFeatureCalls;
 
     public void EnqueueReport(byte[] report) => _reports.Enqueue(report);
@@ -39,6 +43,7 @@ public sealed class FakeHidStream : IHidStream
     public void GetFeature(Span<byte> buffer)
     {
         GetFeatureCallCount++;
+        LastGetFeatureRequestByte = buffer.Length > 0 ? buffer[0] : (byte)0;
         var n = Math.Min(_featureResponse.Length, buffer.Length);
         _featureResponse.AsSpan(0, n).CopyTo(buffer);
     }

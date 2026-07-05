@@ -120,7 +120,8 @@ public sealed class HidAnalogProbe : IHidAnalogProbe
                 _store,
                 _reportLength,
                 _consecutiveFailureThreshold,
-                _adapter.ReportType);
+                _adapter.ReportType,
+                reportId: _adapter.ReportId);
             loop.StatusChanged += OnLoopStatusChanged;
 
             _stream = stream;

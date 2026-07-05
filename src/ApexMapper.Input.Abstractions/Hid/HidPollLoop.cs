@@ -13,6 +13,7 @@ public sealed class HidPollLoop : IAsyncDisposable
     private readonly int _consecutiveFailureThreshold;
     private readonly HidReportType _reportType;
     private readonly int _featurePollIntervalMs;
+    private readonly byte _reportId;
     private readonly CancellationTokenSource _cts = new();
     private readonly object _statusLock = new();
 
@@ -34,6 +35,12 @@ public sealed class HidPollLoop : IAsyncDisposable
     /// Delay between feature-report polls, so feature mode does not spin a core.
     /// Ignored for input reports (their read blocks). Zero polls continuously.
     /// </param>
+    /// <param name="reportId">
+    /// The HID report id to request in feature mode. HidD_GetFeature identifies a
+    /// numbered report by the leading buffer byte, so a non-zero id is seeded into
+    /// buffer[0] before each GetFeature; id 0 (unnumbered) leaves it untouched.
+    /// Unused in input mode.
+    /// </param>
     public HidPollLoop(
         IHidStream stream,
         HidReportParser parser,
@@ -41,7 +48,8 @@ public sealed class HidPollLoop : IAsyncDisposable
         int reportLength,
         int consecutiveFailureThreshold = 5,
         HidReportType reportType = HidReportType.Input,
-        int featurePollIntervalMs = 2)
+        int featurePollIntervalMs = 2,
+        byte reportId = 0)
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(parser);
@@ -66,6 +74,7 @@ public sealed class HidPollLoop : IAsyncDisposable
         _consecutiveFailureThreshold = consecutiveFailureThreshold;
         _reportType = reportType;
         _featurePollIntervalMs = featurePollIntervalMs;
+        _reportId = reportId;
     }
 
     public BackendStatus Status
@@ -160,6 +169,13 @@ public sealed class HidPollLoop : IAsyncDisposable
                     int n;
                     if (_reportType == HidReportType.Feature)
                     {
+                        // Numbered feature reports are selected by the leading byte;
+                        // seed it so HidD_GetFeature requests the declared report id
+                        // rather than id 0. Unnumbered reports (id 0) leave it alone.
+                        if (_reportId != 0)
+                        {
+                            buffer[0] = _reportId;
+                        }
                         _stream.GetFeature(buffer);
                         n = buffer.Length;
                     }

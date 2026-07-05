@@ -269,6 +269,27 @@ public class HidPollLoopTests
     }
 
     [Fact]
+    public async Task Feature_mode_seeds_declared_report_id_into_get_feature_request()
+    {
+        var (store, parser, _) = MakeOneFieldParser();
+        var stream = new FakeHidStream(Array.Empty<byte[]>());
+        stream.SetFeatureResponse(new byte[] { 0xC0 });
+        await using var loop = new HidPollLoop(
+            stream, parser, store, ReportLength,
+            reportType: HidReportType.Feature,
+            featurePollIntervalMs: 0,
+            reportId: 0x07);
+
+        await loop.StartAsync(CancellationToken.None);
+        await WaitForAsync(() => stream.GetFeatureCallCount >= 1, TimeSpan.FromSeconds(2));
+        await loop.StopAsync(CancellationToken.None);
+
+        // A numbered feature report must be requested by seeding buffer[0] with the
+        // declared id, or HidD_GetFeature fails and every poll spuriously faults.
+        stream.LastGetFeatureRequestByte.Should().Be((byte)0x07);
+    }
+
+    [Fact]
     public async Task Input_report_mode_never_calls_get_feature()
     {
         var (store, parser, _) = MakeOneFieldParser();
