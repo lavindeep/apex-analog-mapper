@@ -21,7 +21,11 @@ public sealed class StubSupervisorChannel : ISupervisorChannel
     public bool IsConnected => false;
 
     // Never raised — stub has no real supervisor to connect to.
-    public event EventHandler<SupervisorStatusEventArgs>? StatusChanged;
+    public event EventHandler<SupervisorStatusEventArgs>? StatusChanged
+    {
+        add { }
+        remove { }
+    }
 
     public Task ConnectAsync(CancellationToken ct)
     {
