@@ -43,6 +43,20 @@ internal sealed class ManualTimeProvider : TimeProvider
         return timer;
     }
 
+    /// <summary>Number of timers currently armed with a due time. Lets a test wait
+    /// until a component running on another thread has scheduled its timer before
+    /// advancing the clock.</summary>
+    public int ScheduledTimerCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _timers.Count(t => t.DueAt is not null);
+            }
+        }
+    }
+
     public void Advance(TimeSpan delta)
     {
         DateTimeOffset target;
