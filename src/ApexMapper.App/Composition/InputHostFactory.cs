@@ -1,29 +1,66 @@
+using ApexMapper.Core.Keys;
+using ApexMapper.Input.Abstractions.Adapters;
+using ApexMapper.Input.Abstractions.Backends;
+using ApexMapper.Input.Abstractions.Devices;
+using ApexMapper.Input.Abstractions.Hosting;
+using ApexMapper.Input.Abstractions.Pipeline;
+using ApexMapper.Input.Hid;
+using ApexMapper.Persistence.Devices;
+
 namespace ApexMapper.App.Composition;
 
 /// <summary>
-/// Factory placeholder for wiring <c>InputHost</c> from Phase 2
-/// (<c>ApexMapper.Input</c>).
+/// Assembles the input pipeline (raw-input adapter, optional HID analog probe,
+/// ring buffer, key-state store) into an <see cref="InputHost"/>.
 ///
-/// TODO (Phase 3+ integration): InputHost requires a raw-input adapter (Windows
-/// message pump context), a HID provider, and a running poll loop — all of which
-/// need a live Win32 HWND that only exists after the WPF Application has started.
-/// Until Phase 3 defines the integration contract, constructing InputHost here
-/// would couple the composition root to Win32 bootstrap ordering details that are
-/// not yet decided.
-///
-/// For now this factory simply throws <see cref="NotImplementedException"/> so that
-/// callers that try to resolve InputHost will fail fast with an actionable message.
-/// The composition root does NOT register InputHost in the DI container — this
-/// class is purely a documentation anchor for Phase 3.
+/// Not registered in the DI container: the raw-input adapter needs a live Win32
+/// HWND that only exists after the WPF Application has started, so App.xaml.cs
+/// calls <see cref="Create"/> once the message pump is up.
 /// </summary>
 public static class InputHostFactory
 {
     /// <summary>
-    /// Not yet implemented.  Will be wired in Phase 3 integration.
+    /// Builds an <see cref="InputHost"/>. When <paramref name="hidDevice"/> and
+    /// <paramref name="adapter"/> are both provided, an analog probe is constructed
+    /// with the persisted per-key calibration list from the device registry, so
+    /// calibrations captured by the wizard survive restarts; otherwise the host
+    /// runs digital-only (raw input, no analog depth).
     /// </summary>
-    /// <exception cref="NotImplementedException">Always thrown.</exception>
-    public static object Create(IServiceProvider _)
-        => throw new NotImplementedException(
-            "InputHostFactory pending Phase 3+ integration. " +
-            "InputHost requires a live Win32 HWND — wire it from App.xaml.cs after the WPF pump starts.");
+    public static InputHost Create(
+        IRawInputAdapter rawInput,
+        IHidDevice? hidDevice,
+        DeviceAdapterDescriptor? adapter,
+        int reportLength,
+        DeviceSelector deviceSelector,
+        Func<DeviceRegistry> loadRegistry,
+        SpscRingBuffer<RawKeyEvent> ring,
+        KeyStateStore store,
+        ILogSink? log = null)
+    {
+        ArgumentNullException.ThrowIfNull(rawInput);
+        ArgumentNullException.ThrowIfNull(deviceSelector);
+        ArgumentNullException.ThrowIfNull(loadRegistry);
+        ArgumentNullException.ThrowIfNull(ring);
+        ArgumentNullException.ThrowIfNull(store);
+
+        IHidAnalogProbe? probe = null;
+        if (hidDevice is not null && adapter is not null)
+        {
+            var calibrations = loadRegistry().Calibrations;
+            probe = new HidAnalogProbe(
+                device: hidDevice,
+                adapter: adapter,
+                store: store,
+                reportLength: reportLength,
+                calibrations: calibrations is { Count: > 0 } ? calibrations : null);
+        }
+
+        return new InputHost(
+            rawInput: rawInput,
+            hidProbe: probe,
+            deviceSelector: deviceSelector,
+            ring: ring,
+            store: store,
+            log: log);
+    }
 }

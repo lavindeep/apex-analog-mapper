@@ -20,7 +20,9 @@ internal sealed class FakeCalibrationService : ICalibrationService
     private readonly CalibrationSnapshot _maxResult;
     private readonly CalibrationSnapshot _noiseResult;
 
-    public List<(Guid DeviceId, CalibrationSnapshot Rest, CalibrationSnapshot Max, CalibrationSnapshot Noise)>
+    // "Rest" is a reserved tuple element name (System.Tuple's eighth slot), so
+    // the snapshot elements carry a *Snapshot suffix.
+    public List<(Guid DeviceId, CalibrationSnapshot RestSnapshot, CalibrationSnapshot MaxSnapshot, CalibrationSnapshot NoiseSnapshot)>
         PersistCalls { get; } = new();
 
     public bool ThrowOnPersist { get; set; }
@@ -172,9 +174,9 @@ public sealed class CalibrationWizardViewModelTests
         vm.Current.Should().Be(CalibrationWizardStep.Saved);
         service.PersistCalls.Should().HaveCount(1);
         service.PersistCalls[0].DeviceId.Should().Be(options.DeviceId);
-        service.PersistCalls[0].Rest.Should().NotBeNull();
-        service.PersistCalls[0].Max.Should().NotBeNull();
-        service.PersistCalls[0].Noise.Should().NotBeNull();
+        service.PersistCalls[0].RestSnapshot.Should().NotBeNull();
+        service.PersistCalls[0].MaxSnapshot.Should().NotBeNull();
+        service.PersistCalls[0].NoiseSnapshot.Should().NotBeNull();
     }
 
     // -----------------------------------------------------------------------

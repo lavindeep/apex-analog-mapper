@@ -2,7 +2,12 @@ using System.Text;
 
 namespace ApexMapper.Persistence.Atomic;
 
-internal static class AtomicFile
+/// <summary>
+/// Atomic write primitives shared by the persistence stores and app-layer
+/// single-file stores (panic policy, manual profile pin): write to a temp
+/// sibling, then rename over the target so readers never observe a torn file.
+/// </summary>
+public static class AtomicFile
 {
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 

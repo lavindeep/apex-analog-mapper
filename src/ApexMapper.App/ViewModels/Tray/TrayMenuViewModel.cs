@@ -15,7 +15,10 @@ public sealed class TrayMenuViewModel : ObservableViewModel
     private IReadOnlyList<TrayProfileEntry> _profiles;
     private string _currentProfileName;
 
-    public TrayMenuViewModel(
+    // Internal because ITrayServiceInternal is deliberately non-public; the
+    // composition root constructs this type in-assembly and the test project
+    // reaches it via InternalsVisibleTo.
+    internal TrayMenuViewModel(
         ITrayServiceInternal trayService,
         ITrayProfileSource profileSource,
         ISupervisorChannel supervisorChannel,
