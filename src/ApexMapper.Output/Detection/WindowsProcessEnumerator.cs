@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace ApexMapper.Output.Detection;
 
@@ -10,11 +9,15 @@ namespace ApexMapper.Output.Detection;
 /// every process's pid, parent pid, and image name without opening a handle per
 /// process, which is what the anti-cheat and Steam scans need.
 ///
-/// Executable paths are best-effort: <c>QueryFullProcessImageName</c> on a
-/// <c>PROCESS_QUERY_LIMITED_INFORMATION</c> handle returns the full path when
-/// the caller has access and <c>null</c> otherwise. Running unprivileged, some
-/// processes (elevated or protected) will return <c>null</c> — that is expected
-/// and fine; the scans tolerate a missing path.
+/// <see cref="ProcessSnapshot.ExecutablePath"/> is ALWAYS <c>null</c> here: the
+/// scans identify processes by image name and lineage only, and the foreground
+/// executable's path arrives via <see cref="ForegroundContext"/>. Querying a
+/// path would mean opening a handle to every process on the machine — ambient
+/// behavior this project deliberately avoids.
+///
+/// A failed or partial sweep THROWS rather than returning a short list: the
+/// anti-cheat scan treats an enumerator failure as "cannot attest absence" and
+/// fails closed, so a silently truncated snapshot would be a fail-open hole.
 ///
 /// POLICY: <see cref="ProcessSnapshot.EnvironmentVariables"/> is ALWAYS an empty
 /// dictionary for other processes. Reading a foreign process's environment block
@@ -28,7 +31,7 @@ namespace ApexMapper.Output.Detection;
 public sealed class WindowsProcessEnumerator : IProcessEnumerator
 {
     private const uint TH32CS_SNAPPROCESS = 0x00000002;
-    private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    private const int ERROR_NO_MORE_FILES = 18;
     private static readonly IntPtr InvalidHandleValue = new(-1);
     private static readonly IReadOnlyDictionary<string, string> EmptyEnvironment =
         new Dictionary<string, string>();
@@ -49,17 +52,26 @@ public sealed class WindowsProcessEnumerator : IProcessEnumerator
             var entry = new PROCESSENTRY32 { dwSize = (uint)Marshal.SizeOf<PROCESSENTRY32>() };
             if (!Process32First(snapshot, ref entry))
             {
-                return results;
+                // A process snapshot always contains at least this process, so a
+                // FALSE here is an error, never a legitimately empty sweep.
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Process32First failed.");
             }
 
             do
             {
                 var pid = unchecked((int)entry.th32ProcessID);
                 var parentPid = unchecked((int)entry.th32ParentProcessID);
-                var path = TryGetExecutablePath(entry.th32ProcessID);
-                results.Add(new ProcessSnapshot(pid, parentPid, entry.szExeFile, path, EmptyEnvironment));
+                results.Add(new ProcessSnapshot(pid, parentPid, entry.szExeFile, null, EmptyEnvironment));
             }
             while (Process32Next(snapshot, ref entry));
+
+            var lastError = Marshal.GetLastWin32Error();
+            if (lastError != ERROR_NO_MORE_FILES)
+            {
+                // The walk ended early: a partial list could hide a running
+                // anti-cheat service, so surface it instead of returning less.
+                throw new Win32Exception(lastError, "Process32Next failed before the end of the snapshot.");
+            }
         }
         finally
         {
@@ -90,28 +102,6 @@ public sealed class WindowsProcessEnumerator : IProcessEnumerator
         {
             throw new PlatformNotSupportedException(
                 "WindowsProcessEnumerator requires the Toolhelp32 API and only runs on Windows.");
-        }
-    }
-
-    private static string? TryGetExecutablePath(uint processId)
-    {
-        var handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, processId);
-        if (handle == IntPtr.Zero)
-        {
-            return null; // Access denied (elevated/protected process) — best-effort.
-        }
-
-        try
-        {
-            var buffer = new StringBuilder(1024);
-            var size = (uint)buffer.Capacity;
-            return QueryFullProcessImageNameW(handle, 0, buffer, ref size)
-                ? buffer.ToString()
-                : null;
-        }
-        finally
-        {
-            CloseHandle(handle);
         }
     }
 
@@ -151,15 +141,4 @@ public sealed class WindowsProcessEnumerator : IProcessEnumerator
     [DllImport("kernel32.dll", SetLastError = false)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseHandle(IntPtr hObject);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
-
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool QueryFullProcessImageNameW(
-        IntPtr hProcess,
-        uint dwFlags,
-        StringBuilder lpExeName,
-        ref uint lpdwSize);
 }
