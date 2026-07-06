@@ -309,6 +309,26 @@ public class SupervisorServerTests
     }
 
     [Fact]
+    public async Task A_throwing_diagnostics_subscriber_does_not_kill_the_accept_loop()
+    {
+        await using var harness = ServerHarness.Start();
+        harness.Server.Diagnostics += _ => throw new InvalidOperationException("bad subscriber");
+
+        // Diagnostics fire on the accept loop itself (session start/end lines),
+        // so a throwing subscriber attacks the loop directly on every session.
+        var client1 = await harness.ConnectClientAsync();
+        await client1.SubmitControlAsync(new PadStatePayload { LeftTrigger = 1f }, CancellationToken.None).WaitAsync(Timeout);
+        await WaitUntilAsync(() => harness.Outputs.Count == 1 && harness.Outputs[0].Submitted.Count == 1);
+        await client1.DisposeAsync().AsTask().WaitAsync(Timeout);
+        await harness.WaitForEndedCountAsync(1);
+
+        await using var client2 = await harness.ConnectClientAsync();
+        await client2.SubmitControlAsync(new PadStatePayload { ButtonY = true }, CancellationToken.None).WaitAsync(Timeout);
+        await WaitUntilAsync(() => harness.Outputs.Count == 2 && harness.Outputs[1].Submitted.Count == 1);
+        harness.Outputs[1].Submitted[0].ButtonY.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Diagnostics_report_session_start_and_end_with_frame_counters()
     {
         await using var harness = ServerHarness.Start();
