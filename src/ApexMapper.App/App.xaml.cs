@@ -75,6 +75,21 @@ public partial class App : Application
             System.Windows.Input.Key.F12,
             System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Alt));
 
+        // Surface panic failures to the user: without this the fail-closed panic
+        // path is silent (all callers fire-and-forget). Either error slot means the
+        // panic did not fully complete.
+        coordinator.PanicCompleted += (_, args) =>
+        {
+            if (args.Error is not null || args.PolicyError is not null)
+                trayService.ShowBalloon("Apex Mapper", "Panic did not fully complete — check that the mapper is still active.");
+        };
+
+        // Start the foreground watcher on the UI thread: its WinEvent hook needs
+        // this thread's message pump, and without Start() the panic policy leg would
+        // never see the active game (Current stays ForegroundContext.Empty). The host
+        // owns the singleton and disposes it (Stop + unhook) on shutdown.
+        _host.Services.GetRequiredService<IForegroundWatcher>().Start();
+
         // Set the DataContext on the main window from DI.
         var mainWindowVm = _host.Services.GetRequiredService<ViewModels.MainWindowViewModel>();
         if (MainWindow is not null)
