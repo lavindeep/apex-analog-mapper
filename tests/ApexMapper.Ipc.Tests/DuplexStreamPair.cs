@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using ApexMapper.Output.Ipc;
 
 namespace ApexMapper.Ipc.Tests;
 
@@ -28,8 +29,12 @@ internal sealed class DuplexStreamPair : IAsyncDisposable
         // Keep the name short: on Unix the runtime maps a named pipe to a domain
         // socket under the temp dir, and that full path must fit in 104 chars.
         var name = "apx-" + Guid.NewGuid().ToString("N")[..12];
+        // Explicit buffer sizes: on Windows they seed the pipe's write quota, and the
+        // zero-size default can park a write until the peer reads — a wedge Unix's
+        // socket buffering never shows.
         var server = new NamedPipeServerStream(
-            name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous,
+            inBufferSize: FrameCodec.MaxFrameBytes, outBufferSize: FrameCodec.MaxFrameBytes);
         var client = new NamedPipeClientStream(
             ".", name, PipeDirection.InOut, PipeOptions.Asynchronous);
 

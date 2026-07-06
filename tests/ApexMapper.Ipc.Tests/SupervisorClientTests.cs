@@ -23,13 +23,18 @@ public class SupervisorClientTests
     // Short session id: the Unix domain-socket path backing the pipe has a 104-char cap.
     private static string NewSessionId() => "s" + Guid.NewGuid().ToString("N")[..8];
 
-    // Mirrors the real supervisor pipe configuration, including CurrentUserOnly.
+    // Mirrors the real supervisor pipe configuration, including CurrentUserOnly and
+    // explicit buffer sizes. On Windows the sizes seed the pipe's write quota; the
+    // zero-size default let a client write park until the server read, which wedged
+    // the submit tests below (they write every frame before the first server read).
     private static NamedPipeServerStream StartServer(string sessionId) => new(
         PipeNames.ForSession(sessionId),
         PipeDirection.InOut,
         1,
         PipeTransmissionMode.Byte,
-        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
+        inBufferSize: FrameCodec.MaxFrameBytes,
+        outBufferSize: FrameCodec.MaxFrameBytes);
 
     private static async Task<SupervisorClient> ConnectAsync(
         string sessionId, NamedPipeServerStream server, TimeProvider? time = null)
@@ -79,10 +84,11 @@ public class SupervisorClientTests
         await using var server = StartServer(sessionId);
         await using var client = await ConnectAsync(sessionId, server, time);
 
-        await client.SubmitControlAsync(new PadStatePayload { LeftTrigger = 0.75f, ButtonA = true }, CancellationToken.None);
-        await client.SubmitHeartbeatAsync(CancellationToken.None);
-        await client.SubmitZeroAsync("gap", CancellationToken.None);
-        await client.SubmitPanicAsync("boom", CancellationToken.None);
+        // Guarded: a pipe write that cannot complete must fail the test, not park it.
+        await client.SubmitControlAsync(new PadStatePayload { LeftTrigger = 0.75f, ButtonA = true }, CancellationToken.None).WaitAsync(Timeout);
+        await client.SubmitHeartbeatAsync(CancellationToken.None).WaitAsync(Timeout);
+        await client.SubmitZeroAsync("gap", CancellationToken.None).WaitAsync(Timeout);
+        await client.SubmitPanicAsync("boom", CancellationToken.None).WaitAsync(Timeout);
 
         var codec = new FrameCodec();
         var control = (ControlFrame)(await codec.ReadFrameAsync(server, CancellationToken.None).AsTask().WaitAsync(Timeout))!;
@@ -114,9 +120,9 @@ public class SupervisorClientTests
         await using var server = StartServer(sessionId);
         await using var client = await ConnectAsync(sessionId, server);
 
-        await client.SubmitControlAsync(new PadStatePayload(), CancellationToken.None);
-        await client.SubmitHeartbeatAsync(CancellationToken.None);
-        await client.SubmitControlAsync(new PadStatePayload(), CancellationToken.None);
+        await client.SubmitControlAsync(new PadStatePayload(), CancellationToken.None).WaitAsync(Timeout);
+        await client.SubmitHeartbeatAsync(CancellationToken.None).WaitAsync(Timeout);
+        await client.SubmitControlAsync(new PadStatePayload(), CancellationToken.None).WaitAsync(Timeout);
 
         var codec = new FrameCodec();
         var seqs = new List<long>();
