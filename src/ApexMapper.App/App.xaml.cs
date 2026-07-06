@@ -77,11 +77,14 @@ public partial class App : Application
 
         // Surface panic failures to the user: without this the fail-closed panic
         // path is silent (all callers fire-and-forget). Either error slot means the
-        // panic did not fully complete.
+        // panic did not fully complete. PanicCompleted fires on whatever thread ran
+        // the panic (the hotkey path uses Task.Run), and the tray icon is a WPF
+        // object — marshal onto the dispatcher or the balloon itself would throw.
         coordinator.PanicCompleted += (_, args) =>
         {
             if (args.Error is not null || args.PolicyError is not null)
-                trayService.ShowBalloon("Apex Mapper", "Panic did not fully complete — check that the mapper is still active.");
+                Dispatcher.InvokeAsync(() =>
+                    trayService.ShowBalloon("Apex Mapper", "Panic did not fully complete — check that the mapper is still active."));
         };
 
         // Start the foreground watcher on the UI thread: its WinEvent hook needs
