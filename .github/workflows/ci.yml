@@ -9,6 +9,7 @@ jobs:
   build-and-test-windows:
     runs-on: windows-latest
     name: Windows (full solution + Win-only tests)
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -19,7 +20,7 @@ jobs:
       - name: Build
         run: dotnet build ApexAnalogMapper.sln --configuration Release --no-restore
       - name: Test (all)
-        run: dotnet test ApexAnalogMapper.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage"
+        run: dotnet test ApexAnalogMapper.sln --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage" --blame-hang --blame-hang-timeout 3m --blame-hang-dump-type mini
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -30,6 +31,7 @@ jobs:
   build-and-test-macos:
     runs-on: macos-latest
     name: macOS (cross-platform subset)
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -40,7 +42,7 @@ jobs:
       - name: Build
         run: dotnet build ApexAnalogMapper.CrossPlatform.slnf --configuration Release --no-restore
       - name: Test (cross-platform suites)
-        run: dotnet test ApexAnalogMapper.CrossPlatform.slnf --configuration Release --no-build --logger "trx;LogFileName=test-results-macos.trx"
+        run: dotnet test ApexAnalogMapper.CrossPlatform.slnf --configuration Release --no-build --logger "trx;LogFileName=test-results-macos.trx" --blame-hang --blame-hang-timeout 3m --blame-hang-dump-type mini
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
