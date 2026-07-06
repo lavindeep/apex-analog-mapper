@@ -255,6 +255,40 @@ public class SupervisorSessionTests
     }
 
     [Fact]
+    public async Task Frame_arriving_during_teardown_never_reaches_the_pad()
+    {
+        using var zeroEntered = new ManualResetEventSlim();
+        using var zeroGate = new ManualResetEventSlim();
+        await using var h = await SessionHarness.StartAsync(o =>
+        {
+            o.ZeroEntered = zeroEntered;
+            o.ZeroGate = zeroGate;
+        });
+        await h.WaitForWatchdogAsync();
+
+        // Trip the heartbeat gap on a background thread; the teardown parks
+        // inside the gated Zero, holding the teardown window open.
+        var advance = Task.Run(() => h.Time.Advance(TimeSpan.FromMilliseconds(1000)));
+        zeroEntered.Wait(Timeout).Should().BeTrue();
+
+        // The read loop is still alive mid-teardown: deliver a control frame,
+        // give it time to arrive and park, then let the teardown finish.
+        await h.SendControlAsync(new PadStatePayload { LeftTrigger = 1f });
+        await Task.Delay(250);
+        zeroGate.Set();
+
+        (await h.Run.WaitAsync(Timeout)).Should().Be(SessionEndReason.HeartbeatGap);
+        await advance.WaitAsync(Timeout);
+
+        // Once teardown has begun the frame must never reach the pad: nothing
+        // may follow the zero/disconnect pair.
+        var calls = h.Output.Calls.ToList();
+        var zeroIndex = calls.IndexOf("zero");
+        zeroIndex.Should().BeGreaterThanOrEqualTo(0);
+        calls.Skip(zeroIndex).Should().Equal("zero", "disconnect");
+    }
+
+    [Fact]
     public async Task Frames_arriving_before_the_threshold_postpone_the_gap()
     {
         await using var h = await SessionHarness.StartAsync();

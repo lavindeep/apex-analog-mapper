@@ -19,6 +19,14 @@ internal sealed class FakeControllerOutput : IControllerOutput
     public Exception? ThrowOnZero { get; set; }
     public Exception? ThrowOnDisconnect { get; set; }
 
+    /// <summary>Set when Zero is entered, so a test can hold a teardown open
+    /// (via <see cref="ZeroGate"/>) while delivering concurrent frames.</summary>
+    public ManualResetEventSlim? ZeroEntered { get; set; }
+
+    /// <summary>When assigned, Zero blocks until signalled. The wait is bounded
+    /// so a forgotten gate fails the test instead of wedging the run.</summary>
+    public ManualResetEventSlim? ZeroGate { get; set; }
+
     public bool IsConnected { get; private set; }
 
     public string? LastError => null;
@@ -74,6 +82,10 @@ internal sealed class FakeControllerOutput : IControllerOutput
 
     public void Zero()
     {
+        // Signal and park outside the recording lock so Calls stays readable
+        // while a gated teardown is held open.
+        ZeroEntered?.Set();
+        ZeroGate?.Wait(TimeSpan.FromSeconds(5));
         lock (_lock)
         {
             _calls.Add("zero");
