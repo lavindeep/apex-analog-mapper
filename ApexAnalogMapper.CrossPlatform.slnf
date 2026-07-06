@@ -7,10 +7,15 @@
       "src\\ApexMapper.Persistence\\ApexMapper.Persistence.csproj",
       "src\\ApexMapper.Logging\\ApexMapper.Logging.csproj",
       "src\\ApexMapper.Profiles\\ApexMapper.Profiles.csproj",
+      "src\\ApexMapper.Output\\ApexMapper.Output.csproj",
+      "src\\ApexMapper.Supervisor\\ApexMapper.Supervisor.csproj",
       "tests\\ApexMapper.Core.Tests\\ApexMapper.Core.Tests.csproj",
       "tests\\ApexMapper.Input.Abstractions.Tests\\ApexMapper.Input.Abstractions.Tests.csproj",
       "tests\\ApexMapper.Persistence.Tests\\ApexMapper.Persistence.Tests.csproj",
       "tests\\ApexMapper.Logging.Tests\\ApexMapper.Logging.Tests.csproj",
+      "tests\\ApexMapper.Output.Tests\\ApexMapper.Output.Tests.csproj",
+      "tests\\ApexMapper.Supervisor.Tests\\ApexMapper.Supervisor.Tests.csproj",
+      "tests\\ApexMapper.Ipc.Tests\\ApexMapper.Ipc.Tests.csproj",
       "perf\\ApexMapper.Core.Benchmarks\\ApexMapper.Core.Benchmarks.csproj"
     ]
   }
