@@ -45,6 +45,20 @@ public class ProfileResolverTests
     }
 
     [Fact]
+    public void Exact_executable_matches_on_bare_file_name_of_a_full_path()
+    {
+        // The foreground exe arrives as a full path; the matcher holds only the
+        // bare (lower-case) file name, so resolution must extract the file name.
+        var generic = MakeProfile("generic", new GameMatcher(null, null, null));
+        var exe = MakeProfile("exe", new GameMatcher("forza.exe", null, null));
+        var resolver = new ProfileResolver(new[] { generic, exe });
+
+        var fullPath = System.IO.Path.Combine("Games", "Sub Dir", "FORZA.EXE");
+        var ctx = Ctx(fullPath, "Some Window");
+        resolver.Resolve(ctx, manualPinId: null).Should().Be(exe);
+    }
+
+    [Fact]
     public void Window_title_beats_generic()
     {
         var generic = MakeProfile("generic", new GameMatcher(null, null, null));
