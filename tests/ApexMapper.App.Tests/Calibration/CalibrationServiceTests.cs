@@ -39,7 +39,11 @@ internal sealed class FakeHidAnalogProbe : IHidAnalogProbe
     public BackendStatus Status => BackendStatus.Running;
     public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
     public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
-    public event EventHandler<BackendStatusChanged>? StatusChanged;
+    public event EventHandler<BackendStatusChanged>? StatusChanged
+    {
+        add { }
+        remove { }
+    }
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     // IHidAnalogProbe

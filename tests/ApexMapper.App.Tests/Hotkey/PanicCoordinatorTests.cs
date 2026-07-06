@@ -49,7 +49,11 @@ public sealed class PanicCoordinatorTests
         public bool IsConnected => true;
 
 #pragma warning disable CS0067
-        public event EventHandler<SupervisorStatusEventArgs>? StatusChanged;
+        public event EventHandler<SupervisorStatusEventArgs>? StatusChanged
+        {
+            add { }
+            remove { }
+        }
 #pragma warning restore CS0067
 
         public Task ConnectAsync(CancellationToken ct) => Task.CompletedTask;
@@ -74,7 +78,11 @@ public sealed class PanicCoordinatorTests
         public ForegroundContext Current { get; set; } = ForegroundContext.Empty;
 
 #pragma warning disable CS0067
-        public event EventHandler<ForegroundChangedEventArgs>? ForegroundChanged;
+        public event EventHandler<ForegroundChangedEventArgs>? ForegroundChanged
+        {
+            add { }
+            remove { }
+        }
 #pragma warning restore CS0067
 
         public void Start() { }

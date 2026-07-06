@@ -75,7 +75,11 @@ public sealed class TrayMenuViewModelTests
         public bool IsConnected => false;
 
 #pragma warning disable CS0067 // event never used — required by ISupervisorChannel interface
-        public event EventHandler<SupervisorStatusEventArgs>? StatusChanged;
+        public event EventHandler<SupervisorStatusEventArgs>? StatusChanged
+        {
+            add { }
+            remove { }
+        }
 #pragma warning restore CS0067
 
         public Task ConnectAsync(CancellationToken ct) => Task.CompletedTask;
@@ -106,7 +110,11 @@ public sealed class TrayMenuViewModelTests
     {
         public ForegroundContext Current => ForegroundContext.Empty;
 #pragma warning disable CS0067
-        public event EventHandler<ForegroundChangedEventArgs>? ForegroundChanged;
+        public event EventHandler<ForegroundChangedEventArgs>? ForegroundChanged
+        {
+            add { }
+            remove { }
+        }
 #pragma warning restore CS0067
         public void Start() { }
         public void Stop() { }
