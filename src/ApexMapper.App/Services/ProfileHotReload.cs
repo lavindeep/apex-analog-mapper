@@ -60,13 +60,17 @@ public sealed class ProfileHotReload : IProfileHotReload
             var watcher = new FileSystemWatcher(_options.DirectoryPath, "*.json")
             {
                 NotifyFilter            = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                EnableRaisingEvents     = true,
                 IncludeSubdirectories   = false,
             };
 
+            // Attach handlers BEFORE enabling events so no event fired between
+            // construction and subscription is lost.
             watcher.Created += OnFileEvent;
             watcher.Changed += OnFileEvent;
             watcher.Renamed += OnFileRenamed;
+            watcher.Error   += OnWatcherError;
+
+            watcher.EnableRaisingEvents = true;
 
             _watcher = watcher;
         }
@@ -96,6 +100,7 @@ public sealed class ProfileHotReload : IProfileHotReload
             watcher.Created -= OnFileEvent;
             watcher.Changed -= OnFileEvent;
             watcher.Renamed -= OnFileRenamed;
+            watcher.Error   -= OnWatcherError;
             watcher.Dispose();
         }
     }
@@ -128,6 +133,11 @@ public sealed class ProfileHotReload : IProfileHotReload
     private void OnFileEvent(object sender, FileSystemEventArgs e) => ScheduleDebounce();
 
     private void OnFileRenamed(object sender, RenamedEventArgs e) => ScheduleDebounce();
+
+    // The watcher's internal buffer can overflow (burst of changes) or the handle
+    // can go bad; without observing Error those reloads are silently missed.
+    private void OnWatcherError(object sender, ErrorEventArgs e)
+        => _logger.LogError(e.GetException(), "ProfileHotReload: file watcher error for {Directory}", _options.DirectoryPath);
 
     private void ScheduleDebounce()
     {

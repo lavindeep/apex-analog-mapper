@@ -90,6 +90,11 @@ public partial class App : Application
         // owns the singleton and disposes it (Stop + unhook) on shutdown.
         _host.Services.GetRequiredService<IForegroundWatcher>().Start();
 
+        // Start watching the profiles directory for on-disk edits; without Start()
+        // no FileSystemWatcher is created and hot-reload never happens. The host
+        // disposes the singleton (stopping the watcher) on shutdown.
+        _host.Services.GetRequiredService<IProfileHotReload>().Start();
+
         // Set the DataContext on the main window from DI.
         var mainWindowVm = _host.Services.GetRequiredService<ViewModels.MainWindowViewModel>();
         if (MainWindow is not null)
