@@ -64,10 +64,10 @@ public class SupervisorClientTests
         await client.SubmitPanicAsync("boom", CancellationToken.None);
 
         var codec = new FrameCodec();
-        var control = (ControlFrame)(await codec.ReadFrameAsync(server, CancellationToken.None))!;
-        var heartbeat = (HeartbeatFrame)(await codec.ReadFrameAsync(server, CancellationToken.None))!;
-        var zero = (ZeroFrame)(await codec.ReadFrameAsync(server, CancellationToken.None))!;
-        var panic = (PanicFrame)(await codec.ReadFrameAsync(server, CancellationToken.None))!;
+        var control = (ControlFrame)(await codec.ReadFrameAsync(server, CancellationToken.None).AsTask().WaitAsync(Timeout))!;
+        var heartbeat = (HeartbeatFrame)(await codec.ReadFrameAsync(server, CancellationToken.None).AsTask().WaitAsync(Timeout))!;
+        var zero = (ZeroFrame)(await codec.ReadFrameAsync(server, CancellationToken.None).AsTask().WaitAsync(Timeout))!;
+        var panic = (PanicFrame)(await codec.ReadFrameAsync(server, CancellationToken.None).AsTask().WaitAsync(Timeout))!;
 
         control.SchemaVersion.Should().Be(IFrame.CurrentSchemaVersion);
         control.SequenceNumber.Should().Be(1);
@@ -101,7 +101,7 @@ public class SupervisorClientTests
         var seqs = new List<long>();
         for (var i = 0; i < 3; i++)
         {
-            var frame = await codec.ReadFrameAsync(server, CancellationToken.None);
+            var frame = await codec.ReadFrameAsync(server, CancellationToken.None).AsTask().WaitAsync(Timeout);
             seqs.Add(frame switch
             {
                 ControlFrame c => c.SequenceNumber,
