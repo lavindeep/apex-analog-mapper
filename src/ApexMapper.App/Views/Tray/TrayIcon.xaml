@@ -24,7 +24,8 @@
                     DataContext (the VM) and bind SwitchProfileCommand from there.
                 -->
                 <MenuItem
-                    Header="{Binding CurrentProfileName, StringFormat='Profile: {0}'}"
+                    Header="{Binding CurrentProfileName}"
+                    HeaderStringFormat="Profile: {0}"
                     ItemsSource="{Binding Profiles}">
                     <MenuItem.ItemContainerStyle>
                         <Style TargetType="MenuItem">

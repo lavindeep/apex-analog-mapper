@@ -14,8 +14,9 @@ namespace ApexMapper.App.Composition;
 /// ring buffer, key-state store) into an <see cref="InputHost"/>.
 ///
 /// Not registered in the DI container: the raw-input adapter needs a live Win32
-/// HWND that only exists after the WPF Application has started, so App.xaml.cs
-/// calls <see cref="Create"/> once the message pump is up.
+/// HWND that only exists after the WPF Application has started. Nothing calls
+/// <see cref="Create"/> yet — it is invoked once the supervisor/output wiring
+/// lands (Phase 3) and a live HWND is available.
 /// </summary>
 public static class InputHostFactory
 {

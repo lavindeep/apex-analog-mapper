@@ -70,6 +70,11 @@ public sealed class WindowEventSink : IWindowEventSource
                 0,
                 0,
                 WinEventInterop.WINEVENT_OUTOFCONTEXT | WinEventInterop.WINEVENT_SKIPOWNPROCESS);
+
+            // A zero handle means the hook was not installed — fail loudly rather
+            // than leave a silently dead foreground watcher.
+            if (_hookHandle == IntPtr.Zero)
+                throw new InvalidOperationException("Failed to install the foreground WinEvent hook.");
         }
     }
 

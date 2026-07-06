@@ -205,7 +205,6 @@ public static class AppCompositionRoot
             new TrayMenuViewModel(
                 sp.GetRequiredService<ITrayServiceInternal>(),
                 sp.GetRequiredService<ITrayProfileSource>(),
-                sp.GetRequiredService<ISupervisorChannel>(),
                 sp.GetRequiredService<PanicCoordinator>()));
 
         services.AddSingleton<DevicePickerViewModel>(sp =>

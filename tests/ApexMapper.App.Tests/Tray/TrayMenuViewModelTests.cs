@@ -149,7 +149,7 @@ public sealed class TrayMenuViewModelTests
             channel,
             new FakeForegroundWatcher(),
             new FakePanicPolicyStore());
-        var vm = new TrayMenuViewModel(tray, source, channel, coordinator);
+        var vm = new TrayMenuViewModel(tray, source, coordinator);
         return (vm, tray, source, channel, coordinator);
     }
 

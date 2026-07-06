@@ -8,7 +8,6 @@ public sealed class TrayMenuViewModel : ObservableViewModel
 {
     private readonly ITrayServiceInternal _trayService;
     private readonly ITrayProfileSource _profileSource;
-    private readonly ISupervisorChannel _supervisorChannel;
     private readonly PanicCoordinator _panicCoordinator;
 
     private bool _isEnabled;
@@ -21,12 +20,10 @@ public sealed class TrayMenuViewModel : ObservableViewModel
     internal TrayMenuViewModel(
         ITrayServiceInternal trayService,
         ITrayProfileSource profileSource,
-        ISupervisorChannel supervisorChannel,
         PanicCoordinator panicCoordinator)
     {
         _trayService = trayService;
         _profileSource = profileSource;
-        _supervisorChannel = supervisorChannel;
         _panicCoordinator = panicCoordinator;
 
         _profiles = _profileSource.ListProfiles();
