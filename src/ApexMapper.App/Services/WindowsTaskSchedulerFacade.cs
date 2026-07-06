@@ -1,3 +1,4 @@
+using System.Security.Principal;
 using Microsoft.Win32.TaskScheduler;
 
 namespace ApexMapper.App.Services;
@@ -26,8 +27,9 @@ public sealed class WindowsTaskSchedulerFacade : ITaskSchedulerFacade
         var td = ts.NewTask();
         td.RegistrationInfo.Description = description ?? string.Empty;
 
-        // Run at user logon (current user only).
-        td.Triggers.Add(new LogonTrigger());
+        // Run at the current user's logon only. A bare LogonTrigger fires for ANY
+        // user's logon; scope it to the installing user via UserId.
+        td.Triggers.Add(new LogonTrigger { UserId = WindowsIdentity.GetCurrent().Name });
 
         // Execute the application.
         td.Actions.Add(new ExecAction(executablePath));
@@ -37,7 +39,16 @@ public sealed class WindowsTaskSchedulerFacade : ITaskSchedulerFacade
         td.Settings.StopIfGoingOnBatteries     = false;
         td.Settings.ExecutionTimeLimit         = TimeSpan.Zero; // no limit
 
-        ts.RootFolder.RegisterTaskDefinition(taskName, td);
+        // Register with the interactive-token logon type: a tray app needs the
+        // current interactive session (the default S4U logon has no desktop/UI
+        // access). CreateOrUpdate keeps registration idempotent.
+        ts.RootFolder.RegisterTaskDefinition(
+            taskName,
+            td,
+            TaskCreation.CreateOrUpdate,
+            userId:    null,
+            password:  null,
+            logonType: TaskLogonType.InteractiveToken);
     }
 
     public void UnregisterTask(string taskName)

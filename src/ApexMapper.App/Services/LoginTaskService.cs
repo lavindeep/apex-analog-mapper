@@ -8,43 +8,34 @@ namespace ApexMapper.App.Services;
 public sealed class LoginTaskService : ILoginTaskService
 {
     private readonly ITaskSchedulerFacade _scheduler;
+    private readonly LoginTaskOptions _options;
 
-    public LoginTaskService(ITaskSchedulerFacade scheduler)
+    public LoginTaskService(ITaskSchedulerFacade scheduler, LoginTaskOptions options)
     {
         ArgumentNullException.ThrowIfNull(scheduler);
+        ArgumentNullException.ThrowIfNull(options);
         _scheduler = scheduler;
+        _options = options;
     }
 
     /// <inheritdoc/>
-    public bool IsEnabled() => _scheduler.TaskExists(GetDefaultTaskName());
+    public bool IsEnabled() => _scheduler.TaskExists(_options.TaskName);
 
     /// <inheritdoc/>
-    public void Enable(LoginTaskOptions options)
+    public void Enable()
     {
-        ArgumentNullException.ThrowIfNull(options);
-
         // Idempotent: if the task already exists, delete and re-register so
         // that the executable path / description stay in sync.
-        if (_scheduler.TaskExists(options.TaskName))
-            _scheduler.UnregisterTask(options.TaskName);
+        if (_scheduler.TaskExists(_options.TaskName))
+            _scheduler.UnregisterTask(_options.TaskName);
 
-        _scheduler.RegisterLogonTask(options.TaskName, options.ExecutablePath, options.Description);
+        _scheduler.RegisterLogonTask(_options.TaskName, _options.ExecutablePath, _options.Description);
     }
 
     /// <inheritdoc/>
     public void Disable()
     {
-        var taskName = GetDefaultTaskName();
-        if (_scheduler.TaskExists(taskName))
-            _scheduler.UnregisterTask(taskName);
+        if (_scheduler.TaskExists(_options.TaskName))
+            _scheduler.UnregisterTask(_options.TaskName);
     }
-
-    // -----------------------------------------------------------------------
-    // Private helpers
-    // -----------------------------------------------------------------------
-
-    // The parameterless overloads (IsEnabled / Disable) use a well-known name.
-    // The Enable overload accepts the name from LoginTaskOptions so tests and
-    // composition root can supply any name.
-    private static string GetDefaultTaskName() => "ApexProAnalogMapper";
 }

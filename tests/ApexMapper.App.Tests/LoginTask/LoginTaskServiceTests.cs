@@ -52,7 +52,7 @@ public sealed class LoginTaskServiceTests
     public void IsEnabled_returns_false_when_no_task()
     {
         var fake    = new FakeTaskSchedulerFacade();
-        var service = new LoginTaskService(fake);
+        var service = new LoginTaskService(fake, Opts());
 
         service.IsEnabled().Should().BeFalse();
     }
@@ -65,9 +65,9 @@ public sealed class LoginTaskServiceTests
     public void Enable_registers_logon_task()
     {
         var fake    = new FakeTaskSchedulerFacade();
-        var service = new LoginTaskService(fake);
+        var service = new LoginTaskService(fake, Opts());
 
-        service.Enable(Opts());
+        service.Enable();
 
         fake.TaskExists(DefaultTaskName).Should().BeTrue();
         fake.RegisterCalls.Should().ContainSingle();
@@ -83,9 +83,9 @@ public sealed class LoginTaskServiceTests
     public void Disable_unregisters_task()
     {
         var fake    = new FakeTaskSchedulerFacade();
-        var service = new LoginTaskService(fake);
+        var service = new LoginTaskService(fake, Opts());
 
-        service.Enable(Opts());
+        service.Enable();
         service.Disable();
 
         fake.TaskExists(DefaultTaskName).Should().BeFalse();
@@ -100,10 +100,10 @@ public sealed class LoginTaskServiceTests
     public void Enable_is_idempotent()
     {
         var fake    = new FakeTaskSchedulerFacade();
-        var service = new LoginTaskService(fake);
+        var service = new LoginTaskService(fake, Opts());
 
-        service.Enable(Opts());
-        service.Enable(Opts()); // second call — must not throw
+        service.Enable();
+        service.Enable(); // second call — must not throw
 
         // Second Enable should remove then re-add, so 2 register calls total
         fake.RegisterCalls.Should().HaveCount(2);
@@ -118,7 +118,7 @@ public sealed class LoginTaskServiceTests
     public void Disable_when_not_registered_is_noop()
     {
         var fake    = new FakeTaskSchedulerFacade();
-        var service = new LoginTaskService(fake);
+        var service = new LoginTaskService(fake, Opts());
 
         var act = () => service.Disable();
 
@@ -127,25 +127,30 @@ public sealed class LoginTaskServiceTests
     }
 
     // -----------------------------------------------------------------------
-    // 6. Enable uses options executable path and task name
+    // 6. All three operations use the injected options' task name
     // -----------------------------------------------------------------------
 
     [Fact]
-    public void Enable_uses_options_executable_path_and_task_name()
+    public void Operations_use_injected_options_task_name_and_path()
     {
-        var fake    = new FakeTaskSchedulerFacade();
-        var service = new LoginTaskService(fake);
-
         const string customPath = @"D:\Tools\ApexMapper.exe";
         const string customName = "MyCustomTask";
-        var opts = new LoginTaskOptions(customPath, customName, "Custom description");
+        var opts    = new LoginTaskOptions(customPath, customName, "Custom description");
+        var fake    = new FakeTaskSchedulerFacade();
+        var service = new LoginTaskService(fake, opts);
 
-        service.Enable(opts);
+        service.Enable();
 
         fake.RegisterCalls.Should().ContainSingle();
         var call = fake.RegisterCalls[0];
         call.taskName.Should().Be(customName);
         call.executablePath.Should().Be(customPath);
         call.description.Should().Be("Custom description");
+
+        // IsEnabled / Disable must key off the SAME injected name, not a hardcoded one.
+        service.IsEnabled().Should().BeTrue();
+        service.Disable();
+        service.IsEnabled().Should().BeFalse();
+        fake.UnregisterCalls.Should().ContainSingle().Which.Should().Be(customName);
     }
 }

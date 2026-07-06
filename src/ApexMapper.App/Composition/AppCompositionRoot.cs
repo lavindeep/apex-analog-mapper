@@ -133,8 +133,21 @@ public static class AppCompositionRoot
             return new StubCalibrationService(logger);
         });
 
-        services.AddSingleton<ILoginTaskService, LoginTaskService>();
         services.AddSingleton<ITaskSchedulerFacade, WindowsTaskSchedulerFacade>();
+
+        services.AddSingleton(sp =>
+        {
+            var paths = sp.GetRequiredService<IAppPaths>();
+            return new LoginTaskOptions(
+                ExecutablePath: paths.ExecutablePath,
+                TaskName:       "ApexProAnalogMapper",
+                Description:    "Apex Analog Mapper — start at user login");
+        });
+
+        services.AddSingleton<ILoginTaskService>(sp =>
+            new LoginTaskService(
+                sp.GetRequiredService<ITaskSchedulerFacade>(),
+                sp.GetRequiredService<LoginTaskOptions>()));
 
         services.AddSingleton<IDialogService, WpfDialogService>();
 

@@ -4,7 +4,7 @@ namespace ApexMapper.App.Services;
 public interface ILoginTaskService
 {
     bool IsEnabled();
-    void Enable(LoginTaskOptions options);
+    void Enable();
     void Disable();
 }
 
