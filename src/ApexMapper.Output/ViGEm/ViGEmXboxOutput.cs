@@ -1,6 +1,5 @@
 using ApexMapper.Core.Pipeline;
 using Nefarius.ViGEm.Client;
-using Nefarius.ViGEm.Client.Exceptions;
 using Nefarius.ViGEm.Client.Targets;
 using Nefarius.ViGEm.Client.Targets.Xbox360;
 
@@ -53,7 +52,7 @@ public sealed class ViGEmXboxOutput : IControllerOutput
         }
         catch (Exception ex)
         {
-            var message = DescribeConnectFailure(ex);
+            var message = ViGEmFailure.Describe(ex);
             _lastError = message;
             TearDownHandles();
             throw new InvalidOperationException(message, ex);
@@ -155,21 +154,4 @@ public sealed class ViGEmXboxOutput : IControllerOutput
         _controller = null;
         _client = null;
     }
-
-    private static string DescribeConnectFailure(Exception ex) => ex switch
-    {
-        VigemBusNotFoundException =>
-            "ViGEmBus driver not found. Install the ViGEmBus driver (1.22.0 or newer) from " +
-            "https://github.com/nefarius/ViGEmBus/releases and reconnect.",
-        VigemBusVersionMismatchException =>
-            "The installed ViGEmBus driver is an incompatible version. Update ViGEmBus to 1.22.0 or newer.",
-        VigemBusAccessFailedException =>
-            "Access to the ViGEmBus driver was denied. Ensure ViGEmBus is installed correctly and try again.",
-        VigemNoFreeSlotException =>
-            "The ViGEmBus driver has no free controller slots. Disconnect other virtual controllers and retry.",
-        DllNotFoundException =>
-            "The ViGEm client native dependencies could not be loaded. The ViGEmBus driver must be " +
-            "installed and the app must be running on Windows.",
-        _ => $"The virtual Xbox controller could not be created: {ex.Message}",
-    };
 }
