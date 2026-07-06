@@ -63,6 +63,12 @@ public sealed class TrayMenuViewModelTests
 
         public void Switch(string profileId) => _currentProfileId = profileId;
 
+        public void ReplaceProfiles(IEnumerable<TrayProfileEntry> profiles)
+        {
+            _profiles.Clear();
+            _profiles.AddRange(profiles);
+        }
+
         public event EventHandler? ProfilesChanged;
 
         public void RaiseProfilesChanged() => ProfilesChanged?.Invoke(this, EventArgs.Empty);
@@ -74,13 +80,11 @@ public sealed class TrayMenuViewModelTests
 
         public bool IsConnected => false;
 
-#pragma warning disable CS0067 // event never used — required by ISupervisorChannel interface
         public event EventHandler<SupervisorStatusEventArgs>? StatusChanged
         {
             add { }
             remove { }
         }
-#pragma warning restore CS0067
 
         public Task ConnectAsync(CancellationToken ct) => Task.CompletedTask;
 
@@ -109,13 +113,11 @@ public sealed class TrayMenuViewModelTests
     private sealed class FakeForegroundWatcher : IForegroundWatcher
     {
         public ForegroundContext Current => ForegroundContext.Empty;
-#pragma warning disable CS0067
         public event EventHandler<ForegroundChangedEventArgs>? ForegroundChanged
         {
             add { }
             remove { }
         }
-#pragma warning restore CS0067
         public void Start() { }
         public void Stop() { }
         public void Dispose() { }
@@ -294,14 +296,18 @@ public sealed class TrayMenuViewModelTests
     }
 
     [Fact]
-    public void ProfilesChanged_event_raises_PropertyChanged_for_CurrentProfileName()
+    public void ProfilesChanged_event_raises_PropertyChanged_for_CurrentProfileName_when_renamed()
     {
         var (vm, _, source, _, _) = Build();
         var changed = new List<string?>();
         ((INotifyPropertyChanged)vm).PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
+        // Rename the current profile so the resolved display name actually changes;
+        // an unchanged name must not notify (standard change-only semantics).
+        source.ReplaceProfiles([new TrayProfileEntry("p1", "Profile One Renamed"), Profile2]);
         source.RaiseProfilesChanged();
 
         changed.Should().Contain(nameof(TrayMenuViewModel.CurrentProfileName));
+        vm.CurrentProfileName.Should().Be("Profile One Renamed");
     }
 }

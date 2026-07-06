@@ -19,7 +19,9 @@ namespace ApexMapper.App.Tests.HotReload;
 internal sealed class ManualTimeProvider : TimeProvider
 {
     private DateTimeOffset _now = DateTimeOffset.UtcNow;
-    private readonly List<(TimerCallback callback, DateTimeOffset dueAt)> _timers = new();
+    // Track timer instances so Dispose removes only itself — timers created
+    // with the same callback must stay independent.
+    private readonly List<ManualTimer> _timers = new();
     private readonly object _lock = new();
 
     public override DateTimeOffset GetUtcNow() => _now;
@@ -30,10 +32,9 @@ internal sealed class ManualTimeProvider : TimeProvider
         TimeSpan dueTime,
         TimeSpan period)
     {
-        var due   = _now + dueTime;
-        var entry = new ManualTimer(this, callback, due);
+        var entry = new ManualTimer(this, callback, _now + dueTime);
         lock (_lock)
-            _timers.Add((callback, due));
+            _timers.Add(entry);
         return entry;
     }
 
@@ -41,36 +42,34 @@ internal sealed class ManualTimeProvider : TimeProvider
     {
         _now += delta;
 
-        List<TimerCallback> toFire;
+        List<ManualTimer> toFire;
         lock (_lock)
         {
-            toFire = _timers
-                .Where(t => t.dueAt <= _now)
-                .Select(t => t.callback)
-                .ToList();
-            _timers.RemoveAll(t => t.dueAt <= _now);
+            toFire = _timers.Where(t => t.DueAt <= _now).ToList();
+            _timers.RemoveAll(t => t.DueAt <= _now);
         }
 
-        foreach (var cb in toFire)
-            cb(null);
+        foreach (var timer in toFire)
+            timer.Callback(null);
     }
 
     internal void RemoveTimer(ManualTimer timer)
     {
         lock (_lock)
-            _timers.RemoveAll(t => t.callback == timer.Callback);
+            _timers.Remove(timer);
     }
 
     internal sealed class ManualTimer : ITimer
     {
         private readonly ManualTimeProvider _provider;
         internal TimerCallback Callback { get; }
+        internal DateTimeOffset DueAt { get; }
 
         public ManualTimer(ManualTimeProvider provider, TimerCallback callback, DateTimeOffset dueAt)
         {
             _provider = provider;
             Callback  = callback;
-            _ = dueAt;
+            DueAt     = dueAt;
         }
 
         public bool Change(TimeSpan dueTime, TimeSpan period) => true;

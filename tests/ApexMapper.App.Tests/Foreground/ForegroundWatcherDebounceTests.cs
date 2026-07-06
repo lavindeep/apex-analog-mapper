@@ -19,10 +19,10 @@ internal sealed class ManualTimeProvider : TimeProvider
 {
     private DateTimeOffset _now = DateTimeOffset.UtcNow;
 
-    // Each active timer is represented by a single entry: (callback, dueTime).
-    // We use a list rather than a sorted structure because the number of
-    // concurrent timers is always ≤ 1 in ForegroundWatcher.
-    private readonly List<(TimerCallback callback, DateTimeOffset dueAt)> _timers = new();
+    // Each active timer instance is tracked directly so Dispose removes only
+    // itself: ForegroundWatcher recreates timers with the SAME callback, so
+    // removal must be by instance, never by callback equality.
+    private readonly List<ManualTimer> _timers = new();
     private readonly object _lock = new();
 
     public override DateTimeOffset GetUtcNow() => _now;
@@ -33,10 +33,9 @@ internal sealed class ManualTimeProvider : TimeProvider
         TimeSpan dueTime,
         TimeSpan period)
     {
-        var due = _now + dueTime;
-        var entry = new ManualTimer(this, callback, due);
+        var entry = new ManualTimer(this, callback, _now + dueTime);
         lock (_lock)
-            _timers.Add((callback, due));
+            _timers.Add(entry);
         return entry;
     }
 
@@ -48,36 +47,34 @@ internal sealed class ManualTimeProvider : TimeProvider
     {
         _now += delta;
 
-        List<TimerCallback> toFire;
+        List<ManualTimer> toFire;
         lock (_lock)
         {
-            toFire = _timers
-                .Where(t => t.dueAt <= _now)
-                .Select(t => t.callback)
-                .ToList();
-            _timers.RemoveAll(t => t.dueAt <= _now);
+            toFire = _timers.Where(t => t.DueAt <= _now).ToList();
+            _timers.RemoveAll(t => t.DueAt <= _now);
         }
 
-        foreach (var cb in toFire)
-            cb(null);
+        foreach (var timer in toFire)
+            timer.Callback(null);
     }
 
     internal void RemoveTimer(ManualTimer timer)
     {
         lock (_lock)
-            _timers.RemoveAll(t => t.callback == timer.Callback);
+            _timers.Remove(timer);
     }
 
     internal sealed class ManualTimer : ITimer
     {
         private readonly ManualTimeProvider _provider;
         internal TimerCallback Callback { get; }
+        internal DateTimeOffset DueAt { get; }
 
         public ManualTimer(ManualTimeProvider provider, TimerCallback callback, DateTimeOffset dueAt)
         {
             _provider = provider;
             Callback = callback;
-            _ = dueAt; // stored in parent list
+            DueAt = dueAt;
         }
 
         public bool Change(TimeSpan dueTime, TimeSpan period) => true;
@@ -185,14 +182,8 @@ public sealed class ForegroundWatcherDebounceTests
         var tp    = new ManualTimeProvider();
         var src   = new FakeWindowEventSource();
         var probe = new FakeForegroundProbe();
-
-        // Enqueue three contexts; only the third should be emitted.
-        var ctx1 = MakeCtx(@"C:\Games\Alpha.exe");
-        var ctx2 = MakeCtx(@"C:\Games\Beta.exe");
-        var ctx3 = MakeCtx(@"C:\Games\Gamma.exe");
-        probe.Enqueue(ctx1);
-        probe.Enqueue(ctx2);
-        probe.Enqueue(ctx3);
+        // No contexts enqueued: the probe fabricates one carrying the pid it
+        // was asked to resolve, which proves WHICH event won the debounce.
 
         using var watcher = new ForegroundWatcher(src, probe, tp);
         watcher.Start();
@@ -211,10 +202,10 @@ public sealed class ForegroundWatcherDebounceTests
         // t=800ms: well past debounce for the third event
         tp.Advance(TimeSpan.FromMilliseconds(500));
 
+        // Only the final pending event is committed: one probe call, for pid 3.
         emitted.Should().ContainSingle();
-        // The third event was the pending one, so probe was called with pid=3.
-        // We enqueued ctx3 last, so it should be that context.
-        emitted[0].Should().Be(ctx3);
+        probe.ResolveCallCount.Should().Be(1);
+        emitted[0].ProcessId.Should().Be(3u);
     }
 
     // -----------------------------------------------------------------------

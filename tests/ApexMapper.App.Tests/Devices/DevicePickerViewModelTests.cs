@@ -28,11 +28,8 @@ public sealed class DevicePickerViewModelTests
         public void SetPrimary(Guid id)
         {
             PrimaryId = id;
-            _entries.ForEach(e =>
-            {
-                var idx = _entries.IndexOf(e);
-                _entries[idx] = e with { IsPrimary = e.Id == id };
-            });
+            for (var i = 0; i < _entries.Count; i++)
+                _entries[i] = _entries[i] with { IsPrimary = _entries[i].Id == id };
         }
 
         public void ReplaceEntries(IEnumerable<DeviceFacadeEntry> entries)
