@@ -174,6 +174,83 @@ public class FrameConnectionTests
         a.IsFaulted.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task Cancellation_after_frame_write_begins_leaves_no_partial_frame()
+    {
+        // A stream that cancels the send token the instant the first write (the
+        // length prefix) lands on the wire, then lets subsequent writes through.
+        using var captured = new MemoryStream();
+        using var cts = new CancellationTokenSource();
+        await using var stream = new CancelOnFirstWriteStream(captured, cts);
+        await using var connection = new FrameConnection(stream);
+
+        try
+        {
+            await connection.SendAsync(
+                new HeartbeatFrame { SchemaVersion = 1, SequenceNumber = 42 }, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancellation is an acceptable outcome — but only if it did not tear a
+            // half-written frame onto the wire (asserted below).
+        }
+
+        // Contract: a started frame write is atomic. Either the whole frame reached
+        // the wire, or the connection faulted — never a partial frame on a healthy
+        // connection.
+        captured.Position = 0;
+        var codec = new FrameCodec();
+        if (connection.IsFaulted)
+        {
+            return;
+        }
+
+        IFrame? readBack = await codec.ReadFrameAsync(captured, CancellationToken.None);
+        readBack.Should().BeOfType<HeartbeatFrame>()
+            .Which.SequenceNumber.Should().Be(42);
+    }
+
+    private sealed class CancelOnFirstWriteStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly CancellationTokenSource _cancelAfterFirstWrite;
+        private int _writes;
+
+        public CancelOnFirstWriteStream(Stream inner, CancellationTokenSource cancelAfterFirstWrite)
+        {
+            _inner = inner;
+            _cancelAfterFirstWrite = cancelAfterFirstWrite;
+        }
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => _inner.Length;
+        public override long Position { get => _inner.Position; set => _inner.Position = value; }
+
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await _inner.WriteAsync(buffer, cancellationToken);
+            if (Interlocked.Increment(ref _writes) == 1)
+            {
+                _cancelAfterFirstWrite.Cancel();
+            }
+        }
+
+        public override Task FlushAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return _inner.FlushAsync(cancellationToken);
+        }
+
+        public override void Flush() => _inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow + Timeout;

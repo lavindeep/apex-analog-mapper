@@ -34,6 +34,13 @@ public sealed class FrameCodec
     /// <see cref="IFrame.SchemaVersion"/>; a frame that still carries version 0
     /// throws <see cref="InvalidOperationException"/> to catch forgot-to-stamp
     /// bugs at their source.
+    ///
+    /// <paramref name="cancellationToken"/> aborts <em>before</em> any byte reaches
+    /// the wire (during serialization and the cap check). Once the first byte is
+    /// written the frame is committed and the prefix + payload + flush run to
+    /// completion under <see cref="CancellationToken.None"/>: a length-prefixed
+    /// stream cannot survive a half-written frame, so a cancel must never tear one
+    /// onto the wire. A transport failure during the write still propagates.
     /// </summary>
     public async ValueTask WriteFrameAsync(Stream stream, IFrame frame, CancellationToken cancellationToken)
     {
@@ -52,11 +59,13 @@ public sealed class FrameCodec
                 $"Serialized frame is {payload.Length} bytes, exceeding the {MaxFrameBytes}-byte cap.");
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         byte[] prefix = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(prefix, (uint)payload.Length);
-        await stream.WriteAsync(prefix, cancellationToken).ConfigureAwait(false);
-        await stream.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
-        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        await stream.WriteAsync(prefix, CancellationToken.None).ConfigureAwait(false);
+        await stream.WriteAsync(payload, CancellationToken.None).ConfigureAwait(false);
+        await stream.FlushAsync(CancellationToken.None).ConfigureAwait(false);
     }
 
     /// <summary>
