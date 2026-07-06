@@ -22,6 +22,14 @@ public class WireCompatibilityTests
         return Convert.ToHexString(ms.ToArray());
     }
 
+    private static async Task<IFrame?> RoundTripAsync(IFrame frame)
+    {
+        using var ms = new MemoryStream();
+        await Codec.WriteFrameAsync(ms, frame, CancellationToken.None);
+        ms.Position = 0;
+        return await Codec.ReadFrameAsync(ms, CancellationToken.None);
+    }
+
     [Fact]
     public async Task ControlFrame_v1_wire_bytes_are_frozen()
     {
@@ -59,5 +67,37 @@ public class WireCompatibilityTests
         var hex = await ToWireHexAsync(frame);
 
         hex.Should().Be("0E00000092019301CF08DC0D6AE89C000063");
+    }
+
+    [Fact]
+    public async Task ZeroFrame_v1_wire_bytes_are_frozen()
+    {
+        var frame = new ZeroFrame
+        {
+            SchemaVersion = 1,
+            TimestampTicks = 638_400_000_000_000_000L,
+            Reason = "gap",
+        };
+
+        var hex = await ToWireHexAsync(frame);
+
+        hex.Should().Be("1100000092029301CF08DC0D6AE89C0000A3676170");
+        (await RoundTripAsync(frame)).Should().BeEquivalentTo(frame);
+    }
+
+    [Fact]
+    public async Task PanicFrame_v1_wire_bytes_are_frozen()
+    {
+        var frame = new PanicFrame
+        {
+            SchemaVersion = 1,
+            TimestampTicks = 638_400_000_000_000_000L,
+            Reason = "panic",
+        };
+
+        var hex = await ToWireHexAsync(frame);
+
+        hex.Should().Be("1300000092039301CF08DC0D6AE89C0000A570616E6963");
+        (await RoundTripAsync(frame)).Should().BeEquivalentTo(frame);
     }
 }
