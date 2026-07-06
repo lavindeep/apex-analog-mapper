@@ -74,17 +74,14 @@ public sealed class CalibrationService : ICalibrationService
             if (!max.PerKeySamples.TryGetValue(keyByte, out var maxRaw)) continue;
             if (!noise.PerKeySamples.TryGetValue(keyByte, out var noiseRaw)) continue;
 
-            // De-normalize: convert ushort raw ADC back to 0..1 float.
-            var span = (float)(entry.RawMax - entry.RawMin);
-            var restVal = span > 0f ? (restRaw - entry.RawMin) / span : 0f;
-            var maxVal = span > 0f ? (maxRaw - entry.RawMin) / span : 1f;
-            var noiseBand = span > 0f ? noiseRaw / span : 0f;
-
+            // Store raw ADC units: KeyCalibration values are consumed directly as
+            // CalibrationCurve endpoints (raw domain). Normalizing them here would
+            // clamp every subsequent reading to full press.
             calibrations.Add(new KeyCalibration(
                 Key: KeyId.FromScanCode(entry.ScanCode),
-                RestValue: restVal,
-                MaxPressValue: maxVal,
-                NoiseBand: noiseBand));
+                RestValue: restRaw,
+                MaxPressValue: maxRaw,
+                NoiseBand: noiseRaw));
         }
 
         ct.ThrowIfCancellationRequested();

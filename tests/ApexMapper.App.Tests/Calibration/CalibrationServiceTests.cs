@@ -270,14 +270,15 @@ public sealed class CalibrationServiceTests
             var key04Cal = loaded.Calibrations.Single(c => c.Key == KeyId.FromScanCode(0x04));
             var key05Cal = loaded.Calibrations.Single(c => c.Key == KeyId.FromScanCode(0x05));
 
-            // RestValue round-trip: 5/255 and 30/255
-            key04Cal.RestValue.Should().BeApproximately(5f / 255f, 0.003f);
-            key04Cal.MaxPressValue.Should().BeApproximately(250f / 255f, 0.003f);
-            key04Cal.NoiseBand.Should().BeApproximately(2f / 255f, 0.003f);
+            // Persisted values are raw ADC units (consumed directly as curve
+            // endpoints), so they equal the captured raw samples verbatim.
+            key04Cal.RestValue.Should().BeApproximately(5f, 0.001f);
+            key04Cal.MaxPressValue.Should().BeApproximately(250f, 0.001f);
+            key04Cal.NoiseBand.Should().BeApproximately(2f, 0.001f);
 
-            key05Cal.RestValue.Should().BeApproximately(30f / 255f, 0.003f);
-            key05Cal.MaxPressValue.Should().BeApproximately(220f / 255f, 0.003f);
-            key05Cal.NoiseBand.Should().BeApproximately(3f / 255f, 0.003f);
+            key05Cal.RestValue.Should().BeApproximately(30f, 0.001f);
+            key05Cal.MaxPressValue.Should().BeApproximately(220f, 0.001f);
+            key05Cal.NoiseBand.Should().BeApproximately(3f, 0.001f);
         }
         finally
         {
