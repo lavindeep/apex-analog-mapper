@@ -10,9 +10,12 @@ namespace ApexMapper.Output.Ipc;
 /// cause, and makes every subsequent send throw fast. A fault never wedges — the
 /// owner observes it via the event and the completed read loop and can react.
 ///
-/// A received frame whose version is unknown (0, or newer than this build) is
-/// dropped and counted (<see cref="UnknownVersionFrames"/>), not faulted, so a
-/// forward-compatible peer cannot take the connection down.
+/// The connection is version-tolerant, not type-tolerant. A frame of a known type
+/// whose <see cref="IFrame.SchemaVersion"/> is unknown (0, or newer than this
+/// build) is dropped and counted (<see cref="UnknownVersionFrames"/>), not faulted.
+/// A frame of an unknown type — a union tag this build does not define — fails to
+/// deserialize and faults the connection, which is the intended fail-closed
+/// response to an incompatible peer.
 /// </summary>
 public sealed class FrameConnection : IAsyncDisposable
 {

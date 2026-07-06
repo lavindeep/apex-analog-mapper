@@ -14,6 +14,11 @@ namespace ApexMapper.Output.Ipc;
 /// Control and heartbeat frames carry a process-monotonic sequence number and a
 /// timestamp from the injected <see cref="TimeProvider"/>. SchemaVersion is
 /// stamped by the underlying connection on send.
+///
+/// Sequence numbers are assigned before the write lock is taken, so under parallel
+/// submits the on-wire order can differ from the sequence order. A receiver must
+/// treat the sequence number as a stamp, not an ordering guarantee, and must not
+/// treat an out-of-order sequence number as a protocol violation.
 /// </summary>
 public sealed class SupervisorClient : IAsyncDisposable
 {
