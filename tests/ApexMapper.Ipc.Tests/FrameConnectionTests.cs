@@ -210,6 +210,81 @@ public class FrameConnectionTests
             .Which.SequenceNumber.Should().Be(42);
     }
 
+    [Fact]
+    public async Task Dispose_with_a_queued_sender_never_wedges_and_surfaces_the_transport_error()
+    {
+        await using var stream = new GatedFailingStream();
+        var connection = new FrameConnection(stream);
+
+        // Sender 1 acquires the write lock and parks inside the stream write.
+        Task sender1 = Task.Run(() => connection.SendAsync(
+            new HeartbeatFrame { SchemaVersion = 1, SequenceNumber = 1 }, CancellationToken.None));
+        await stream.FirstWriteEntered.WaitAsync(Timeout);
+
+        // Sender 2 queues on the write lock behind sender 1.
+        Task sender2 = Task.Run(() => connection.SendAsync(
+            new HeartbeatFrame { SchemaVersion = 1, SequenceNumber = 2 }, CancellationToken.None));
+        await Task.Delay(100);
+
+        await connection.DisposeAsync();
+        stream.ReleaseWithTransportFailure();
+
+        // Neither sender may wedge; both must complete within the timeout.
+        Exception? error1 = await CaptureAsync(sender1).WaitAsync(TimeSpan.FromSeconds(2));
+        await CaptureAsync(sender2).WaitAsync(TimeSpan.FromSeconds(2));
+
+        // Sender 1 must surface the real transport failure, not a masking
+        // ObjectDisposedException from a disposed lock.
+        error1.Should().BeOfType<IOException>();
+    }
+
+    private static async Task<Exception?> CaptureAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
+    }
+
+    private sealed class GatedFailingStream : Stream
+    {
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _writes;
+
+        public Task FirstWriteEntered => _entered.Task;
+
+        public void ReleaseWithTransportFailure() => _release.TrySetResult();
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => 0;
+        public override long Position { get => 0; set { } }
+
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _writes) == 1)
+            {
+                _entered.TrySetResult();
+                await _release.Task.ConfigureAwait(false);
+                throw new IOException("transport failure");
+            }
+        }
+
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     private sealed class CancelOnFirstWriteStream : Stream
     {
         private readonly Stream _inner;

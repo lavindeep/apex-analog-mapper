@@ -141,7 +141,13 @@ public sealed class FrameConnection : IAsyncDisposable
         }
 
         _lifetimeCts.Dispose();
-        _writeLock.Dispose();
+
+        // Deliberately not disposing _writeLock: SemaphoreSlim.Dispose never wakes
+        // async waiters, so a sender parked on WaitAsync would wedge forever, and a
+        // Release from an in-flight sender's finally would throw ObjectDisposedException
+        // and mask its real transport fault. A SemaphoreSlim holds no unmanaged state
+        // unless AvailableWaitHandle is touched (it never is here), so leaving it
+        // undisposed leaks nothing while keeping every queued sender able to finish.
     }
 
     private void ThrowIfFaulted()
