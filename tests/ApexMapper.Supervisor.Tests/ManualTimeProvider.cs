@@ -94,6 +94,9 @@ internal sealed class ManualTimeProvider : TimeProvider
     {
         lock (_lock)
         {
+            // Clearing the due time must happen under the provider lock: Dispose
+            // can race Advance, which reads DueAt inside its locked region.
+            timer.ClearDueLocked();
             _timers.Remove(timer);
         }
     }
@@ -130,11 +133,7 @@ internal sealed class ManualTimeProvider : TimeProvider
             return true;
         }
 
-        public void Dispose()
-        {
-            DueAt = null;
-            _provider.Remove(this);
-        }
+        public void Dispose() => _provider.Remove(this);
 
         public ValueTask DisposeAsync()
         {
