@@ -43,6 +43,7 @@ public sealed class SupervisorServer : IAsyncDisposable
     private int _state = NotStarted;
     private int _disposed;
     private long _failedSessionStarts;
+    private long _pipeFailures;
 
     public SupervisorServer(
         string sessionId,
@@ -61,8 +62,19 @@ public sealed class SupervisorServer : IAsyncDisposable
     /// that failed before its pad connected (see <see cref="FailedSessionStarts"/>).</summary>
     public event Action<SessionEndReason>? SessionEnded;
 
+    /// <summary>Short human-readable lines describing loop activity: a client
+    /// connecting, a session ending (with reason and per-session anomaly
+    /// counters), a pre-connect pad failure (with its message), and pipe or
+    /// accept failures (with their message). Raised outside any lock; a throwing
+    /// subscriber is contained and never stops the loop.</summary>
+    public event Action<string>? Diagnostics;
+
     /// <summary>Sessions that died before their pad connected (pad connect failure).</summary>
     public long FailedSessionStarts => Interlocked.Read(ref _failedSessionStarts);
+
+    /// <summary>Failures creating or accepting on the session pipe. While these
+    /// accumulate the loop is backing off instead of serving a client.</summary>
+    public long PipeFailures => Interlocked.Read(ref _pipeFailures);
 
     public void Start()
     {
@@ -117,8 +129,10 @@ public sealed class SupervisorServer : IAsyncDisposable
                     inBufferSize: FrameCodec.MaxFrameBytes,
                     outBufferSize: FrameCodec.MaxFrameBytes);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Interlocked.Increment(ref _pipeFailures);
+                RaiseDiagnostics($"pipe creation failed: {ex.Message}");
                 consecutiveFailures++;
                 if (!await BackoffAsync(consecutiveFailures, stopToken).ConfigureAwait(false))
                 {
@@ -137,9 +151,11 @@ public sealed class SupervisorServer : IAsyncDisposable
                 await DisposeQuietlyAsync(pipe).ConfigureAwait(false);
                 break;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 await DisposeQuietlyAsync(pipe).ConfigureAwait(false);
+                Interlocked.Increment(ref _pipeFailures);
+                RaiseDiagnostics($"accept failed: {ex.Message}");
                 consecutiveFailures++;
                 if (!await BackoffAsync(consecutiveFailures, stopToken).ConfigureAwait(false))
                 {
@@ -156,18 +172,24 @@ public sealed class SupervisorServer : IAsyncDisposable
 
     private async Task RunOneSessionAsync(NamedPipeServerStream pipe, CancellationToken stopToken)
     {
+        RaiseDiagnostics("session started");
+
         var connection = new FrameConnection(pipe);
+        SupervisorSession? session = null;
         SessionEndReason? reason = null;
+        Exception? startFailure = null;
         try
         {
-            var session = new SupervisorSession(connection, _outputFactory(), _options, _timeProvider);
+            session = new SupervisorSession(connection, _outputFactory(), _options, _timeProvider);
             reason = await session.RunAsync(stopToken).ConfigureAwait(false);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Contained: a session that failed to start (pad connect failure, or
             // the output factory itself throwing) must not kill the accept loop.
+            // The detail is kept so diagnostics can report why it failed.
             Interlocked.Increment(ref _failedSessionStarts);
+            startFailure = ex;
         }
         finally
         {
@@ -176,8 +198,15 @@ public sealed class SupervisorServer : IAsyncDisposable
             await DisposeQuietlyAsync(connection).ConfigureAwait(false);
         }
 
-        if (reason is { } endReason)
+        if (startFailure is not null)
         {
+            RaiseDiagnostics($"session failed to start: {startFailure.Message}");
+        }
+        else if (reason is { } endReason)
+        {
+            RaiseDiagnostics(
+                $"session ended: {endReason} (unknownVersionFrames={session!.UnknownVersionFrames}, " +
+                $"nullPayloadControlFrames={session.NullPayloadControlFrames})");
             try
             {
                 SessionEnded?.Invoke(endReason);
@@ -188,6 +217,18 @@ public sealed class SupervisorServer : IAsyncDisposable
                 // the tray could then never reconnect and the pad would stay down
                 // with no way back until a restart.
             }
+        }
+    }
+
+    private void RaiseDiagnostics(string message)
+    {
+        try
+        {
+            Diagnostics?.Invoke(message);
+        }
+        catch
+        {
+            // Contained: a throwing diagnostics subscriber must not kill the loop.
         }
     }
 

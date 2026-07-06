@@ -19,6 +19,7 @@ public class SupervisorServerTests
     {
         private readonly List<FakeControllerOutput> _outputs = new();
         private readonly List<SessionEndReason> _endedReasons = new();
+        private readonly List<string> _diagnostics = new();
         private readonly Queue<Exception> _connectFailures = new();
         private readonly object _lock = new();
 
@@ -48,6 +49,17 @@ public class SupervisorServerTests
             }
         }
 
+        public IReadOnlyList<string> Diagnostics
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _diagnostics.ToArray();
+                }
+            }
+        }
+
         /// <summary>The next session's pad will fail to connect with this error.</summary>
         public void FailNextPadConnect(Exception error)
         {
@@ -69,6 +81,13 @@ public class SupervisorServerTests
                     harness._endedReasons.Add(reason);
                 }
             };
+            harness.Server.Diagnostics += line =>
+            {
+                lock (harness._lock)
+                {
+                    harness._diagnostics.Add(line);
+                }
+            };
             harness.Server.Start();
             return harness;
         }
@@ -83,6 +102,9 @@ public class SupervisorServerTests
         public Task WaitForWatchdogAsync() => WaitUntilAsync(() => Time.ScheduledTimerCount > 0);
 
         public Task WaitForEndedCountAsync(int count) => WaitUntilAsync(() => EndedReasons.Count >= count);
+
+        public Task WaitForDiagnosticAsync(Func<string, bool> predicate) =>
+            WaitUntilAsync(() => Diagnostics.Any(predicate));
 
         public async ValueTask DisposeAsync() => await Server.DisposeAsync().AsTask().WaitAsync(Timeout);
 
@@ -284,5 +306,77 @@ public class SupervisorServerTests
         await client2.SubmitControlAsync(new PadStatePayload { ButtonX = true }, CancellationToken.None).WaitAsync(Timeout);
         await WaitUntilAsync(() => harness.Outputs.Count == 2 && harness.Outputs[1].Submitted.Count == 1);
         harness.Outputs[1].Submitted[0].ButtonX.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Diagnostics_report_session_start_and_end_with_frame_counters()
+    {
+        await using var harness = ServerHarness.Start();
+
+        var client = await harness.ConnectClientAsync();
+        await client.SubmitControlAsync(new PadStatePayload { LeftTrigger = 1f }, CancellationToken.None).WaitAsync(Timeout);
+        await WaitUntilAsync(() => harness.Outputs.Count == 1 && harness.Outputs[0].Submitted.Count == 1);
+        await harness.WaitForDiagnosticAsync(line => line.Contains("session started", StringComparison.Ordinal));
+
+        await client.DisposeAsync().AsTask().WaitAsync(Timeout);
+        await harness.WaitForEndedCountAsync(1);
+
+        // The end line carries the reason and both per-session anomaly counters
+        // so an operator can see a clean disconnect versus a noisy one.
+        await harness.WaitForDiagnosticAsync(line =>
+            line.Contains("session ended", StringComparison.Ordinal) &&
+            line.Contains(nameof(SessionEndReason.PeerDisconnected), StringComparison.Ordinal) &&
+            line.Contains("unknownVersionFrames=0", StringComparison.Ordinal) &&
+            line.Contains("nullPayloadControlFrames=0", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_pre_connect_pad_failure_is_reported_with_its_error_message()
+    {
+        await using var harness = ServerHarness.Start();
+        harness.FailNextPadConnect(new InvalidOperationException("no ViGEmBus"));
+
+        var client = await harness.ConnectClientAsync();
+        await WaitUntilAsync(() => harness.Server.FailedSessionStarts == 1);
+
+        // The pre-connect failure detail must reach diagnostics instead of being
+        // discarded, so a driverless machine reports why every session dies.
+        await harness.WaitForDiagnosticAsync(line =>
+            line.Contains("failed to start", StringComparison.Ordinal) &&
+            line.Contains("no ViGEmBus", StringComparison.Ordinal));
+        harness.Server.PipeFailures.Should().Be(0);
+
+        await client.DisposeAsync().AsTask().WaitAsync(Timeout);
+    }
+
+    [Fact]
+    public async Task Pipe_creation_failure_increments_PipeFailures_and_is_reported()
+    {
+        // The harness server already holds the single pipe instance for its
+        // session; a second server bound to the same name cannot create the
+        // pipe and must keep the failure visible instead of spinning silently.
+        await using var harness = ServerHarness.Start();
+
+        var failures = new List<string>();
+        var second = new SupervisorServer(
+            harness.SessionId, () => new FakeControllerOutput(), new SupervisorOptions(), harness.Time);
+        second.Diagnostics += line =>
+        {
+            lock (failures)
+            {
+                failures.Add(line);
+            }
+        };
+        await using (second.ConfigureAwait(false))
+        {
+            second.Start();
+
+            await WaitUntilAsync(() => second.PipeFailures >= 1);
+            second.PipeFailures.Should().BeGreaterThanOrEqualTo(1);
+            lock (failures)
+            {
+                failures.Should().Contain(line => line.Contains("pipe creation failed", StringComparison.Ordinal));
+            }
+        }
     }
 }
