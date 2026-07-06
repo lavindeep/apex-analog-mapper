@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ApexMapper.Core.Keys;
 using ApexMapper.Core.Pipeline;
 
@@ -18,27 +19,48 @@ namespace ApexMapper.Core.Engine;
 /// <see cref="KeyStateStore"/>; this engine's own guarantee is only that a
 /// disabled engine's sink ends at zero.
 ///
+/// Ticks run on a dedicated thread paced by a cancellable ~1 ms wait (the
+/// same idiom as the HID feature-poll loop): a timer callback cannot hold a
+/// 1 ms cadence, and a spin loop would peg a core. The wall-clock resolution
+/// of that wait is scheduler-dependent, so each tick passes the <em>measured</em>
+/// elapsed time into the pipeline — ramps stay time-accurate even when a busy
+/// scheduler stretches a tick. The engine is single-run: start it once, stop
+/// it once; stopping joins the thread with a 2 s bound.
+///
 /// Threading: <see cref="SetProfile"/> and <see cref="SetEnabled"/> may be
 /// called from any thread. Ticks run on one thread; when the store is written
 /// concurrently by input backends it must be the <see cref="KeyIndex"/>-backed
 /// store (the dictionary-backed default is single-threaded only).
 /// </summary>
-public sealed class MappingEngine
+public sealed class MappingEngine : IAsyncDisposable
 {
+    private static readonly double TimestampToMs = 1000.0 / Stopwatch.Frequency;
+
     private readonly KeyStateStore _store;
     private readonly IPadStateSink _sink;
+    private readonly int _tickIntervalMs;
+    private readonly CancellationTokenSource _cts = new();
 
+    private Thread? _thread;
+    private TaskCompletionSource? _startedTcs;
     private BindingPipeline? _pipeline;
     private int _enabled = 1;
+    private int _disposed;
 
     // Tick-thread-only state.
     private VirtualPadState _pad;
     private bool _zeroPushedWhileDisabled;
 
-    public MappingEngine(KeyStateStore store, IPadStateSink sink)
+    public MappingEngine(KeyStateStore store, IPadStateSink sink, int tickIntervalMs = 1)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
+        if (tickIntervalMs <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(tickIntervalMs), "tick interval must be positive.");
+        }
+
+        _tickIntervalMs = tickIntervalMs;
     }
 
     public bool IsEnabled => Volatile.Read(ref _enabled) == 1;
@@ -62,6 +84,103 @@ public sealed class MappingEngine
             ? null
             : new BindingPipeline(profile.SingleBindings, profile.AxisBindings);
         Volatile.Write(ref _pipeline, pipeline);
+    }
+
+    /// <summary>Starts the tick thread; completes once the loop is running.
+    /// Idempotent while running. The engine cannot be restarted after a stop.</summary>
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
+        if (_thread is not null)
+        {
+            return Task.CompletedTask;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        _startedTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _thread = new Thread(Loop)
+        {
+            IsBackground = true,
+            Name = "MappingEngine",
+        };
+        _thread.Start();
+
+        return _startedTcs.Task;
+    }
+
+    /// <summary>Stops the loop and joins the tick thread with a 2 s bound, off
+    /// the caller's thread. The loop pushes a final zero state on the way out.</summary>
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (_thread is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // already disposed
+        }
+
+        var thread = _thread;
+        await Task.Run(() => thread.Join(TimeSpan.FromSeconds(2)), cancellationToken).ConfigureAwait(false);
+        _thread = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await StopAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            _cts.Dispose();
+        }
+    }
+
+    private void Loop()
+    {
+        var ct = _cts.Token;
+        _startedTcs?.TrySetResult();
+
+        long previous = Stopwatch.GetTimestamp();
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                // Cancellable pacing wait; actual resolution is up to the
+                // scheduler, which is why dt below is measured, not assumed.
+                ct.WaitHandle.WaitOne(_tickIntervalMs);
+                if (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                long now = Stopwatch.GetTimestamp();
+                var dtMs = (float)((now - previous) * TimestampToMs);
+                previous = now;
+                TickOnce(dtMs);
+            }
+        }
+        finally
+        {
+            // Safety: the loop never ends leaving a non-zero state latched at
+            // the sink — the sink's owner would otherwise keep forwarding the
+            // last mapped state with nothing left to refresh it.
+            _pad = default;
+            _sink.Push(in _pad);
+        }
     }
 
     internal void TickOnce(float dtMs)

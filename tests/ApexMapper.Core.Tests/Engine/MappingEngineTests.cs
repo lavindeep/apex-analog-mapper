@@ -168,4 +168,112 @@ public class MappingEngineTests
         sink.PushCount.Should().Be(1);
         sink.Last.Should().Be(default(VirtualPadState));
     }
+
+    [Fact]
+    public async Task Started_engine_ticks_on_its_own_thread_and_stop_joins_bounded()
+    {
+        var store = new KeyStateStore();
+        var sink = new ConcurrentSink();
+        await using var engine = new MappingEngine(store, sink);
+        engine.SetProfile(MakeProfile());
+        // Written before the loop thread starts, so the dictionary-backed store
+        // is safe here: Thread.Start establishes the happens-before edge.
+        store.Set(Throttle, 1f, KeyProvenance.Analog);
+
+        await engine.StartAsync(CancellationToken.None);
+        await WaitUntilAsync(() => sink.Count >= 50);
+        sink.Last.RightTrigger.Should().Be(1f);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await engine.StopAsync(CancellationToken.None);
+        sw.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3), "stop must join the tick thread within its bound");
+
+        // The loop never ends leaving a non-zero state latched at the sink.
+        sink.Last.Should().Be(default(VirtualPadState));
+
+        var countAfterStop = sink.Count;
+        await Task.Delay(50);
+        sink.Count.Should().Be(countAfterStop, "a stopped engine must not keep ticking");
+    }
+
+    [Fact]
+    public async Task Start_twice_is_idempotent_and_the_engine_keeps_ticking()
+    {
+        var store = new KeyStateStore();
+        var sink = new ConcurrentSink();
+        await using var engine = new MappingEngine(store, sink);
+
+        await engine.StartAsync(CancellationToken.None);
+        await engine.StartAsync(CancellationToken.None);
+
+        await WaitUntilAsync(() => sink.Count >= 10);
+    }
+
+    [Fact]
+    public async Task Stop_without_start_is_a_no_op()
+    {
+        var store = new KeyStateStore();
+        var sink = new ConcurrentSink();
+        await using var engine = new MappingEngine(store, sink);
+
+        Func<Task> act = async () => await engine.StopAsync(CancellationToken.None);
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task Double_dispose_is_safe()
+    {
+        var store = new KeyStateStore();
+        var sink = new ConcurrentSink();
+        var engine = new MappingEngine(store, sink);
+        await engine.StartAsync(CancellationToken.None);
+
+        await engine.DisposeAsync();
+        Func<Task> act = async () => await engine.DisposeAsync();
+        await act.Should().NotThrowAsync();
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("Condition not met within timeout.");
+            }
+
+            await Task.Delay(10);
+        }
+    }
+
+    private sealed class ConcurrentSink : IPadStateSink
+    {
+        private readonly object _lock = new();
+        private VirtualPadState _last;
+        private long _count;
+
+        public long Count => Interlocked.Read(ref _count);
+
+        public VirtualPadState Last
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _last;
+                }
+            }
+        }
+
+        public void Push(in VirtualPadState state)
+        {
+            lock (_lock)
+            {
+                _last = state;
+            }
+
+            Interlocked.Increment(ref _count);
+        }
+    }
 }
