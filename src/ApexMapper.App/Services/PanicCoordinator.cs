@@ -42,18 +42,31 @@ public sealed class PanicCoordinator
     }
 
     /// <summary>
-    /// Performs the panic sequence: disables auto-enable for the current foreground exe
-    /// (if non-empty) then submits panic to the supervisor. Exceptions from the supervisor
-    /// are caught and routed through <see cref="PanicCompleted"/>.
+    /// Performs the panic sequence: best-effort disables auto-enable for the current
+    /// foreground exe (if non-empty), then always submits panic to the supervisor.
+    /// Exceptions from the policy write and from the supervisor are each caught and
+    /// routed through <see cref="PanicCompleted"/> — a failing policy store must never
+    /// block the panic frame (fail-closed: zeroing output is the safety-critical step).
     /// </summary>
     public async Task PanicAsync(CancellationToken ct)
     {
         var exe = _foregroundWatcher.Current.ExecutablePath;
 
-        // Honour the intent — record the policy before calling the supervisor,
-        // so a supervisor failure still persists the disabled-exe entry.
+        // The policy write is best-effort: a throwing store (disk full, ACL, AV lock)
+        // must not prevent the panic frame from reaching the supervisor. Capture the
+        // failure and surface it for diagnostics, but carry on regardless.
+        Exception? policyError = null;
         if (!string.IsNullOrEmpty(exe))
-            _policyStore.DisableAutoEnable(exe);
+        {
+            try
+            {
+                _policyStore.DisableAutoEnable(exe);
+            }
+            catch (Exception ex)
+            {
+                policyError = ex;
+            }
+        }
 
         Exception? error = null;
         try
@@ -65,7 +78,7 @@ public sealed class PanicCoordinator
             error = ex;
         }
 
-        PanicCompleted?.Invoke(this, new PanicCompletedEventArgs(exe, error));
+        PanicCompleted?.Invoke(this, new PanicCompletedEventArgs(exe, error, policyError));
     }
 
     // Called on the WPF UI dispatcher by NHotkey. Dispatch onto a background task

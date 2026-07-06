@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using ApexMapper.App.Services;
@@ -92,12 +93,16 @@ public sealed class PanicCoordinatorTests
 
         public List<string> DisabledCalls { get; } = new();
 
+        /// <summary>When set, <see cref="DisableAutoEnable"/> throws this after recording the call.</summary>
+        public Exception? ThrowOnDisable { get; set; }
+
         public bool IsAutoEnableDisabled(string executablePath)
             => _disabled.Contains(executablePath);
 
         public void DisableAutoEnable(string executablePath)
         {
             DisabledCalls.Add(executablePath);
+            if (ThrowOnDisable is not null) throw ThrowOnDisable;
             _disabled.Add(executablePath);
         }
 
@@ -213,6 +218,46 @@ public sealed class PanicCoordinatorTests
         eventArgs!.Error.Should().BeOfType<InvalidOperationException>();
         eventArgs.DisabledExecutablePath.Should().Be(exe);
         policyStore.DisabledCalls.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task PanicAsync_submits_supervisor_even_when_policy_store_throws()
+    {
+        const string exe = @"C:\Games\Forza.exe";
+        var (coordinator, _, supervisor, _, policyStore) = Build(foregroundExe: exe);
+        policyStore.ThrowOnDisable = new IOException("simulated disk-full policy write");
+        coordinator.Start(TestGesture);
+
+        PanicCompletedEventArgs? eventArgs = null;
+        coordinator.PanicCompleted += (_, args) => eventArgs = args;
+
+        await coordinator.PanicAsync(CancellationToken.None);
+
+        // The panic frame must still be sent exactly once despite the policy failure.
+        supervisor.PanicCallCount.Should().Be(1);
+        eventArgs.Should().NotBeNull();
+        eventArgs!.PolicyError.Should().BeOfType<IOException>();
+        eventArgs.Error.Should().BeNull("the supervisor call succeeded");
+    }
+
+    [Fact]
+    public async Task PanicAsync_surfaces_both_policy_and_supervisor_failures()
+    {
+        const string exe = @"C:\Games\Forza.exe";
+        var (coordinator, _, supervisor, _, policyStore) = Build(foregroundExe: exe);
+        policyStore.ThrowOnDisable = new IOException("simulated policy write failure");
+        supervisor.ThrowOnPanic = new InvalidOperationException("simulated supervisor failure");
+        coordinator.Start(TestGesture);
+
+        PanicCompletedEventArgs? eventArgs = null;
+        coordinator.PanicCompleted += (_, args) => eventArgs = args;
+
+        await coordinator.PanicAsync(CancellationToken.None);
+
+        supervisor.PanicCallCount.Should().Be(1);
+        eventArgs.Should().NotBeNull();
+        eventArgs!.PolicyError.Should().BeOfType<IOException>();
+        eventArgs.Error.Should().BeOfType<InvalidOperationException>();
     }
 
     // ---------------------------------------------------------------------------
