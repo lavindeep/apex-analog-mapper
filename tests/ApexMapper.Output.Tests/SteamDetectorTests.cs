@@ -169,4 +169,18 @@ public class SteamDetectorTests
 
         verdict.IsSteamLaunched.Should().BeTrue();
     }
+
+    [Fact]
+    public void Enumerator_throwing_with_no_other_signal_degrades_to_negative_without_throwing()
+    {
+        // Detection is advisory: when the parent walk is the only signal left
+        // and the enumerator fails, Evaluate must return a quiet negative —
+        // never propagate the failure to the caller.
+        var detector = new SteamDetector(new ThrowingEnumerator());
+
+        var verdict = detector.Evaluate(Foreground(100, @"C:\Elsewhere\x.exe"));
+
+        verdict.IsSteamLaunched.Should().BeFalse();
+        verdict.SteamAppId.Should().BeNull();
+    }
 }

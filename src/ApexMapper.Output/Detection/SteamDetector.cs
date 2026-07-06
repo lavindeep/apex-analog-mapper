@@ -65,7 +65,7 @@ public sealed class SteamDetector
         // throwing enumerator degrades to "no parent signal" rather than faulting.
         if (ParentChainContainsSteam(foreground.ProcessId))
         {
-            return new SteamVerdict(true, null, "A parent process in the launch chain is steam.exe.");
+            return new SteamVerdict(true, null, "steam.exe is in the launch chain (the process itself or a parent).");
         }
 
         return new SteamVerdict(false, null, null);

@@ -18,7 +18,8 @@ namespace ApexMapper.Output.Detection;
 /// </summary>
 public sealed class AntiCheatDetector
 {
-    // The four spec service names. Stored normalized (lower-case, no ".exe").
+    // The four known anti-cheat service names. Matching strips the ".exe"
+    // suffix and compares case-insensitively, so casing here is cosmetic.
     private static readonly string[] BuiltInServices =
     {
         "BEService.exe",
