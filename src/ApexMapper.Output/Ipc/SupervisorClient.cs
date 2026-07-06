@@ -147,8 +147,13 @@ public sealed class SupervisorClient : IAsyncDisposable
 
     private async Task SendAsync(IFrame frame, CancellationToken cancellationToken)
     {
-        FrameConnection? connection = _connection;
+        // Read the generation BEFORE the connection: if a drop + reconnect lands
+        // between the two reads, the stale connection then pairs with the OLD
+        // generation and its failure is ignored by HandleDisconnect. The reversed
+        // order could pair the old connection with the NEW generation and tear
+        // down a healthy fresh session.
         long generation = Interlocked.Read(ref _generation);
+        FrameConnection? connection = _connection;
         if (connection is null || !IsConnected)
         {
             throw new InvalidOperationException("Not connected to the supervisor.");
