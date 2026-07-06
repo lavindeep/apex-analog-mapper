@@ -352,10 +352,14 @@ public class SupervisorServerTests
     [Fact]
     public async Task Pipe_creation_failure_increments_PipeFailures_and_is_reported()
     {
-        // The harness server already holds the single pipe instance for its
-        // session; a second server bound to the same name cannot create the
-        // pipe and must keep the failure visible instead of spinning silently.
+        // Connect a client so the harness server definitively owns the single
+        // pipe instance for its session (no race over who binds first); a second
+        // server bound to the same name then cannot create the pipe and must
+        // keep the failure visible instead of spinning silently.
         await using var harness = ServerHarness.Start();
+        await using var client = await harness.ConnectClientAsync();
+        await client.SubmitControlAsync(new PadStatePayload { LeftTrigger = 1f }, CancellationToken.None).WaitAsync(Timeout);
+        await WaitUntilAsync(() => harness.Outputs.Count == 1 && harness.Outputs[0].Submitted.Count == 1);
 
         var failures = new List<string>();
         var second = new SupervisorServer(
