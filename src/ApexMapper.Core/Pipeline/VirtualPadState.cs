@@ -1,5 +1,12 @@
 namespace ApexMapper.Core.Pipeline;
 
+/// <summary>
+/// The virtual pad's desired state, in normalized units. Sticks are -1..1 per
+/// axis using the XInput sign convention: positive X = right, positive Y = up
+/// (forward). A binding's positive key therefore steers right / pushes up.
+/// Triggers are 0..1. Signs are preserved end-to-end into the driver report;
+/// in-game direction remains pending real-hardware validation.
+/// </summary>
 public struct VirtualPadState
 {
     public float LeftStickX;
