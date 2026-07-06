@@ -254,4 +254,35 @@ public class SupervisorServerTests
 
         await again.Should().NotThrowAsync();
     }
+
+    [Fact]
+    public async Task Dispose_is_idempotent()
+    {
+        var harness = ServerHarness.Start();
+
+        await harness.Server.DisposeAsync().AsTask().WaitAsync(Timeout);
+        Func<Task> again = () => harness.Server.DisposeAsync().AsTask().WaitAsync(Timeout);
+
+        await again.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task A_throwing_session_ended_subscriber_does_not_kill_the_accept_loop()
+    {
+        await using var harness = ServerHarness.Start();
+        harness.Server.SessionEnded += _ => throw new InvalidOperationException("bad subscriber");
+
+        var client1 = await harness.ConnectClientAsync();
+        await client1.SubmitControlAsync(new PadStatePayload { LeftTrigger = 1f }, CancellationToken.None).WaitAsync(Timeout);
+        await WaitUntilAsync(() => harness.Outputs.Count == 1 && harness.Outputs[0].Submitted.Count == 1);
+        await client1.DisposeAsync().AsTask().WaitAsync(Timeout);
+        await harness.WaitForEndedCountAsync(1);
+
+        // The subscriber threw after the first session ended; the loop must
+        // still accept and serve a fresh client.
+        await using var client2 = await harness.ConnectClientAsync();
+        await client2.SubmitControlAsync(new PadStatePayload { ButtonX = true }, CancellationToken.None).WaitAsync(Timeout);
+        await WaitUntilAsync(() => harness.Outputs.Count == 2 && harness.Outputs[1].Submitted.Count == 1);
+        harness.Outputs[1].Submitted[0].ButtonX.Should().BeTrue();
+    }
 }

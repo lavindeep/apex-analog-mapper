@@ -41,6 +41,7 @@ public sealed class SupervisorServer : IAsyncDisposable
 
     private Task _loop = Task.CompletedTask;
     private int _state = NotStarted;
+    private int _disposed;
     private long _failedSessionStarts;
 
     public SupervisorServer(
@@ -86,6 +87,11 @@ public sealed class SupervisorServer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
+
         await StopAsync().ConfigureAwait(false);
         _stopCts.Dispose();
     }
@@ -172,7 +178,16 @@ public sealed class SupervisorServer : IAsyncDisposable
 
         if (reason is { } endReason)
         {
-            SessionEnded?.Invoke(endReason);
+            try
+            {
+                SessionEnded?.Invoke(endReason);
+            }
+            catch
+            {
+                // Contained: a throwing subscriber must not kill the accept loop —
+                // the tray could then never reconnect and the pad would stay down
+                // with no way back until a restart.
+            }
         }
     }
 
