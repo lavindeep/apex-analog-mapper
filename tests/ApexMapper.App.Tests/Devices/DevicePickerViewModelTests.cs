@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading;
 using ApexMapper.App.Services;
 using ApexMapper.App.ViewModels.Devices;
 using FluentAssertions;
@@ -213,6 +214,50 @@ public sealed class DevicePickerViewModelTests
         var rowB = vm.Devices.Single(d => d.Id == idB);
         rowB.IsConnected.Should().BeFalse();
         rowB.IsPrimary.Should().BeFalse();
+    }
+
+    // Records posts and runs them inline so the merge still applies synchronously.
+    private sealed class RecordingSyncContext : SynchronizationContext
+    {
+        public int PostCount { get; private set; }
+
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+            PostCount++;
+            d(state);
+        }
+    }
+
+    [Fact]
+    public void TopologyChanged_from_another_thread_is_marshalled_through_captured_context()
+    {
+        var id1 = Guid.NewGuid();
+        var idNew = Guid.NewGuid();
+        var selector = new FakeSelector();
+        selector.AddEntry(MakeEntry(id1));
+
+        // Construct the VM under a captured recording context (stands in for the UI thread).
+        var ctx = new RecordingSyncContext();
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(ctx);
+        DevicePickerViewModel vm;
+        try
+        {
+            vm = BuildVm(selector);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
+
+        // Fire the event from a thread where the captured context is NOT current.
+        var worker = new Thread(() =>
+            selector.FireTopologyChanged(new[] { MakeEntry(id1), MakeEntry(idNew, "New Device") }));
+        worker.Start();
+        worker.Join();
+
+        ctx.PostCount.Should().BeGreaterThan(0, "the merge must be posted onto the captured context");
+        vm.Devices.Should().Contain(d => d.Id == idNew);
     }
 
     [Fact]

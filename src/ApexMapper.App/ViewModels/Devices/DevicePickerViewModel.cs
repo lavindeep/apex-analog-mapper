@@ -9,6 +9,11 @@ public sealed class DevicePickerViewModel : ApexMapper.App.ViewModels.Observable
     private readonly IDeviceSelectorFacade _selector;
     private readonly IDeviceRegistryFacade _registry;
 
+    // Captured at construction (the UI thread in production). Topology events
+    // arrive on the enumerator/pump thread; mutating the WPF-bound collection
+    // there throws, so the merge is posted back onto this context.
+    private readonly SynchronizationContext? _syncContext;
+
     private ObservableCollection<DeviceListItem> _devices = [];
     private DeviceListItem? _primary;
 
@@ -18,6 +23,7 @@ public sealed class DevicePickerViewModel : ApexMapper.App.ViewModels.Observable
     {
         _selector = selector ?? throw new ArgumentNullException(nameof(selector));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+        _syncContext = SynchronizationContext.Current;
 
         RefreshCommand = new RelayCommand(ExecuteRefresh);
         MakePrimaryCommand = new RelayCommand<Guid>(ExecuteMakePrimary, CanMakePrimary);
@@ -71,6 +77,16 @@ public sealed class DevicePickerViewModel : ApexMapper.App.ViewModels.Observable
     // ---------------------------------------------------------------------------
 
     private void OnTopologyChanged(object? sender, TopologyChangedEventArgs e)
+    {
+        // Marshal onto the captured (UI) context when the event arrives elsewhere;
+        // run inline when already on it (or none was captured, as in tests).
+        if (_syncContext is not null && _syncContext != SynchronizationContext.Current)
+            _syncContext.Post(_ => MergeTopology(e), null);
+        else
+            MergeTopology(e);
+    }
+
+    private void MergeTopology(TopologyChangedEventArgs e)
     {
         // Merge topology update into the existing collection.
         // Connected set comes from the event; we preserve disconnected rows (IsConnected = false).
