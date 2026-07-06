@@ -26,7 +26,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results-windows
-          path: "**/TestResults/**/*.trx"
+          path: |
+            **/TestResults/**/*.trx
+            **/TestResults/**/*.dmp
+            **/TestResults/**/Sequence_*.xml
 
   build-and-test-macos:
     runs-on: macos-latest
