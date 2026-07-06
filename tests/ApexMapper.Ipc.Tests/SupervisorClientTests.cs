@@ -23,12 +23,13 @@ public class SupervisorClientTests
     // Short session id: the Unix domain-socket path backing the pipe has a 104-char cap.
     private static string NewSessionId() => "s" + Guid.NewGuid().ToString("N")[..8];
 
+    // Mirrors the real supervisor pipe configuration, including CurrentUserOnly.
     private static NamedPipeServerStream StartServer(string sessionId) => new(
         PipeNames.ForSession(sessionId),
         PipeDirection.InOut,
         1,
         PipeTransmissionMode.Byte,
-        PipeOptions.Asynchronous);
+        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
     private static async Task<SupervisorClient> ConnectAsync(
         string sessionId, NamedPipeServerStream server, TimeProvider? time = null)
@@ -38,6 +39,26 @@ public class SupervisorClientTests
         await client.ConnectAsync(CancellationToken.None);
         await accept.WaitAsync(Timeout);
         return client;
+    }
+
+    [Fact]
+    public async Task Connects_to_a_current_user_only_server()
+    {
+        // The supervisor's pipe is created with PipeOptions.CurrentUserOnly so a
+        // foreign local user can neither drive nor read the pad channel; the
+        // client must carry the same option or the two sides do not pair (on
+        // Unix the option changes where the underlying socket lives, and on
+        // Windows it adds owner checks on both ends).
+        var sessionId = NewSessionId();
+        await using var server = new NamedPipeServerStream(
+            PipeNames.ForSession(sessionId),
+            PipeDirection.InOut,
+            1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        await using var client = await ConnectAsync(sessionId, server);
+
+        client.IsConnected.Should().BeTrue();
     }
 
     [Fact]

@@ -213,8 +213,14 @@ public sealed class SupervisorClient : IAsyncDisposable
     private static Func<CancellationToken, Task<Stream>> DefaultConnect(string sessionId, TimeSpan timeout) =>
         async cancellationToken =>
         {
+            // CurrentUserOnly pairs with the supervisor's server-side option: the
+            // server refuses foreign-user clients, and the client side verifies the
+            // server is owned by the same user before trusting it with pad input.
             var pipe = new NamedPipeClientStream(
-                ".", PipeNames.ForSession(sessionId), PipeDirection.InOut, PipeOptions.Asynchronous);
+                ".",
+                PipeNames.ForSession(sessionId),
+                PipeDirection.InOut,
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             try
             {
                 await pipe.ConnectAsync((int)timeout.TotalMilliseconds, cancellationToken).ConfigureAwait(false);
