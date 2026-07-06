@@ -44,7 +44,10 @@ internal static class Program
         using var log = CreateLog();
         log.Write(LogLevel.Info, $"Supervisor starting for session {sessionId}.");
 
-        await using var server = new SupervisorServer(
+        // Deliberately NOT `await using`: disposal re-awaits the accept loop with
+        // no bound, which would undo the bounded stop below — a wedged loop must
+        // end in a forced exit, never an unbounded wait.
+        var server = new SupervisorServer(
             sessionId, () => new ViGEmXboxOutput(), new SupervisorOptions());
         server.Diagnostics += line => log.Write(LogLevel.Info, line);
         server.SessionEnded += reason => log.Write(LogLevel.Info, $"Session ended: {reason}.");
@@ -83,9 +86,18 @@ internal static class Program
         }
         catch (TimeoutException)
         {
+            // The accept loop is wedged (a driver or pipe call ignoring
+            // cancellation). Hanging here would leave a zombie process holding
+            // the session mutex — blocking every supervisor relaunch for this
+            // session — and swallowing further termination signals. Exit hard;
+            // the OS reclaims the pipe and the driver drops the pad.
             log.Write(LogLevel.Warn, "Supervisor stop timed out; forcing exit.");
+            log.Flush();
+            Environment.Exit(1);
         }
 
+        // The loop has fully unwound; disposal is now instantaneous.
+        await server.DisposeAsync().ConfigureAwait(false);
         log.Write(LogLevel.Info, "Supervisor stopped.");
         log.Flush();
         return 0;
