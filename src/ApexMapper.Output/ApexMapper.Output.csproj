@@ -12,4 +12,7 @@
     <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
     <ProjectReference Include="..\ApexMapper.Logging\ApexMapper.Logging.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ApexMapper.Ipc.Tests" />
+  </ItemGroup>
 </Project>

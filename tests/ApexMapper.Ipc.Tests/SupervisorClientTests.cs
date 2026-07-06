@@ -146,6 +146,92 @@ public class SupervisorClientTests
     }
 
     [Fact]
+    public async Task Reconnects_on_the_same_instance_after_the_server_drops()
+    {
+        var sessionId = NewSessionId();
+        var server1 = StartServer(sessionId);
+        var client = new SupervisorClient(sessionId, Timeout);
+
+        var disconnects = 0;
+        var firstDrop = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.Disconnected += _ =>
+        {
+            Interlocked.Increment(ref disconnects);
+            firstDrop.TrySetResult();
+        };
+
+        var accept1 = server1.WaitForConnectionAsync();
+        await client.ConnectAsync(CancellationToken.None);
+        await accept1.WaitAsync(Timeout);
+        client.IsConnected.Should().BeTrue();
+
+        await server1.DisposeAsync();
+        await firstDrop.Task.WaitAsync(Timeout);
+
+        await using var server2 = StartServer(sessionId);
+        var accept2 = server2.WaitForConnectionAsync();
+        await client.ConnectAsync(CancellationToken.None);
+        await accept2.WaitAsync(Timeout);
+
+        client.IsConnected.Should().BeTrue();
+        Volatile.Read(ref disconnects).Should().Be(1);
+        await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Reconnect_disposes_the_old_connection_and_a_stale_drop_leaves_the_new_session_intact()
+    {
+        var handedOut = new List<ProbeStream>();
+        Task<Stream> Connect(CancellationToken _)
+        {
+            var probe = new ProbeStream();
+            lock (handedOut)
+            {
+                handedOut.Add(probe);
+            }
+
+            return Task.FromResult<Stream>(probe);
+        }
+
+        await using var client = new SupervisorClient(Connect);
+        var disconnects = 0;
+        client.Disconnected += _ => Interlocked.Increment(ref disconnects);
+
+        await client.ConnectAsync(CancellationToken.None);
+        client.IsConnected.Should().BeTrue();
+        ProbeStream stream1 = handedOut[0];
+
+        // Break the first session through the send path; its read loop stays parked
+        // (ProbeStream reads ignore cancellation) so its disconnect continuation is
+        // deferred past the reconnect below.
+        stream1.FailWrites();
+        Func<Task> send = async () => await client.SubmitHeartbeatAsync(CancellationToken.None);
+        await send.Should().ThrowAsync<IOException>();
+
+        await WaitUntilAsync(() => !client.IsConnected);
+        Volatile.Read(ref disconnects).Should().Be(1);
+        // The superseded connection (and its transport) must be disposed — no leak.
+        await WaitUntilAsync(() => stream1.Disposed);
+
+        // Reconnect on the same instance: a fresh, live session.
+        await client.ConnectAsync(CancellationToken.None);
+        client.IsConnected.Should().BeTrue();
+        ProbeStream stream2 = handedOut[1];
+
+        // Now let the OLD session's read loop finish. Its stale disconnect must not
+        // touch the new session.
+        stream1.CompleteReadWithEof();
+        await Task.Delay(200);
+
+        client.IsConnected.Should().BeTrue();
+        Volatile.Read(ref disconnects).Should().Be(1);
+        stream2.Disposed.Should().BeFalse();
+
+        // Let the new session's read loop complete so it does not park indefinitely.
+        stream2.CompleteReadWithEof();
+    }
+
+    [Fact]
     public async Task Double_dispose_is_safe()
     {
         var sessionId = NewSessionId();
@@ -155,5 +241,64 @@ public class SupervisorClientTests
         await client.DisposeAsync();
         Func<Task> act = async () => await client.DisposeAsync();
         await act.Should().NotThrowAsync();
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow + Timeout;
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("Condition not met within timeout.");
+            }
+
+            await Task.Delay(10);
+        }
+    }
+
+    /// <summary>
+    /// A controllable transport: reads park on a gate (ignoring cancellation, so a
+    /// disconnect continuation can be deferred on demand), writes optionally fail
+    /// with a transport error, and disposal is observable.
+    /// </summary>
+    private sealed class ProbeStream : Stream
+    {
+        private readonly TaskCompletionSource<int> _readGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private volatile bool _failWrites;
+
+        public bool Disposed { get; private set; }
+
+        public void FailWrites() => _failWrites = true;
+
+        public void CompleteReadWithEof() => _readGate.TrySetResult(0);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => 0;
+        public override long Position { get => 0; set { } }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => await _readGate.Task.ConfigureAwait(false);
+
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+            => _failWrites
+                ? ValueTask.FromException(new IOException("transport failure"))
+                : ValueTask.CompletedTask;
+
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
+
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

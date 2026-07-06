@@ -23,6 +23,7 @@ public sealed class SupervisorClient : IAsyncDisposable
 
     private FrameConnection? _connection;
     private long _sequence;
+    private long _generation;
     private int _connected;
     private int _disposed;
 
@@ -33,12 +34,23 @@ public sealed class SupervisorClient : IAsyncDisposable
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
+    // Test seam: lets a suite substitute the transport with a controllable stream.
+    internal SupervisorClient(Func<CancellationToken, Task<Stream>> connect, TimeProvider? timeProvider = null)
+    {
+        _connect = connect ?? throw new ArgumentNullException(nameof(connect));
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
     /// <summary>Raised once when the connection drops (clean disconnect or fault). The
     /// argument carries the fault cause, or null for a clean peer disconnect.</summary>
     public event Action<Exception?>? Disconnected;
 
     public bool IsConnected => Volatile.Read(ref _connected) == 1;
 
+    // Single-owner: ConnectAsync is not safe to call concurrently with itself. The
+    // IsConnected check is check-then-act, so two racing callers could each open a
+    // pipe. The intended owner is the App-side channel adapter driving one client
+    // instance from one place; callers must serialize connect/reconnect themselves.
     public async Task ConnectAsync(CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
@@ -48,8 +60,14 @@ public sealed class SupervisorClient : IAsyncDisposable
         }
 
         Stream stream = await _connect(cancellationToken).ConfigureAwait(false);
+
+        // Each connection gets a generation stamp. Only a disconnect notification
+        // whose generation is still current may tear down the live session, so a
+        // late continuation or fault from a superseded connection cannot flip the
+        // flag or raise Disconnected against a fresh session.
+        long generation = Interlocked.Increment(ref _generation);
         var connection = new FrameConnection(stream, _codec);
-        connection.Faulted += OnConnectionFaulted;
+        connection.Faulted += cause => HandleDisconnect(generation, cause);
         _connection = connection;
         Volatile.Write(ref _connected, 1);
 
@@ -57,7 +75,7 @@ public sealed class SupervisorClient : IAsyncDisposable
         // closing the pipe. It outlives the connect token — DisposeAsync stops it.
         Task readLoop = connection.RunReadLoopAsync(_ => ValueTask.CompletedTask, CancellationToken.None);
         _ = readLoop.ContinueWith(
-            _ => HandleDisconnect(null),
+            _ => HandleDisconnect(generation, null),
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
@@ -115,10 +133,9 @@ public sealed class SupervisorClient : IAsyncDisposable
         // Zero the connected flag first so the loop's completion continuation does
         // not surface a Disconnected event for an owner-initiated shutdown.
         Interlocked.Exchange(ref _connected, 0);
-        FrameConnection? connection = _connection;
+        FrameConnection? connection = Interlocked.Exchange(ref _connection, null);
         if (connection is not null)
         {
-            connection.Faulted -= OnConnectionFaulted;
             await connection.DisposeAsync().ConfigureAwait(false);
         }
     }
@@ -126,6 +143,7 @@ public sealed class SupervisorClient : IAsyncDisposable
     private async Task SendAsync(IFrame frame, CancellationToken cancellationToken)
     {
         FrameConnection? connection = _connection;
+        long generation = Interlocked.Read(ref _generation);
         if (connection is null || !IsConnected)
         {
             throw new InvalidOperationException("Not connected to the supervisor.");
@@ -137,21 +155,45 @@ public sealed class SupervisorClient : IAsyncDisposable
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            HandleDisconnect(ex is InvalidOperationException ? null : ex);
+            HandleDisconnect(generation, ex is InvalidOperationException ? null : ex);
             throw;
         }
     }
 
-    private void OnConnectionFaulted(Exception cause) => HandleDisconnect(cause);
-
-    private void HandleDisconnect(Exception? error)
+    private void HandleDisconnect(long generation, Exception? error)
     {
+        // Ignore a disconnect from a superseded connection; only the current
+        // generation may take the live session down.
+        if (Interlocked.Read(ref _generation) != generation)
+        {
+            return;
+        }
+
         if (Interlocked.Exchange(ref _connected, 0) == 0)
         {
             return; // already disconnected, or never connected
         }
 
+        FrameConnection? connection = Interlocked.Exchange(ref _connection, null);
+        if (connection is not null)
+        {
+            _ = DisposeQuietlyAsync(connection);
+        }
+
         Disconnected?.Invoke(error);
+    }
+
+    private static async Task DisposeQuietlyAsync(FrameConnection connection)
+    {
+        try
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // Best-effort teardown of a dropped connection; a dispose failure here
+            // is not actionable and must not escape the disconnect path.
+        }
     }
 
     private long NextSequence() => Interlocked.Increment(ref _sequence);
