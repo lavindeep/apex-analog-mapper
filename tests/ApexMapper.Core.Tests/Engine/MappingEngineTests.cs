@@ -91,6 +91,30 @@ public class MappingEngineTests
     }
 
     [Fact]
+    public void Ramps_restart_at_rest_after_a_profile_swap()
+    {
+        var store = new KeyStateStore();
+        var sink = new CapturingSink();
+        var engine = new MappingEngine(store, sink);
+        engine.SetProfile(MakeProfile("a"));
+        // Digital provenance ramps (analog would bypass); the binding presses
+        // over 120 ms.
+        store.Set(Throttle, 1f, KeyProvenance.Digital);
+
+        engine.TickOnce(60f); // 60 of 120 ms into the press ramp
+        sink.Last.RightTrigger.Should().BeApproximately(0.5f, 0.001f, "the ramp is ~halfway up mid-press");
+
+        // Swap to a same-binding profile. SetProfile rebuilds the pipeline and
+        // restarts ramp state from rest, so the next tick must restart low — a
+        // ramp that carried over would already be at ~1.0 after another 60 ms.
+        engine.SetProfile(MakeProfile("b"));
+        engine.TickOnce(60f);
+
+        sink.Last.RightTrigger.Should().BeApproximately(
+            0.5f, 0.001f, "the swapped-in ramp restarts from rest, not from the old profile's accumulated value");
+    }
+
+    [Fact]
     public void Clearing_the_profile_returns_the_pad_to_zero()
     {
         var store = new KeyStateStore();
