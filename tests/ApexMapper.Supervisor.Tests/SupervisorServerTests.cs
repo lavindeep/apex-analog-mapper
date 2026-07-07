@@ -410,6 +410,36 @@ public class SupervisorServerTests
     }
 
     [Fact]
+    public async Task A_permanently_failing_pipe_still_retires_the_server_at_the_idle_deadline()
+    {
+        // First harness's client owns the single pipe instance for the session,
+        // so the second server's pipe creation fails on every attempt. The idle
+        // deadline must still retire the second server — otherwise a server
+        // that can never bind would retry in backoff forever, which is exactly
+        // the lingering-process behavior idle exit exists to remove.
+        await using var harness = ServerHarness.Start();
+        await using var client = await harness.ConnectClientAsync();
+
+        var time = new ManualTimeProvider();
+        var options = new SupervisorOptions();
+        var second = new SupervisorServer(
+            harness.SessionId, () => new FakeControllerOutput(), options, time);
+        await using (second.ConfigureAwait(false))
+        {
+            second.Start();
+            await WaitUntilAsync(() => second.PipeFailures >= 1);
+            await WaitUntilAsync(() => time.ScheduledTimerCount == 1);
+
+            time.Advance(options.IdleExitTimeout + TimeSpan.FromMilliseconds(1));
+
+            var reason = await second.Completion.WaitAsync(Timeout);
+            reason.Should().Be(
+                ServerExitReason.IdleTimeout,
+                "a server that cannot bind its pipe must exit at the idle deadline instead of retrying forever");
+        }
+    }
+
+    [Fact]
     public async Task Idle_exit_when_no_client_ever_connects()
     {
         await using var harness = ServerHarness.Start();
