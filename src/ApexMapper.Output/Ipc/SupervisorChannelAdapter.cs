@@ -26,7 +26,12 @@ namespace ApexMapper.Output.Ipc;
 /// and raised in stamp order, exactly once per transition, under a dedicated
 /// raise gate. No adapter state lock is held while handlers run: paths take
 /// the raise gate after releasing the state lock and never the reverse, so a
-/// handler may call back into the adapter without deadlocking.
+/// handler may make synchronous calls back into the adapter without
+/// deadlocking. A handler that instead blocks a raising thread on an adapter
+/// async method (for example calling <c>.Wait()</c> or <c>.Result</c> on
+/// <see cref="SubmitPanicAsync"/> or <see cref="DisconnectAsync"/>) can
+/// deadlock against the status gate; handlers must stay synchronous or hand
+/// async work off without blocking.
 /// </summary>
 public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
 {
@@ -136,6 +141,9 @@ public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
     /// the wait and local teardown still completes — the supervisor's
     /// heartbeat gap zeroes the pad regardless, so the path stays fail-closed.
     /// A send failure or cancellation propagates after the local teardown.
+    /// With no live session the call completes as a silent no-op — the
+    /// supervisor's liveness gap has already zeroed the pad — so a caller must
+    /// not read completion of this task as proof the panic frame was delivered.
     /// </summary>
     public async Task SubmitPanicAsync(string? reason, CancellationToken cancellationToken)
     {
