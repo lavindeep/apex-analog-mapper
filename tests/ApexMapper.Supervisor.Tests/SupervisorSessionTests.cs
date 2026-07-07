@@ -209,6 +209,44 @@ public class SupervisorSessionTests
         h.Output.Submitted[0].ButtonX.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task An_unknown_version_flood_does_not_keep_the_session_alive()
+    {
+        // Unknown-version frames are dropped by the connection BEFORE the session
+        // callback (so they never call NotifyAlive), which means a peer flooding
+        // them cannot forge liveness. Continuous unknown-version traffic while the
+        // gap window elapses must still tear the pad down.
+        await using var h = await SessionHarness.StartAsync();
+        await h.WaitForWatchdogAsync();
+
+        // A single valid frame anchors the last-alive time at T0.
+        await h.SendControlAsync(new PadStatePayload());
+        await h.WaitForSubmitCountAsync(1);
+
+        // Advance partway into the window, then flood unknown-version frames at
+        // that later time. Waiting on the drop counter proves they were all
+        // processed before the final advance — deterministically, without any
+        // valid frame that would legitimately reset liveness.
+        h.Time.Advance(TimeSpan.FromMilliseconds(600));
+        for (var i = 0; i < 50; i++)
+        {
+            await h.SendUnknownVersionControlAsync();
+        }
+
+        await WaitUntilAsync(() => h.Session.UnknownVersionFrames >= 50);
+        h.Run.IsCompleted.Should().BeFalse("600 ms is still inside the 1 s window");
+
+        // Total elapsed since the last VALID frame is now 1200 ms. The gap must
+        // fire: if the flooded frames had counted as liveness, the last-alive
+        // time would be T0+600 ms and only 600 ms would have elapsed — no gap.
+        h.Time.Advance(TimeSpan.FromMilliseconds(600));
+
+        var reason = await h.Run.WaitAsync(Timeout);
+        reason.Should().Be(SessionEndReason.HeartbeatGap);
+        AssertToreDownExactlyOnce(h.Output.Calls);
+        h.Session.UnknownVersionFrames.Should().BeGreaterThanOrEqualTo(50, "every flooded frame is counted, none dispatched");
+    }
+
     // ------------------------------------------------------------------
     // Teardown triggers — each must zero then disconnect, exactly once
     // ------------------------------------------------------------------
