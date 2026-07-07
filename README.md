@@ -78,14 +78,14 @@ This project is developed without an Apex Pro keyboard or Windows hardware. All
 verification is automated: unit tests locally and on GitHub Actions.
 
 - **macOS / cross-platform job** builds and runs the cross-platform subset:
-  **645 tests** — ApexMapper.Core (149), ApexMapper.Input.Abstractions (239),
+  **654 tests** — ApexMapper.Core (150), ApexMapper.Input.Abstractions (239),
   ApexMapper.Persistence (73), ApexMapper.Logging (20), the IPC frame codec and
-  transport (52), ApexMapper.Output (63), and ApexMapper.Supervisor (49). The
+  transport (52), ApexMapper.Output (63), and ApexMapper.Supervisor (57). The
   supervisor, IPC, and output logic run over real named pipes on the dev box, so
   everything except the ViGEm P/Invoke layer is exercised locally.
 - **Windows job** builds the full solution and additionally runs the
-  Windows-only suites — ApexMapper.Input (Raw Input / HidSharp adapters) and
-  ApexMapper.App (217) — for roughly **870 tests across nine assemblies**.
+  Windows-only suites — ApexMapper.Input (Raw Input / HidSharp adapters, 8) and
+  ApexMapper.App (230) — for **892 tests across nine assemblies**.
 
 Because the Windows runner is Windows Server, ViGEmBus cannot load there, so
 there are **no end-to-end virtual-pad tests anywhere in CI**. End-to-end behavior
@@ -126,7 +126,8 @@ perf/
 Prebuilt Windows installers are published on the
 [Releases](https://github.com/lavindeep/apex-analog-mapper/releases) page.
 
-1. Download the latest `ApexAnalogMapper-<version>.msi`.
+1. Download the latest `apex-analog-mapper-<version>.msi` and check it against
+   the `SHA256SUMS.txt` published alongside it.
 2. Run it. Because the installer is **unsigned**, Windows SmartScreen warns that
    the publisher is unrecognized — choose **More info → Run anyway**. See
    [SECURITY.md](SECURITY.md) for why it is unsigned and how to check what you
@@ -139,10 +140,15 @@ Prebuilt Windows installers are published on the
 ### Prerequisite: ViGEmBus
 
 Virtual-controller output needs the ViGEmBus driver. It is **not** bundled and is
-never installed silently. Install it separately from the
-[official ViGEmBus releases](https://github.com/nefarius/ViGEmBus/releases)
-(v1.22.0). The app detects a missing driver and prompts you when you enable
-mapping.
+never installed silently; the app detects a missing driver and prompts you when
+you enable mapping. Install it separately, and **only from the
+[official ViGEmBus releases page](https://github.com/nefarius/ViGEmBus/releases)**
+(v1.22.0) — third-party "ViGEmBus download" mirror sites are a known
+adware/malware vector. Be aware that ViGEmBus is end-of-life (retired and
+archived in November 2023; v1.22.0 is the final release), though it remains the
+ecosystem-standard virtual-pad driver. The official binary is signed by
+Nefarius, and Windows verifies that signature at install and every time the
+driver loads. See [SECURITY.md](SECURITY.md) for the full picture.
 
 ### Uninstalling
 
