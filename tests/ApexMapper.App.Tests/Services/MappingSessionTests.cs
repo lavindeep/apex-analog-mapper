@@ -35,6 +35,10 @@ public sealed class MappingSessionTests
         public int PanicCalls { get; private set; }
         public Exception? ThrowOnDisconnect { get; set; }
 
+        /// <summary>Invoked at the moment DisconnectAsync is entered — lets a
+        /// test snapshot engine/store state to prove the local-off ran first.</summary>
+        public Action? OnDisconnectEntered { get; set; }
+
         public bool IsConnected => ConnectCalls > DisconnectCalls;
 
         public event EventHandler<SupervisorStatusEventArgs>? StatusChanged
@@ -59,6 +63,7 @@ public sealed class MappingSessionTests
 
         public Task DisconnectAsync(CancellationToken ct)
         {
+            OnDisconnectEntered?.Invoke();
             DisconnectCalls++;
             if (ThrowOnDisconnect is not null) throw ThrowOnDisconnect;
             return Task.CompletedTask;
@@ -338,6 +343,31 @@ public sealed class MappingSessionTests
         h.Session.IsEnabled.Should().BeFalse();
         h.Engine.IsEnabled.Should().BeFalse();
         h.Store.Get(Throttle).Value.Should().Be(0f);
+    }
+
+    [Fact]
+    public async Task Disable_does_local_off_before_disconnecting_the_channel()
+    {
+        // Ordering contract: the engine must be off and held keys gated BEFORE
+        // the channel is asked to zero+disconnect, so a wedged channel can never
+        // delay the local safety writes.
+        var h = Build();
+        await h.Session.EnableAsync(CancellationToken.None);
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital);
+
+        bool engineEnabledAtDisconnect = true;
+        bool gatedAtDisconnect = false;
+        h.Channel.OnDisconnectEntered = () =>
+        {
+            engineEnabledAtDisconnect = h.Engine.IsEnabled;
+            gatedAtDisconnect = h.Store.IsGated(Throttle);
+        };
+
+        await h.Session.DisableAsync(CancellationToken.None);
+
+        h.Channel.DisconnectCalls.Should().Be(1);
+        engineEnabledAtDisconnect.Should().BeFalse("the engine must already be disabled when the channel disconnects");
+        gatedAtDisconnect.Should().BeTrue("held keys must already be gated when the channel disconnects");
     }
 
     [Fact]
