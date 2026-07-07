@@ -203,4 +203,37 @@ public sealed class AppCompositionRootTests : IAsyncLifetime
         vm.DevicePickerViewModel.Should().NotBeNull();
         vm.CalibrationWizardViewModel.Should().NotBeNull();
     }
+
+    // -----------------------------------------------------------------------
+    // Pipeline wiring: the engine tick must drain the input ring
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task EngineTick_DrainsTheInputRing_Through_ThePreTickHook()
+    {
+        // The composition root wires the engine's preTick to InputHost.Drain so
+        // every tick consumes queued raw input — even while mapping is disabled
+        // (a key release must still clear its gate). Enqueue a synthetic event,
+        // start the engine, and assert the ring empties within a bounded wait.
+        // If the preTick link is dropped (preTick: null) the ring never drains.
+        var ring = _provider.GetRequiredService<
+            ApexMapper.Input.Abstractions.Pipeline.SpscRingBuffer<
+                ApexMapper.Input.Abstractions.Pipeline.RawKeyEvent>>();
+        var engine = _provider.GetRequiredService<ApexMapper.Core.Engine.MappingEngine>();
+
+        ring.TryEnqueue(new ApexMapper.Input.Abstractions.Pipeline.RawKeyEvent(
+            ScanCode: 0x11, IsDown: true, TimestampTicks: 0, DeviceId: 1))
+            .Should().BeTrue("the empty ring must accept the synthetic event");
+
+        await engine.StartAsync(CancellationToken.None);
+
+        // Poll for up to ~2 s (200 × 10 ms) for the tick loop to drain the ring.
+        for (var i = 0; i < 200 && !ring.IsEmpty; i++)
+        {
+            await Task.Delay(10);
+        }
+
+        ring.IsEmpty.Should().BeTrue("the engine tick's preTick must drain the input ring");
+        engine.IsEnabled.Should().BeFalse("draining is independent of the enable state — that is the point");
+    }
 }
