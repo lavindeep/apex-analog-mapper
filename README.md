@@ -17,8 +17,8 @@ named-pipe supervisor process that owns the virtual pad and zeroes it the moment
 liveness is lost, ViGEm-based Xbox controller output, anti-cheat detection with
 fail-closed pre-flight checks, and a system-tray shell that drives the whole
 pipeline end to end. The diagnostics components (a latency HDR histogram and a
-log tail) are built and tested but not yet surfaced in the UI. What remains is an
-installer and signed distribution, an updater, and validation on real hardware.
+log tail) are built and tested but not yet surfaced in the UI. What remains is
+signed distribution, an updater, and validation on real hardware.
 
 ## Why This Exists
 
@@ -68,7 +68,7 @@ Legend: ✅ done and tested · 🚧 in progress on this branch · ⏳ not starte
 | HID analog path (feature/input routing, numbered reports, calibration) | 🚧 Exploratory; unproven without hardware |
 | Calibration wizard | 🚧 Present but stub-gated; raw capture pending |
 | Diagnostics components (latency histogram, log tail) | 🚧 Built and tested, not yet wired into the app shell |
-| Per-user MSI installer (unsigned, built and verified in CI) | 🚧 On this branch; not yet released or hardware-tested |
+| Per-user MSI installer (unsigned, built and verified in CI) | ✅ Released (v0.1.0, with SHA-256 checksums); not hardware-tested |
 | Signed distribution, auto-updater | ⏳ Not started |
 | Real Apex Pro hardware verification | ⏳ Pending — no hardware available |
 
