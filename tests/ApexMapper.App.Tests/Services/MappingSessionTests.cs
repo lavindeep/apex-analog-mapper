@@ -41,11 +41,10 @@ public sealed class MappingSessionTests
 
         public bool IsConnected => ConnectCalls > DisconnectCalls;
 
-        public event EventHandler<SupervisorStatusEventArgs>? StatusChanged
-        {
-            add { }
-            remove { }
-        }
+        public event EventHandler<SupervisorStatusEventArgs>? StatusChanged;
+
+        public void RaiseStatus(bool connected, string? error)
+            => StatusChanged?.Invoke(this, new SupervisorStatusEventArgs(connected, error));
 
         public Task ConnectAsync(CancellationToken ct)
         {
@@ -368,6 +367,50 @@ public sealed class MappingSessionTests
         h.Channel.DisconnectCalls.Should().Be(1);
         engineEnabledAtDisconnect.Should().BeFalse("the engine must already be disabled when the channel disconnects");
         gatedAtDisconnect.Should().BeTrue("held keys must already be gated when the channel disconnects");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Supervisor connectivity surfacing
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Supervisor_disconnect_while_enabled_surfaces_a_reconnecting_state()
+    {
+        var h = Build();
+        await h.Session.EnableAsync(CancellationToken.None);
+        h.States.Clear();
+
+        h.Channel.RaiseStatus(connected: false, error: "pipe broken");
+
+        var state = h.States.Should().ContainSingle().Subject;
+        state.IsEnabled.Should().BeTrue("the user's enable still stands; only connectivity dropped");
+        state.Message.Should().Contain("reconnecting");
+    }
+
+    [Fact]
+    public async Task Supervisor_reconnect_while_enabled_surfaces_a_connected_state()
+    {
+        var h = Build();
+        await h.Session.EnableAsync(CancellationToken.None);
+        h.Channel.RaiseStatus(connected: false, error: "pipe broken");
+        h.States.Clear();
+
+        h.Channel.RaiseStatus(connected: true, error: null);
+
+        var state = h.States.Should().ContainSingle().Subject;
+        state.IsEnabled.Should().BeTrue();
+        state.Message.Should().Contain("connected");
+    }
+
+    [Fact]
+    public void Supervisor_status_changes_while_disabled_are_not_surfaced()
+    {
+        var h = Build();
+
+        h.Channel.RaiseStatus(connected: false, error: "pipe broken");
+        h.Channel.RaiseStatus(connected: true, error: null);
+
+        h.States.Should().BeEmpty("connectivity noise is irrelevant while mapping is off");
     }
 
     [Fact]

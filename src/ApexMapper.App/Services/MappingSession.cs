@@ -72,6 +72,14 @@ public sealed class MappingSession : IMappingSession
         _foreground = foreground ?? throw new ArgumentNullException(nameof(foreground));
         _confirm = confirm ?? throw new ArgumentNullException(nameof(confirm));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        // Surface supervisor connectivity so an enabled-but-disconnected session
+        // is visible (the channel retries forever in the background). Both the
+        // session and the channel are app-lifetime singletons, so this handler
+        // never needs unsubscribing. No auto-relaunch here — surfacing only;
+        // a future follow-up may add a relaunch affordance if the supervisor
+        // process itself has died rather than just the pipe.
+        _channel.StatusChanged += OnChannelStatusChanged;
     }
 
     public bool IsEnabled => _enabled;
@@ -295,6 +303,19 @@ public sealed class MappingSession : IMappingSession
             WindowTitle: current.WindowTitle.Length == 0 ? null : current.WindowTitle,
             SteamAppId: current.SteamAppId,
             CapturedAt: current.ObservedAt);
+    }
+
+    private void OnChannelStatusChanged(object? sender, SupervisorStatusEventArgs e)
+    {
+        // Only meaningful once the user has enabled mapping: connectivity churn
+        // while disabled is noise. The enable itself stands — only the transport
+        // state changed — so IsEnabled stays true and just the message updates.
+        if (!_enabled)
+        {
+            return;
+        }
+
+        RaiseState(true, e.IsConnected ? "Output connected." : "Output reconnecting…");
     }
 
     private void RaiseState(bool enabled, string? message)
