@@ -444,26 +444,45 @@ public class SupervisorChannelAdapterTests
     public async Task Backoff_restarts_at_the_initial_delay_after_a_successful_session()
     {
         var time = new ManualTimeProvider();
-        var hub = new FakeConnectHub { FailAttempt = n => n == 2 };
+        // Fail attempts 1 and 2 so the ladder escalates 250 -> 500 before a session
+        // finally connects on attempt 3; fail attempt 4 too so the reconnect that
+        // follows the drop arms a measurable backoff delay.
+        var hub = new FakeConnectHub { FailAttempt = n => n <= 2 || n == 4 };
         var statuses = new StatusLog();
         await using var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), timeProvider: time);
         adapter.StatusChanged += statuses.Record;
 
         adapter.Start();
-        await WaitUntilAsync(() => adapter.IsConnected);
 
-        // Clean peer close ends the session; the immediate retry fails, and the
-        // next delay must be the initial 250 ms again, not an escalated one.
-        hub.Stream(0).CompleteReadWithEof();
+        // Attempt 1 fails immediately, arming the initial 250 ms delay.
+        await WaitUntilAsync(() => hub.Attempts == 1);
+        await WaitUntilAsync(() => time.ScheduledTimerCount == 1);
+        time.Advance(TimeSpan.FromMilliseconds(250));
+
+        // Attempt 2 fails, doubling the delay to 500 ms.
         await WaitUntilAsync(() => hub.Attempts == 2);
         await WaitUntilAsync(() => time.ScheduledTimerCount == 1);
-        time.Advance(TimeSpan.FromMilliseconds(249));
-        await Task.Delay(50);
-        hub.Attempts.Should().Be(2, "a fresh reconnect cycle must restart at the initial delay");
-        time.Advance(TimeSpan.FromMilliseconds(1));
+        time.Advance(TimeSpan.FromMilliseconds(500));
 
+        // Attempt 3 connects: the ladder is now escalated (its next rung is 1000 ms).
         await WaitUntilAsync(() => adapter.IsConnected);
         hub.Attempts.Should().Be(3);
+
+        // Drop the live session. The reconnect starts a fresh driver run, whose
+        // ladder must restart at the initial 250 ms — not the escalated rung.
+        hub.Stream(0).CompleteReadWithEof();
+        await WaitUntilAsync(() => hub.Attempts == 4);
+        await WaitUntilAsync(() => time.ScheduledTimerCount == 1);
+
+        // Just short of the initial delay: the retry must not fire yet.
+        time.Advance(TimeSpan.FromMilliseconds(249));
+        await Task.Delay(50);
+        hub.Attempts.Should().Be(4, "a fresh reconnect cycle must restart at the initial 250 ms delay, not an escalated one");
+
+        // The remaining 1 ms completes the initial delay and fires the next attempt.
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        await WaitUntilAsync(() => adapter.IsConnected);
+        hub.Attempts.Should().Be(5);
         statuses.Snapshot().Select(s => s.Connected).Should().Equal(true, false, true);
         statuses.Snapshot()[1].Error.Should().BeNull("a clean peer close carries no fault");
     }
