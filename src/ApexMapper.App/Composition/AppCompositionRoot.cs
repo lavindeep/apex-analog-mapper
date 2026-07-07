@@ -162,6 +162,19 @@ public static class AppCompositionRoot
             new ViGEmBusPreflightCheck(),
         }));
 
+        services.AddSingleton(sp =>
+        {
+            var store = sp.GetRequiredService<ProfileStore>();
+            var engine = sp.GetRequiredService<MappingEngine>();
+            return new ProfileActivationService(
+                loadProfiles: () => store.LoadAll(),
+                sp.GetRequiredService<IProfileHotReload>(),
+                sp.GetRequiredService<IForegroundWatcher>(),
+                sp.GetRequiredService<IProfileManualPinStore>(),
+                applyProfile: profile => engine.SetProfile(profile),
+                sp.GetRequiredService<ILogger<ProfileActivationService>>());
+        });
+
         services.AddSingleton<IMappingSession>(sp => new MappingSession(
             sp.GetRequiredService<KeyStateStore>(),
             sp.GetRequiredService<MappingEngine>(),
@@ -271,8 +284,12 @@ public static class AppCompositionRoot
         {
             var store      = sp.GetRequiredService<ProfileStore>();
             var pinStore   = sp.GetRequiredService<IProfileManualPinStore>();
-            // resolveCurrentId: returns null until a profile is auto-selected.
-            return new ProfileSelectorViewModel(store, pinStore, resolveCurrentId: () => null);
+            // resolveCurrentId: the activation service owns the resolved id.
+            // Resolved lazily per call — no construction-order dependency.
+            return new ProfileSelectorViewModel(
+                store,
+                pinStore,
+                resolveCurrentId: () => sp.GetRequiredService<ProfileActivationService>().CurrentProfileId);
         });
 
         services.AddSingleton<ITrayProfileSource>(sp =>
