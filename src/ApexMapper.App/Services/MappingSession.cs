@@ -149,6 +149,11 @@ public sealed class MappingSession : IMappingSession
 
             // 5. Channel on (background reconnect), engine last.
             await _channel.ConnectAsync(ct).ConfigureAwait(false);
+
+            // Every Off->On transition ignores currently-held mapped keys until
+            // they release once: a key first pressed while OFF and still down at
+            // enable must not map instantly. Gate immediately before arming.
+            _store.GateHeldKeys();
             _engine.SetEnabled(true);
             _enabled = true;
 

@@ -309,6 +309,28 @@ public sealed class MappingSessionTests
         h.States.Should().ContainSingle().Which.Message.Should().Contain("Steam");
     }
 
+    [Fact]
+    public async Task Enable_gates_a_key_that_was_held_while_disabled()
+    {
+        // Every Off->On transition ignores currently-held mapped keys until they
+        // release once: a key first pressed while OFF and still down at enable
+        // must not map instantly.
+        var h = Build();
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital); // held while disabled, no gate yet
+
+        var enabled = await h.Session.EnableAsync(CancellationToken.None);
+
+        enabled.Should().BeTrue();
+        h.Store.Get(Throttle).Value.Should().Be(0f, "a key held across the enable transition must not map instantly");
+        h.Store.IsGated(Throttle).Should().BeTrue("it must release once before it maps under the newly-enabled session");
+
+        // Releasing clears the gate; a fresh press then maps normally.
+        h.Store.Set(Throttle, 0f, KeyProvenance.Digital);
+        h.Store.IsGated(Throttle).Should().BeFalse();
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital);
+        h.Store.Get(Throttle).Value.Should().Be(1f);
+    }
+
     // ---------------------------------------------------------------------------
     // Disable
     // ---------------------------------------------------------------------------
