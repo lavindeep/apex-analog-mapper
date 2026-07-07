@@ -30,10 +30,15 @@
     <ProjectReference Include="..\ApexMapper.Output\ApexMapper.Output.csproj" />
     <ProjectReference Include="..\ApexMapper.Input.Abstractions\ApexMapper.Input.Abstractions.csproj" />
     <ProjectReference Include="..\ApexMapper.Profiles\ApexMapper.Profiles.csproj" />
-    <!-- Build-order + copy-local only: the App never references supervisor types,
-         but ApexMapper.Supervisor.exe must land next to ApexMapper.exe so the
-         launcher can spawn it. -->
-    <ProjectReference Include="..\ApexMapper.Supervisor\ApexMapper.Supervisor.csproj" ReferenceOutputAssembly="false" />
+    <!-- Layout-only reference: the launcher spawns ApexMapper.Supervisor.exe, so
+         the supervisor's apphost AND its managed closure must land next to
+         ApexMapper.exe. This MUST be a plain reference (ReferenceOutputAssembly
+         defaults to true): ReferenceOutputAssembly="false" copies only the
+         apphost + .deps.json + .runtimeconfig.json and NOT ApexMapper.Supervisor.dll,
+         so the spawned exe dies instantly ("The application to execute does not
+         exist"). App code must never `using` a Supervisor type — the reference
+         exists purely to co-locate the executable, not to couple types. -->
+    <ProjectReference Include="..\ApexMapper.Supervisor\ApexMapper.Supervisor.csproj" />
   </ItemGroup>
 
 </Project>
