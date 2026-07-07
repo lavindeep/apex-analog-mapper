@@ -36,6 +36,7 @@ public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
     private readonly object _sync = new();
     private readonly object _statusGate = new();
     private readonly CancellationTokenSource _lifetimeCts = new();
+    private readonly CancellationToken _lifetimeToken;
 
     private SupervisorClient? _client;
     private ITimer? _controlTimer;
@@ -67,6 +68,8 @@ public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _options = options ?? new SupervisorChannelOptions();
         _timeProvider = timeProvider ?? TimeProvider.System;
+        // Captured once: touching _lifetimeCts.Token after disposal would throw.
+        _lifetimeToken = _lifetimeCts.Token;
 
         if (_options.ControlInterval <= TimeSpan.Zero
             || _options.HeartbeatInterval <= TimeSpan.Zero
@@ -189,72 +192,104 @@ public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
     {
         try
         {
-            await ConnectOnceAsync().ConfigureAwait(false);
+            await ConnectLoopAsync().ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            // Disposal cancelled the connect; the driver just unwinds.
+            // Disposal cancelled the connect or a backoff wait; just unwind.
         }
         finally
         {
             Volatile.Write(ref _driverRunning, 0);
+            // Lost-wakeup guard: a disconnect that raced this driver's exit saw
+            // the compare-and-swap still taken and could not start a new one.
+            if (!_lifetimeToken.IsCancellationRequested && ShouldConnect())
+            {
+                TriggerDriver();
+            }
         }
     }
 
-    private async Task ConnectOnceAsync()
+    // Retries forever with doubling, capped backoff: the supervisor frees its
+    // pipe within about a second of losing a client, so the next capped retry
+    // gets back in once it is reachable. Each driver run restarts the ladder
+    // at the initial delay.
+    private async Task ConnectLoopAsync()
     {
-        if (!ShouldConnect())
+        TimeSpan delay = _options.ReconnectInitialDelay;
+        while (true)
         {
-            return;
-        }
-
-        SupervisorClient client = _clientFactory();
-        // Subscribe before connecting: a session that drops immediately after
-        // the handshake must not slip between connect and subscription.
-        client.Disconnected += error => OnClientDisconnected(client, error);
-        try
-        {
-            await client.ConnectAsync(_lifetimeCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            await DisposeQuietlyAsync(client).ConfigureAwait(false);
-            throw;
-        }
-        catch
-        {
-            await DisposeQuietlyAsync(client).ConfigureAwait(false);
-            return;
-        }
-
-        long stamp = 0;
-        bool published;
-        lock (_sync)
-        {
-            // The IsConnected check closes the pre-publish drop race: if the
-            // session died before we got here, its Disconnected handler either
-            // already ran (and found nothing to tear down) or will run and find
-            // this client published — both paths end with the session down.
-            published = _autoReconnect
-                && Volatile.Read(ref _disposed) == 0
-                && _client is null
-                && client.IsConnected;
-            if (published)
+            if (!ShouldConnect())
             {
-                _client = client;
-                _controlTimer = _timeProvider.CreateTimer(OnControlTimer, null, _options.ControlInterval, Timeout.InfiniteTimeSpan);
-                _heartbeatTimer = _timeProvider.CreateTimer(OnHeartbeatTimer, null, _options.HeartbeatInterval, Timeout.InfiniteTimeSpan);
-                stamp = ++_statusSeq;
+                return;
             }
-        }
 
-        if (!published)
-        {
-            await DisposeQuietlyAsync(client).ConfigureAwait(false);
+            SupervisorClient client = _clientFactory();
+            // Subscribe before connecting: a session that drops immediately after
+            // the handshake must not slip between connect and subscription.
+            client.Disconnected += error => OnClientDisconnected(client, error);
+            try
+            {
+                await client.ConnectAsync(_lifetimeToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                await DisposeQuietlyAsync(client).ConfigureAwait(false);
+                throw;
+            }
+            catch
+            {
+                await DisposeQuietlyAsync(client).ConfigureAwait(false);
+                await Task.Delay(delay, _timeProvider, _lifetimeToken).ConfigureAwait(false);
+                delay = NextDelay(delay);
+                continue;
+            }
+
+            long stamp = 0;
+            bool published;
+            lock (_sync)
+            {
+                // The IsConnected check closes the pre-publish drop race: if the
+                // session died before we got here, its Disconnected handler either
+                // already ran (and found nothing to tear down) or will run and find
+                // this client published — both paths end with the session down.
+                published = _autoReconnect
+                    && Volatile.Read(ref _disposed) == 0
+                    && _client is null
+                    && client.IsConnected;
+                if (published)
+                {
+                    _client = client;
+                    _controlTimer = _timeProvider.CreateTimer(OnControlTimer, null, _options.ControlInterval, Timeout.InfiniteTimeSpan);
+                    _heartbeatTimer = _timeProvider.CreateTimer(OnHeartbeatTimer, null, _options.HeartbeatInterval, Timeout.InfiniteTimeSpan);
+                    stamp = ++_statusSeq;
+                }
+            }
+
+            if (!published)
+            {
+                await DisposeQuietlyAsync(client).ConfigureAwait(false);
+                if (!ShouldConnect())
+                {
+                    return;
+                }
+
+                // Connected but dropped before publish: back off like a failure
+                // so an accept-then-die supervisor cannot spin the driver hot.
+                await Task.Delay(delay, _timeProvider, _lifetimeToken).ConfigureAwait(false);
+                delay = NextDelay(delay);
+                continue;
+            }
+
+            RaiseStatus(stamp, connected: true, error: null);
             return;
         }
+    }
 
-        RaiseStatus(stamp, connected: true, error: null);
+    private TimeSpan NextDelay(TimeSpan delay)
+    {
+        TimeSpan doubled = delay + delay;
+        return doubled > _options.ReconnectMaxDelay ? _options.ReconnectMaxDelay : doubled;
     }
 
     private bool ShouldConnect()
@@ -289,6 +324,11 @@ public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
         heartbeat?.Dispose();
         _ = DisposeQuietlyAsync(client);
         RaiseStatus(stamp, connected: false, error);
+
+        if (ShouldConnect())
+        {
+            TriggerDriver();
+        }
     }
 
     private void OnControlTimer(object? state)
@@ -349,7 +389,7 @@ public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
                 snapshot = _state;
             }
 
-            await client.SubmitControlAsync(PadStatePayload.From(in snapshot), _lifetimeCts.Token).ConfigureAwait(false);
+            await client.SubmitControlAsync(PadStatePayload.From(in snapshot), _lifetimeToken).ConfigureAwait(false);
         }
         catch
         {
@@ -366,7 +406,7 @@ public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
     {
         try
         {
-            await client.SubmitHeartbeatAsync(_lifetimeCts.Token).ConfigureAwait(false);
+            await client.SubmitHeartbeatAsync(_lifetimeToken).ConfigureAwait(false);
         }
         catch
         {

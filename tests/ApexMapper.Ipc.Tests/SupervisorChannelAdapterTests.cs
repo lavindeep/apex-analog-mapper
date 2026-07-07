@@ -48,6 +48,200 @@ public class SupervisorChannelAdapterTests
         }
     }
 
+    private static async Task WaitUntilAsync(Func<Task<bool>> condition)
+    {
+        var deadline = DateTime.UtcNow + Timeout;
+        while (!await condition())
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException("Condition not met within timeout.");
+            }
+
+            await Task.Delay(10);
+        }
+    }
+
+    /// <summary>
+    /// Deterministic transport source for the adapter's internal client-factory
+    /// seam: each connect attempt either fails (per <see cref="FailAttempt"/>)
+    /// or hands out a fresh controllable <see cref="FakeStream"/>.
+    /// </summary>
+    private sealed class FakeConnectHub
+    {
+        private readonly object _lock = new();
+        private readonly List<FakeStream> _streams = new();
+        private int _attempts;
+
+        /// <summary>Whether the given 1-based connect attempt should fail.</summary>
+        public Func<int, bool> FailAttempt { get; init; } = _ => false;
+
+        public int Attempts
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _attempts;
+                }
+            }
+        }
+
+        public FakeStream Stream(int index)
+        {
+            lock (_lock)
+            {
+                return _streams[index];
+            }
+        }
+
+        public int StreamCount
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _streams.Count;
+                }
+            }
+        }
+
+        public bool AllStreamsDisposed
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return _streams.All(s => s.Disposed);
+                }
+            }
+        }
+
+        public SupervisorClient CreateClient(TimeProvider time) => new(ConnectAsync, time);
+
+        private Task<Stream> ConnectAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int attempt;
+            lock (_lock)
+            {
+                attempt = ++_attempts;
+            }
+
+            if (FailAttempt(attempt))
+            {
+                return Task.FromException<Stream>(new IOException($"connect refused (attempt {attempt})"));
+            }
+
+            var stream = new FakeStream();
+            lock (_lock)
+            {
+                _streams.Add(stream);
+            }
+
+            return Task.FromResult<Stream>(stream);
+        }
+    }
+
+    /// <summary>
+    /// A controllable transport: reads park on a gate until EOF is signaled (or
+    /// the stream is disposed), writes append to a decodable capture — or fail,
+    /// or park forever, on demand — and disposal is observable.
+    /// </summary>
+    private sealed class FakeStream : Stream
+    {
+        private readonly TaskCompletionSource<int> _readGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _writeGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly object _lock = new();
+        private readonly MemoryStream _written = new();
+        private volatile bool _failWrites;
+        private volatile bool _parkWrites;
+        private volatile bool _disposed;
+
+        public bool Disposed => _disposed;
+
+        public void FailWrites() => _failWrites = true;
+
+        /// <summary>Makes writes park indefinitely (ignoring cancellation), so a
+        /// test can wedge an in-flight send while it holds the frame write lock.</summary>
+        public void ParkWrites() => _parkWrites = true;
+
+        public void CompleteReadWithEof() => _readGate.TrySetResult(0);
+
+        public async Task<List<IFrame>> DecodeCompleteFramesAsync()
+        {
+            byte[] bytes;
+            lock (_lock)
+            {
+                bytes = _written.ToArray();
+            }
+
+            var codec = new FrameCodec();
+            using var buffer = new MemoryStream(bytes);
+            var frames = new List<IFrame>();
+            try
+            {
+                while (await codec.ReadFrameAsync(buffer, CancellationToken.None) is { } frame)
+                {
+                    frames.Add(frame);
+                }
+            }
+            catch (FrameProtocolException)
+            {
+                // Trailing partial frame from an in-flight send; complete frames
+                // before it still count.
+            }
+
+            return frames;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => 0;
+        public override long Position { get => 0; set { } }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => await _readGate.Task.ConfigureAwait(false);
+
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (_parkWrites)
+            {
+                await _writeGate.Task.ConfigureAwait(false);
+            }
+
+            if (_failWrites)
+            {
+                throw new IOException("transport failure");
+            }
+
+            lock (_lock)
+            {
+                _written.Write(buffer.Span);
+            }
+        }
+
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        protected override void Dispose(bool disposing)
+        {
+            _disposed = true;
+            // Let a parked read loop observe EOF so it can unwind.
+            _readGate.TrySetResult(0);
+            base.Dispose(disposing);
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     private sealed class StatusLog
     {
         private readonly object _lock = new();
@@ -148,6 +342,124 @@ public class SupervisorChannelAdapterTests
         time.Advance(TimeSpan.FromMilliseconds(100));
         var control = await ReadFrameAsync<ControlFrame>(new FrameCodec(), server);
         control.Payload!.LeftStickX.Should().Be(-1f);
+    }
+
+    [Fact]
+    public async Task Send_failure_triggers_reconnect_and_cadence_resumes_without_escaping()
+    {
+        var time = new ManualTimeProvider();
+        var hub = new FakeConnectHub();
+        var statuses = new StatusLog();
+        await using var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), timeProvider: time);
+        adapter.StatusChanged += statuses.Record;
+        adapter.SetState(new VirtualPadState { LeftTrigger = 1f });
+
+        adapter.Start();
+        await WaitUntilAsync(() => adapter.IsConnected && time.ScheduledTimerCount == 2);
+
+        // Break the live session through the send path: the failed control send
+        // must be contained, tear the session down, and drive a reconnect.
+        hub.Stream(0).FailWrites();
+        time.Advance(TimeSpan.FromMilliseconds(100));
+
+        await WaitUntilAsync(() => statuses.Snapshot().Count == 3);
+        statuses.Snapshot().Select(s => s.Connected).Should().Equal(true, false, true);
+        statuses.Snapshot()[1].Error.Should().BeOfType<IOException>();
+        adapter.IsConnected.Should().BeTrue();
+        hub.Attempts.Should().Be(2);
+
+        // Cadence resumes on the fresh session.
+        await WaitUntilAsync(() => time.ScheduledTimerCount == 2);
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        await WaitUntilAsync(async () =>
+            (await hub.Stream(1).DecodeCompleteFramesAsync()).OfType<ControlFrame>().Any());
+        var control = (await hub.Stream(1).DecodeCompleteFramesAsync()).OfType<ControlFrame>().First();
+        control.Payload!.LeftTrigger.Should().Be(1f);
+    }
+
+    [Fact]
+    public async Task Initial_connect_retries_with_doubling_backoff_until_the_supervisor_appears()
+    {
+        var time = new ManualTimeProvider();
+        var hub = new FakeConnectHub { FailAttempt = n => n <= 2 };
+        var statuses = new StatusLog();
+        await using var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), timeProvider: time);
+        adapter.StatusChanged += statuses.Record;
+
+        adapter.Start();
+
+        // First attempt is immediate; its failure arms the initial 250 ms delay.
+        await WaitUntilAsync(() => hub.Attempts == 1);
+        await WaitUntilAsync(() => time.ScheduledTimerCount == 1);
+        time.Advance(TimeSpan.FromMilliseconds(249));
+        await Task.Delay(50);
+        hub.Attempts.Should().Be(1, "the retry must not fire before the initial delay elapses");
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        await WaitUntilAsync(() => hub.Attempts == 2);
+
+        // Second failure doubles the delay to 500 ms.
+        await WaitUntilAsync(() => time.ScheduledTimerCount == 1);
+        time.Advance(TimeSpan.FromMilliseconds(499));
+        await Task.Delay(50);
+        hub.Attempts.Should().Be(2, "the retry must not fire before the doubled delay elapses");
+        time.Advance(TimeSpan.FromMilliseconds(1));
+
+        await WaitUntilAsync(() => adapter.IsConnected);
+        hub.Attempts.Should().Be(3);
+        statuses.Snapshot().Should().Equal((true, null));
+    }
+
+    [Fact]
+    public async Task Reconnect_backoff_caps_at_the_configured_maximum()
+    {
+        var time = new ManualTimeProvider();
+        var hub = new FakeConnectHub { FailAttempt = _ => true };
+        await using var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), timeProvider: time);
+
+        adapter.Start();
+        await WaitUntilAsync(() => hub.Attempts == 1);
+
+        // Doubling ladder from the defaults: 250, 500, 1000, 2000, then capped at 2000.
+        var expectedDelays = new[] { 250, 500, 1000, 2000, 2000 };
+        var attempts = 1;
+        foreach (var delayMs in expectedDelays)
+        {
+            await WaitUntilAsync(() => time.ScheduledTimerCount == 1);
+            time.Advance(TimeSpan.FromMilliseconds(delayMs - 1));
+            await Task.Delay(50);
+            hub.Attempts.Should().Be(attempts, $"no retry may fire before the full {delayMs} ms delay");
+            time.Advance(TimeSpan.FromMilliseconds(1));
+            attempts++;
+            await WaitUntilAsync(() => hub.Attempts == attempts);
+        }
+    }
+
+    [Fact]
+    public async Task Backoff_restarts_at_the_initial_delay_after_a_successful_session()
+    {
+        var time = new ManualTimeProvider();
+        var hub = new FakeConnectHub { FailAttempt = n => n == 2 };
+        var statuses = new StatusLog();
+        await using var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), timeProvider: time);
+        adapter.StatusChanged += statuses.Record;
+
+        adapter.Start();
+        await WaitUntilAsync(() => adapter.IsConnected);
+
+        // Clean peer close ends the session; the immediate retry fails, and the
+        // next delay must be the initial 250 ms again, not an escalated one.
+        hub.Stream(0).CompleteReadWithEof();
+        await WaitUntilAsync(() => hub.Attempts == 2);
+        await WaitUntilAsync(() => time.ScheduledTimerCount == 1);
+        time.Advance(TimeSpan.FromMilliseconds(249));
+        await Task.Delay(50);
+        hub.Attempts.Should().Be(2, "a fresh reconnect cycle must restart at the initial delay");
+        time.Advance(TimeSpan.FromMilliseconds(1));
+
+        await WaitUntilAsync(() => adapter.IsConnected);
+        hub.Attempts.Should().Be(3);
+        statuses.Snapshot().Select(s => s.Connected).Should().Equal(true, false, true);
+        statuses.Snapshot()[1].Error.Should().BeNull("a clean peer close carries no fault");
     }
 
     [Fact]
