@@ -38,6 +38,7 @@ public sealed class MappingEngine : IAsyncDisposable
 
     private readonly KeyStateStore _store;
     private readonly IPadStateSink _sink;
+    private readonly Action? _preTick;
     private readonly int _tickIntervalMs;
     private readonly CancellationTokenSource _cts = new();
 
@@ -51,10 +52,22 @@ public sealed class MappingEngine : IAsyncDisposable
     private VirtualPadState _pad;
     private bool _zeroPushedWhileDisabled;
 
-    public MappingEngine(KeyStateStore store, IPadStateSink sink, int tickIntervalMs = 1)
+    /// <param name="preTick">
+    /// Optional hook invoked at the start of every tick — enabled or disabled —
+    /// before the pipeline reads the store. The host uses it to drain queued
+    /// input events into the store so each tick maps the freshest state, and
+    /// draining on disabled ticks keeps key releases flowing (a release must
+    /// still clear its held-key gate while mapping is off). Runs on the tick
+    /// thread: it must be cheap, allocation-free in steady state, and must not
+    /// throw — a throwing hook takes the tick loop down (the loop's final zero
+    /// still reaches the sink, and the unhandled exception surfaces loudly
+    /// rather than being swallowed).
+    /// </param>
+    public MappingEngine(KeyStateStore store, IPadStateSink sink, int tickIntervalMs = 1, Action? preTick = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
+        _preTick = preTick;
         if (tickIntervalMs <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(tickIntervalMs), "tick interval must be positive.");
@@ -185,6 +198,8 @@ public sealed class MappingEngine : IAsyncDisposable
 
     internal void TickOnce(float dtMs)
     {
+        _preTick?.Invoke();
+
         if (Volatile.Read(ref _enabled) == 0)
         {
             if (!_zeroPushedWhileDisabled)

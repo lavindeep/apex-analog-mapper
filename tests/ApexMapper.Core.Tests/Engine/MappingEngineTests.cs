@@ -247,6 +247,38 @@ public class MappingEngineTests
         }
     }
 
+    [Fact]
+    public void PreTick_hook_runs_before_mapping_so_its_writes_land_in_the_same_tick()
+    {
+        var store = new KeyStateStore();
+        var sink = new CapturingSink();
+        var engine = new MappingEngine(
+            store,
+            sink,
+            preTick: () => store.Set(Throttle, 0.75f, KeyProvenance.Analog));
+        engine.SetProfile(MakeProfile());
+
+        engine.TickOnce(1f);
+
+        sink.Last.RightTrigger.Should().Be(
+            0.75f, "the drain hook must run before the pipeline reads the store, not after");
+    }
+
+    [Fact]
+    public void PreTick_hook_runs_on_disabled_ticks_so_input_keeps_draining()
+    {
+        var store = new KeyStateStore();
+        var sink = new CapturingSink();
+        var calls = 0;
+        var engine = new MappingEngine(store, sink, preTick: () => calls++);
+        engine.SetEnabled(false);
+
+        engine.TickOnce(1f);
+        engine.TickOnce(1f);
+
+        calls.Should().Be(2, "key releases must keep flowing into the store while disabled");
+    }
+
     private sealed class ConcurrentSink : IPadStateSink
     {
         private readonly object _lock = new();
