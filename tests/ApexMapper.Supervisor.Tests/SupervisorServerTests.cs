@@ -69,11 +69,11 @@ public class SupervisorServerTests
             }
         }
 
-        public static ServerHarness Start()
+        public static ServerHarness Start(SupervisorOptions? options = null)
         {
             var harness = new ServerHarness();
             harness.Server = new SupervisorServer(
-                harness.SessionId, harness.CreateOutput, new SupervisorOptions(), harness.Time);
+                harness.SessionId, harness.CreateOutput, options ?? new SupervisorOptions(), harness.Time);
             harness.Server.SessionEnded += reason =>
             {
                 lock (harness._lock)
@@ -100,6 +100,11 @@ public class SupervisorServerTests
         }
 
         public Task WaitForWatchdogAsync() => WaitUntilAsync(() => Time.ScheduledTimerCount > 0);
+
+        /// <summary>Waits until the loop (on its own thread) has armed the idle
+        /// deadline — the only timer while no session is live — so a subsequent
+        /// <see cref="ManualTimeProvider.Advance"/> can reach it.</summary>
+        public Task WaitForIdleTimerAsync() => WaitUntilAsync(() => Time.ScheduledTimerCount == 1);
 
         public Task WaitForEndedCountAsync(int count) => WaitUntilAsync(() => EndedReasons.Count >= count);
 
@@ -401,6 +406,171 @@ public class SupervisorServerTests
             {
                 failures.Should().Contain(line => line.Contains("pipe creation failed", StringComparison.Ordinal));
             }
+        }
+    }
+
+    [Fact]
+    public async Task Idle_exit_when_no_client_ever_connects()
+    {
+        await using var harness = ServerHarness.Start();
+        var window = new SupervisorOptions().IdleExitTimeout;
+        await harness.WaitForIdleTimerAsync();
+
+        harness.Time.Advance(window - TimeSpan.FromSeconds(1));
+        harness.Server.Completion.IsCompleted.Should().BeFalse(
+            "the idle window has not elapsed yet");
+
+        harness.Time.Advance(TimeSpan.FromSeconds(2));
+
+        var reason = await harness.Server.Completion.WaitAsync(Timeout);
+        reason.Should().Be(ServerExitReason.IdleTimeout);
+        harness.Outputs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_connection_resets_the_idle_window_and_a_fresh_full_window_runs_after_the_session_ends()
+    {
+        await using var harness = ServerHarness.Start();
+        var window = new SupervisorOptions().IdleExitTimeout;
+        await harness.WaitForIdleTimerAsync();
+
+        // Halfway into the start window a client connects and is served.
+        harness.Time.Advance(window / 2);
+        var client = await harness.ConnectClientAsync();
+        await client.SubmitControlAsync(new PadStatePayload { LeftTrigger = 1f }, CancellationToken.None).WaitAsync(Timeout);
+        await WaitUntilAsync(() => harness.Outputs.Count == 1 && harness.Outputs[0].Submitted.Count == 1);
+        harness.Server.Completion.IsCompleted.Should().BeFalse();
+
+        await client.DisposeAsync().AsTask().WaitAsync(Timeout);
+        await harness.WaitForEndedCountAsync(1);
+        await harness.WaitForIdleTimerAsync();
+
+        // The original start deadline has long passed; only a fresh full window
+        // measured from the session's end may retire the server.
+        harness.Time.Advance(window - TimeSpan.FromSeconds(1));
+        harness.Server.Completion.IsCompleted.Should().BeFalse(
+            "the fresh post-session idle window has not elapsed yet");
+
+        harness.Time.Advance(TimeSpan.FromSeconds(2));
+
+        var reason = await harness.Server.Completion.WaitAsync(Timeout);
+        reason.Should().Be(ServerExitReason.IdleTimeout);
+    }
+
+    [Fact]
+    public async Task A_session_outliving_the_idle_window_is_never_torn_down_and_a_fresh_window_runs_after_it()
+    {
+        // The heartbeat gap is stretched so advancing far past the idle window
+        // cannot end the session as a side effect: only the idle deadline is in
+        // question here, and it must not run while a session is live.
+        var options = new SupervisorOptions { HeartbeatGapBeforeZero = TimeSpan.FromMinutes(30) };
+        await using var harness = ServerHarness.Start(options);
+        var window = options.IdleExitTimeout;
+
+        var client = await harness.ConnectClientAsync();
+        await client.SubmitControlAsync(new PadStatePayload { LeftTrigger = 1f }, CancellationToken.None).WaitAsync(Timeout);
+        await WaitUntilAsync(() => harness.Outputs.Count == 1 && harness.Outputs[0].Submitted.Count == 1);
+
+        harness.Time.Advance(window * 10);
+        harness.Server.Completion.IsCompleted.Should().BeFalse(
+            "an active session must never trip the idle exit, however long it lives");
+        harness.EndedReasons.Should().BeEmpty();
+
+        await client.DisposeAsync().AsTask().WaitAsync(Timeout);
+        await harness.WaitForEndedCountAsync(1);
+        harness.EndedReasons[0].Should().Be(SessionEndReason.PeerDisconnected);
+        await harness.WaitForIdleTimerAsync();
+
+        harness.Time.Advance(window - TimeSpan.FromSeconds(1));
+        harness.Server.Completion.IsCompleted.Should().BeFalse(
+            "a session end must start a fresh full window, not inherit an expired one");
+
+        harness.Time.Advance(TimeSpan.FromSeconds(2));
+
+        var reason = await harness.Server.Completion.WaitAsync(Timeout);
+        reason.Should().Be(ServerExitReason.IdleTimeout);
+    }
+
+    [Fact]
+    public async Task A_client_reconnecting_within_the_post_session_window_is_served_normally()
+    {
+        await using var harness = ServerHarness.Start();
+        var window = new SupervisorOptions().IdleExitTimeout;
+
+        var client1 = await harness.ConnectClientAsync();
+        await client1.SubmitControlAsync(new PadStatePayload { LeftTrigger = 1f }, CancellationToken.None).WaitAsync(Timeout);
+        await WaitUntilAsync(() => harness.Outputs.Count == 1 && harness.Outputs[0].Submitted.Count == 1);
+        await client1.DisposeAsync().AsTask().WaitAsync(Timeout);
+        await harness.WaitForEndedCountAsync(1);
+        await harness.WaitForIdleTimerAsync();
+
+        // Halfway into the post-session window a second client reconnects and
+        // gets a full working session on a fresh pad.
+        harness.Time.Advance(window / 2);
+        await using var client2 = await harness.ConnectClientAsync();
+        await client2.SubmitControlAsync(new PadStatePayload { ButtonB = true }, CancellationToken.None).WaitAsync(Timeout);
+        await WaitUntilAsync(() => harness.Outputs.Count == 2 && harness.Outputs[1].Submitted.Count == 1);
+        harness.Outputs[1].Submitted[0].ButtonB.Should().BeTrue();
+        harness.Server.Completion.IsCompleted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Stop_mid_idle_window_completes_promptly_and_is_distinguishable_from_idle_exit()
+    {
+        var harness = ServerHarness.Start();
+        await harness.WaitForIdleTimerAsync();
+        harness.Time.Advance(new SupervisorOptions().IdleExitTimeout / 2);
+
+        await harness.Server.StopAsync().WaitAsync(Timeout);
+
+        var reason = await harness.Server.Completion.WaitAsync(Timeout);
+        reason.Should().Be(ServerExitReason.Stopped);
+    }
+
+    [Fact]
+    public async Task A_connection_racing_the_idle_deadline_is_served_and_never_torn_down()
+    {
+        // Each iteration races a real client connect against the idle deadline.
+        // Whichever wins, the outcome must be coherent: an accepted connection
+        // is served (the loop keeps running), a lost race is a clean idle exit.
+        for (var i = 0; i < 5; i++)
+        {
+            await using var harness = ServerHarness.Start();
+            await harness.WaitForIdleTimerAsync();
+
+            var client = new SupervisorClient(harness.SessionId, TimeSpan.FromSeconds(1));
+            var connect = client.ConnectAsync(CancellationToken.None);
+            harness.Time.Advance(new SupervisorOptions().IdleExitTimeout + TimeSpan.FromSeconds(1));
+
+            await WaitUntilAsync(() => harness.Server.Completion.IsCompleted || harness.Outputs.Count > 0);
+
+            if (harness.Outputs.Count > 0)
+            {
+                // The server accepted this client: it must be served end to end,
+                // never torn down because the deadline fired concurrently.
+                await connect.WaitAsync(Timeout);
+                await client.SubmitControlAsync(new PadStatePayload { ButtonA = true }, CancellationToken.None).WaitAsync(Timeout);
+                await WaitUntilAsync(() => harness.Outputs[0].Submitted.Count == 1);
+                harness.Server.Completion.IsCompleted.Should().BeFalse();
+            }
+            else
+            {
+                var reason = await harness.Server.Completion.WaitAsync(Timeout);
+                reason.Should().Be(ServerExitReason.IdleTimeout);
+                harness.Outputs.Should().BeEmpty();
+                try
+                {
+                    // The client lost the race; its connect attempt may fail or
+                    // time out, but must never produce a half-served session.
+                    await connect.WaitAsync(Timeout);
+                }
+                catch (Exception)
+                {
+                    // Expected on this arm.
+                }
+            }
+
+            await client.DisposeAsync().AsTask().WaitAsync(Timeout);
         }
     }
 }

@@ -23,9 +23,15 @@ namespace ApexMapper.Supervisor;
 ///
 /// The loop never dies silently: a failed session or a failed accept is
 /// contained and the loop continues with a fresh instance; repeated pipe
-/// creation failures back off instead of spinning hot. Only
-/// <see cref="StopAsync"/> ends the loop — an active session is then torn down
-/// (<see cref="SessionEndReason.Shutdown"/>: pad zeroed and disconnected).
+/// creation failures back off instead of spinning hot. The loop ends two ways,
+/// distinguished by <see cref="Completion"/>: <see cref="StopAsync"/> tears
+/// down any active session (<see cref="SessionEndReason.Shutdown"/>: pad zeroed
+/// and disconnected); or a full <see cref="SupervisorOptions.IdleExitTimeout"/>
+/// window passes with no connected session and the loop retires itself
+/// (<see cref="ServerExitReason.IdleTimeout"/>) instead of lingering after the
+/// tray exits — the tray respawns a supervisor on the next enable. The idle
+/// window never runs during a session: it is measured from start until the
+/// first connection and from each session end until the next.
 /// </summary>
 public sealed class SupervisorServer : IAsyncDisposable
 {
@@ -39,7 +45,7 @@ public sealed class SupervisorServer : IAsyncDisposable
     private readonly TimeProvider _timeProvider;
     private readonly CancellationTokenSource _stopCts = new();
 
-    private Task _loop = Task.CompletedTask;
+    private Task<ServerExitReason> _loop = Task.FromResult(ServerExitReason.Stopped);
     private int _state = NotStarted;
     private int _disposed;
     private long _failedSessionStarts;
@@ -76,6 +82,11 @@ public sealed class SupervisorServer : IAsyncDisposable
     /// accumulate the loop is backing off instead of serving a client.</summary>
     public long PipeFailures => Interlocked.Read(ref _pipeFailures);
 
+    /// <summary>Completes when the accept loop has fully unwound, with why it
+    /// ended. Before <see cref="Start"/> it is completed as
+    /// <see cref="ServerExitReason.Stopped"/>.</summary>
+    public Task<ServerExitReason> Completion => _loop;
+
     public void Start()
     {
         int previous = Interlocked.CompareExchange(ref _state, Started, NotStarted);
@@ -108,65 +119,106 @@ public sealed class SupervisorServer : IAsyncDisposable
         _stopCts.Dispose();
     }
 
-    private async Task RunLoopAsync(CancellationToken stopToken)
+    private async Task<ServerExitReason> RunLoopAsync(CancellationToken stopToken)
     {
         var consecutiveFailures = 0;
-        while (!stopToken.IsCancellationRequested)
+
+        // One idle window spans everything between sessions, including pipe
+        // failures and their backoff: it is armed at start, re-armed after each
+        // session ends, and disposed the moment a client is accepted — so it can
+        // never fire against a live session, and a session that outlives the
+        // window is followed by a fresh full window, not an expired one.
+        var idleWindow = new IdleWindow(_timeProvider, _options.IdleExitTimeout);
+        try
         {
-            NamedPipeServerStream pipe;
-            try
+            while (!stopToken.IsCancellationRequested)
             {
-                // Explicit buffer sizes (one max frame each way): Windows treats
-                // them as the pipe's write-quota hint, so the client's writes get
-                // a deterministic kernel buffer instead of the advisory-minimum
-                // default, which can park a writer until the reader drains.
-                pipe = new NamedPipeServerStream(
-                    PipeNames.ForSession(_sessionId),
-                    PipeDirection.InOut,
-                    maxNumberOfServerInstances: 1,
-                    PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
-                    inBufferSize: FrameCodec.MaxFrameBytes,
-                    outBufferSize: FrameCodec.MaxFrameBytes);
-            }
-            catch (Exception ex)
-            {
-                Interlocked.Increment(ref _pipeFailures);
-                RaiseDiagnostics($"pipe creation failed: {ex.Message}");
-                consecutiveFailures++;
-                if (!await BackoffAsync(consecutiveFailures, stopToken).ConfigureAwait(false))
+                NamedPipeServerStream pipe;
+                try
                 {
-                    break;
+                    // Explicit buffer sizes (one max frame each way): Windows treats
+                    // them as the pipe's write-quota hint, so the client's writes get
+                    // a deterministic kernel buffer instead of the advisory-minimum
+                    // default, which can park a writer until the reader drains.
+                    pipe = new NamedPipeServerStream(
+                        PipeNames.ForSession(_sessionId),
+                        PipeDirection.InOut,
+                        maxNumberOfServerInstances: 1,
+                        PipeTransmissionMode.Byte,
+                        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
+                        inBufferSize: FrameCodec.MaxFrameBytes,
+                        outBufferSize: FrameCodec.MaxFrameBytes);
+                }
+                catch (Exception ex)
+                {
+                    Interlocked.Increment(ref _pipeFailures);
+                    RaiseDiagnostics($"pipe creation failed: {ex.Message}");
+                    consecutiveFailures++;
+                    if (!await BackoffAsync(consecutiveFailures, stopToken).ConfigureAwait(false))
+                    {
+                        return ServerExitReason.Stopped;
+                    }
+
+                    if (idleWindow.HasElapsed)
+                    {
+                        return ServerExitReason.IdleTimeout;
+                    }
+
+                    continue;
                 }
 
-                continue;
-            }
-
-            try
-            {
-                await pipe.WaitForConnectionAsync(stopToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                await DisposeQuietlyAsync(pipe).ConfigureAwait(false);
-                break;
-            }
-            catch (Exception ex)
-            {
-                await DisposeQuietlyAsync(pipe).ConfigureAwait(false);
-                Interlocked.Increment(ref _pipeFailures);
-                RaiseDiagnostics($"accept failed: {ex.Message}");
-                consecutiveFailures++;
-                if (!await BackoffAsync(consecutiveFailures, stopToken).ConfigureAwait(false))
+                using (var acceptCts = CancellationTokenSource.CreateLinkedTokenSource(stopToken, idleWindow.Token))
                 {
-                    break;
+                    try
+                    {
+                        await pipe.WaitForConnectionAsync(acceptCts.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // An accepted connection wins any race with the idle
+                        // deadline: cancellation can surface even though the
+                        // connect completed (the platforms differ on when), and
+                        // such a client must be served, never torn down. Only a
+                        // cancelled wait with no accepted client ends the loop.
+                        if (stopToken.IsCancellationRequested || !pipe.IsConnected)
+                        {
+                            await DisposeQuietlyAsync(pipe).ConfigureAwait(false);
+                            return stopToken.IsCancellationRequested
+                                ? ServerExitReason.Stopped
+                                : ServerExitReason.IdleTimeout;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await DisposeQuietlyAsync(pipe).ConfigureAwait(false);
+                        Interlocked.Increment(ref _pipeFailures);
+                        RaiseDiagnostics($"accept failed: {ex.Message}");
+                        consecutiveFailures++;
+                        if (!await BackoffAsync(consecutiveFailures, stopToken).ConfigureAwait(false))
+                        {
+                            return ServerExitReason.Stopped;
+                        }
+
+                        if (idleWindow.HasElapsed)
+                        {
+                            return ServerExitReason.IdleTimeout;
+                        }
+
+                        continue;
+                    }
                 }
 
-                continue;
+                consecutiveFailures = 0;
+                idleWindow.Dispose();
+                await RunOneSessionAsync(pipe, stopToken).ConfigureAwait(false);
+                idleWindow = new IdleWindow(_timeProvider, _options.IdleExitTimeout);
             }
 
-            consecutiveFailures = 0;
-            await RunOneSessionAsync(pipe, stopToken).ConfigureAwait(false);
+            return ServerExitReason.Stopped;
+        }
+        finally
+        {
+            idleWindow.Dispose();
         }
     }
 
@@ -259,5 +311,32 @@ public sealed class SupervisorServer : IAsyncDisposable
         {
             // Best-effort: transport disposal failures are not actionable here.
         }
+    }
+
+    /// <summary>One idle window between sessions: a single-shot deadline whose
+    /// token cancels the pending accept when the window elapses. Disposing only
+    /// kills the timer; the token source is deliberately left to the GC so a
+    /// deadline firing concurrently with disposal (a connection was just
+    /// accepted) cancels a token nobody observes any more instead of throwing
+    /// <see cref="ObjectDisposedException"/> on the timer thread.</summary>
+    private sealed class IdleWindow : IDisposable
+    {
+        private readonly CancellationTokenSource _elapsed = new();
+        private readonly ITimer _timer;
+
+        internal IdleWindow(TimeProvider timeProvider, TimeSpan timeout)
+        {
+            _timer = timeProvider.CreateTimer(
+                static state => ((IdleWindow)state!)._elapsed.Cancel(),
+                this,
+                timeout,
+                Timeout.InfiniteTimeSpan);
+        }
+
+        internal CancellationToken Token => _elapsed.Token;
+
+        internal bool HasElapsed => _elapsed.IsCancellationRequested;
+
+        public void Dispose() => _timer.Dispose();
     }
 }
