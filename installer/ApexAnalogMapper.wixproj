@@ -1,0 +1,19 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <PropertyGroup>
+    <OutputName>ApexAnalogMapper</OutputName>
+    <OutputType>Package</OutputType>
+
+    <!-- Overridable from the command line (a release cut threads the real
+         version): dotnet build ... -p:ProductVersion=1.2.3 -->
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.1.0</ProductVersion>
+
+    <!-- StagingDir is the self-contained publish directory harvested into the
+         MSI. It has no meaningful default: the packaging CI job passes an
+         absolute path with -p:StagingDir=... The values below are forwarded to
+         the WiX preprocessor and referenced as $(var.ProductVersion) and
+         $(var.StagingDir) in Package.wxs. -->
+    <DefineConstants>ProductVersion=$(ProductVersion);StagingDir=$(StagingDir)</DefineConstants>
+  </PropertyGroup>
+
+</Project>

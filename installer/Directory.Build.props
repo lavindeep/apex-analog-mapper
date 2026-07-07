@@ -1,0 +1,11 @@
+<Project>
+  <!-- Isolates the WiX installer project from the repository-root
+       Directory.Build.props / Directory.Packages.props. The MSI build must not
+       inherit TreatWarningsAsErrors (WiX/ICE validation emits benign warnings)
+       or central package management (the toolchain comes in through the project
+       SDK, not a PackageReference). MSBuild stops walking up once it finds this
+       file, so the root build props do not apply here. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

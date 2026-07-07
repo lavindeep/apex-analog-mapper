@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+      Name="Apex Analog Mapper"
+      Manufacturer="Lavindeep Dhillon"
+      Version="$(var.ProductVersion)"
+      UpgradeCode="F159542D-CFF7-426C-B9F4-0AE879FF8A7A"
+      Scope="perUser">
+
+    <!-- Block downgrades and remove any older version during install. -->
+    <MajorUpgrade
+        Schedule="afterInstallInitialize"
+        DowngradeErrorMessage="A newer version of Apex Analog Mapper is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Add/Remove Programs help and about links point at the project repo. -->
+    <Property Id="ARPHELPLINK" Value="https://github.com/lavindeep/apex-analog-mapper" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/lavindeep/apex-analog-mapper" />
+
+    <!-- Per-user install location: %LocalAppData%\Programs\Apex Analog Mapper.
+         Both ApexMapper.exe and ApexMapper.Supervisor.exe must land here
+         together; the app spawns the supervisor from its own directory. -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Apex Analog Mapper" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Per-user Start Menu shortcut. Per-user components carry an HKCU keypath
+         (not a file) so the component is unambiguously per-user. -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="ApexStartMenuShortcut"
+                  Name="Apex Analog Mapper"
+                  Description="Map Apex Pro keys to a virtual Xbox controller"
+                  Target="[INSTALLFOLDER]ApexMapper.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\Lavindeep Dhillon\Apex Analog Mapper"
+                       Name="installed"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <!-- Harvest the entire self-contained publish directory into INSTALLFOLDER,
+         preserving any subdirectories. One component per file, auto-generated
+         GUIDs. -->
+    <ComponentGroup Id="ProductFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.StagingDir)\**" />
+    </ComponentGroup>
+
+    <Feature Id="Main">
+      <ComponentGroupRef Id="ProductFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+  </Package>
+</Wix>
