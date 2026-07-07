@@ -253,15 +253,16 @@ public sealed class MappingSession : IMappingSession
         _engine.SetEnabled(false);
         _store.GateHeldKeys();
         _enabled = false;
-        _logger.LogWarning("Local mapping forced off ({Reason}).", reason);
 
         try
         {
+            _logger.LogWarning("Local mapping forced off ({Reason}).", reason);
             RaiseState(false, $"Output forced off ({reason}).");
         }
         catch
         {
-            // A throwing subscriber must not break the panic path.
+            // The safety writes above already completed; neither a throwing
+            // logging provider nor a throwing subscriber may break the panic path.
         }
     }
 
