@@ -27,7 +27,7 @@ namespace ApexMapper.App.Tests.EndToEnd;
 /// construction time.  <see cref="HotkeyService"/> similarly does not call
 /// NHotkey at construction — so all resolutions are safe on macOS / CI.
 /// </summary>
-public sealed class AppCompositionRootTests : IDisposable
+public sealed class AppCompositionRootTests : IAsyncLifetime
 {
     private readonly ServiceProvider _provider;
 
@@ -38,7 +38,11 @@ public sealed class AppCompositionRootTests : IDisposable
         _provider = services.BuildServiceProvider(validateScopes: true);
     }
 
-    public void Dispose() => _provider.Dispose();
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    // Async disposal: MappingEngine and InputHost are IAsyncDisposable-only, and
+    // the sync ServiceProvider.Dispose() throws for such singletons.
+    public async Task DisposeAsync() => await _provider.DisposeAsync();
 
     // -----------------------------------------------------------------------
     // Services
@@ -72,6 +76,48 @@ public sealed class AppCompositionRootTests : IDisposable
     public void IPadStateSink_Resolves_To_The_Channel_Slot()
         => _provider.GetRequiredService<ApexMapper.Core.Pipeline.IPadStateSink>()
             .Should().NotBeNull();
+
+    [Fact]
+    public void KeyStateStore_Resolves_As_A_Shared_Singleton()
+    {
+        var a = _provider.GetRequiredService<ApexMapper.Core.Keys.KeyStateStore>();
+        var b = _provider.GetRequiredService<ApexMapper.Core.Keys.KeyStateStore>();
+        a.Should().BeSameAs(b, "the input host and the engine must share one store");
+    }
+
+    [Fact]
+    public void InputHost_Resolves()
+        => _provider.GetRequiredService<ApexMapper.Input.Abstractions.Hosting.InputHost>()
+            .Should().NotBeNull();
+
+    [Fact]
+    public void MappingEngine_Resolves_And_Starts_Disabled()
+    {
+        var engine = _provider.GetRequiredService<ApexMapper.Core.Engine.MappingEngine>();
+        engine.IsEnabled.Should().BeFalse("mapping is off until the user's enable flow succeeds");
+    }
+
+    [Fact]
+    public void IMappingSession_Resolves_Disabled()
+    {
+        var session = _provider.GetRequiredService<IMappingSession>();
+        session.IsEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void DeviceAdapterDescriptor_Resolves_From_The_Embedded_Resource()
+    {
+        var descriptor = _provider.GetRequiredService<ApexMapper.Input.Abstractions.Adapters.DeviceAdapterDescriptor>();
+        descriptor.Match.VendorId.Should().Be(0x1038, "the shipped adapter targets the SteelSeries VID");
+    }
+
+    [Fact]
+    public void Detection_And_Preflight_Services_Resolve()
+    {
+        _provider.GetRequiredService<ApexMapper.Output.Preflight.PreflightRunner>().Should().NotBeNull();
+        _provider.GetRequiredService<ApexMapper.Output.Detection.AntiCheatDetector>().Should().NotBeNull();
+        _provider.GetRequiredService<ApexMapper.Output.Detection.SteamDetector>().Should().NotBeNull();
+    }
 
     [Fact]
     public void ISupervisorProcessLauncher_Resolves()

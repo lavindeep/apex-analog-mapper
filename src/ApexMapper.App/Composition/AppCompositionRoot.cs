@@ -1,6 +1,15 @@
 using ApexMapper.App.Persistence;
 using ApexMapper.App.Services;
+using ApexMapper.Core.Engine;
+using ApexMapper.Core.Keys;
 using ApexMapper.Core.Pipeline;
+using ApexMapper.Input.Abstractions.Adapters;
+using ApexMapper.Input.Abstractions.Hosting;
+using ApexMapper.Input.Abstractions.Pipeline;
+using ApexMapper.Input.Hid;
+using ApexMapper.Input.RawInput;
+using ApexMapper.Output.Detection;
+using ApexMapper.Output.Preflight;
 using ApexMapper.App.ViewModels;
 using ApexMapper.App.ViewModels.Calibration;
 using ApexMapper.App.ViewModels.Devices;
@@ -26,6 +35,19 @@ public static class AppCompositionRoot
     /// Registers all application services, view-models, and infrastructure
     /// into <paramref name="services"/>.
     /// </summary>
+    // Embedded adapter descriptor for the Apex Pro family (VID/PID match,
+    // interface selection, exploratory analog key map).
+    private const string ApexProAdapterResource =
+        "ApexMapper.Input.Abstractions.adapters.steelseries-apex-pro-v2.json";
+
+    // Raw-input ring: power-of-two capacity; RawKeyEvent is 16 bytes, so this
+    // is 32 KB and covers multi-second bursts at any human typing rate.
+    private const int InputRingCapacity = 2048;
+
+    // Upper bound on events drained per 1 ms mapping tick — bounds tick latency
+    // while still draining far faster than any keyboard can produce.
+    private const int MaxDrainedEventsPerTick = 256;
+
     public static void ConfigureServices(IServiceCollection services)
     {
         // -----------------------------------------------------------------------
@@ -65,25 +87,92 @@ public static class AppCompositionRoot
         });
 
         // -----------------------------------------------------------------------
-        // Core Phase-2 types
+        // Input pipeline (digital raw input + device selection)
         // -----------------------------------------------------------------------
 
-        // IDeviceEnumerator is not yet registered — placeholder for Phase 3.
-        // DeviceSelector requires it; registered below via a factory that
-        // injects a stub enumerator until the real one arrives.
+        services.AddSingleton(_ => DeviceAdapterStore.LoadEmbedded(ApexProAdapterResource));
+
+        services.AddSingleton(_ => KeyUniverse.CreateFullIndex());
+
+        // Index-backed store: the only store mode safe for the concurrent
+        // adapter/tick-thread access pattern InputHost and MappingEngine use.
+        services.AddSingleton(sp => new KeyStateStore(sp.GetRequiredService<KeyIndex>()));
+
+        services.AddSingleton(_ => new SpscRingBuffer<RawKeyEvent>(InputRingCapacity));
+
+        services.AddSingleton<IRawInputAdapter>(sp =>
+            new RawInputAdapter(sp.GetRequiredService<SpscRingBuffer<RawKeyEvent>>()));
+
         services.AddSingleton<DeviceSelector>(sp =>
         {
             var paths = sp.GetRequiredService<IAppPaths>();
             var registryFile = paths.DeviceRegistryFile;
-
-            // Stub enumerator: returns an empty list until Phase 3 wires the real adapter.
-            IDeviceEnumerator enumerator = new StubDeviceEnumerator();
+            var descriptor = sp.GetRequiredService<DeviceAdapterDescriptor>();
 
             return new DeviceSelector(
-                enumerator,
+                new HidSharpDeviceProvider(descriptor),
                 loadRegistry:  () => DeviceRegistry.Load(registryFile),
                 saveRegistry:  r  => DeviceRegistry.Save(registryFile, r));
         });
+
+        // Digital-only for now: the shipped Apex adapter's key_map is empty (the
+        // analog HID protocol is exploratory, pending hardware), so opening an
+        // analog probe would poll a stream with zero mapped fields. When the key
+        // map gains entries, pass the opened device + descriptor + its input
+        // report length here and the persisted calibrations flow in via the
+        // factory's registry lookup.
+        services.AddSingleton(sp => InputHostFactory.Create(
+            rawInput:       sp.GetRequiredService<IRawInputAdapter>(),
+            hidDevice:      null,
+            adapter:        null,
+            reportLength:   0,
+            deviceSelector: sp.GetRequiredService<DeviceSelector>(),
+            loadRegistry:   () => DeviceRegistry.Load(sp.GetRequiredService<IAppPaths>().DeviceRegistryFile),
+            ring:           sp.GetRequiredService<SpscRingBuffer<RawKeyEvent>>(),
+            store:          sp.GetRequiredService<KeyStateStore>(),
+            log:            new LoggerLogSink(sp.GetRequiredService<ILogger<InputHost>>())));
+
+        // -----------------------------------------------------------------------
+        // Mapping engine + session
+        // -----------------------------------------------------------------------
+
+        services.AddSingleton(sp =>
+        {
+            var host = sp.GetRequiredService<InputHost>();
+            var engine = new MappingEngine(
+                sp.GetRequiredService<KeyStateStore>(),
+                sp.GetRequiredService<IPadStateSink>(),
+                tickIntervalMs: 1,
+                preTick: () => host.Drain(MaxDrainedEventsPerTick));
+
+            // The app starts with mapping OFF; only MappingSession.EnableAsync
+            // (a user action behind the fail-closed enable flow) turns it on.
+            engine.SetEnabled(false);
+            return engine;
+        });
+
+        services.AddSingleton<IProcessEnumerator, WindowsProcessEnumerator>();
+
+        services.AddSingleton(sp => new AntiCheatDetector(sp.GetRequiredService<IProcessEnumerator>()));
+
+        services.AddSingleton(sp => new SteamDetector(sp.GetRequiredService<IProcessEnumerator>()));
+
+        services.AddSingleton(_ => new PreflightRunner(new IPreflightCheck[]
+        {
+            new ViGEmBusPreflightCheck(),
+        }));
+
+        services.AddSingleton<IMappingSession>(sp => new MappingSession(
+            sp.GetRequiredService<KeyStateStore>(),
+            sp.GetRequiredService<MappingEngine>(),
+            sp.GetRequiredService<ISupervisorChannel>(),
+            sp.GetRequiredService<PreflightRunner>(),
+            sp.GetRequiredService<AntiCheatDetector>(),
+            sp.GetRequiredService<SteamDetector>(),
+            sp.GetRequiredService<ISupervisorProcessLauncher>(),
+            sp.GetRequiredService<IForegroundWatcher>(),
+            confirm: (title, message) => sp.GetRequiredService<IDialogService>().Confirm(title, message),
+            sp.GetRequiredService<ILogger<MappingSession>>()));
 
         // -----------------------------------------------------------------------
         // Services — Phase 4
