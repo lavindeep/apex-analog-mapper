@@ -14,6 +14,16 @@
          the WiX preprocessor and referenced as $(var.ProductVersion) and
          $(var.StagingDir) in Package.wxs. -->
     <DefineConstants>ProductVersion=$(ProductVersion);StagingDir=$(StagingDir)</DefineConstants>
+
+    <!-- ICE38 and ICE64 predate per-user packages: they demand an HKCU
+         KeyPath for every file component in the user profile and RemoveFile
+         entries for every profile directory, guarding per-machine installs
+         against roaming-profile residue. This package is Scope="perUser"
+         only — its whole registration lives in the installing user's hive,
+         file KeyPaths repair correctly there, and MajorUpgrade/uninstall
+         remove the harvested tree — so both checks are inapplicable rather
+         than merely inconvenient. -->
+    <SuppressIces>ICE38;ICE64</SuppressIces>
   </PropertyGroup>
 
 </Project>
