@@ -116,6 +116,9 @@ public static class AppCompositionRoot
         services.AddSingleton<IPadStateSink>(sp =>
             ((SupervisorChannelBridge)sp.GetRequiredService<ISupervisorChannel>()).Sink);
 
+        services.AddSingleton<ISupervisorProcessLauncher>(sp =>
+            new SupervisorProcessLauncher(sp.GetRequiredService<SupervisorSessionId>().Value));
+
         services.AddSingleton<IPanicPolicyStore>(sp =>
             new JsonPanicPolicyStore(sp.GetRequiredService<PanicPolicyOptions>()));
 

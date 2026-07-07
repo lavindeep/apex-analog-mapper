@@ -30,6 +30,10 @@
     <ProjectReference Include="..\ApexMapper.Output\ApexMapper.Output.csproj" />
     <ProjectReference Include="..\ApexMapper.Input.Abstractions\ApexMapper.Input.Abstractions.csproj" />
     <ProjectReference Include="..\ApexMapper.Profiles\ApexMapper.Profiles.csproj" />
+    <!-- Build-order + copy-local only: the App never references supervisor types,
+         but ApexMapper.Supervisor.exe must land next to ApexMapper.exe so the
+         launcher can spawn it. -->
+    <ProjectReference Include="..\ApexMapper.Supervisor\ApexMapper.Supervisor.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

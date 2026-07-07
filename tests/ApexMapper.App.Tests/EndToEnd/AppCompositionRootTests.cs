@@ -74,6 +74,10 @@ public sealed class AppCompositionRootTests : IDisposable
             .Should().NotBeNull();
 
     [Fact]
+    public void ISupervisorProcessLauncher_Resolves()
+        => _provider.GetRequiredService<ISupervisorProcessLauncher>().Should().NotBeNull();
+
+    [Fact]
     public void IPanicPolicyStore_Resolves()
         => _provider.GetRequiredService<IPanicPolicyStore>().Should().NotBeNull();
 
