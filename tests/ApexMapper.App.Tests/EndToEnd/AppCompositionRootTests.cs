@@ -61,11 +61,17 @@ public sealed class AppCompositionRootTests : IDisposable
         => _provider.GetRequiredService<ISupervisorChannel>().Should().NotBeNull();
 
     [Fact]
-    public void ISupervisorChannel_IsStub_WhenPhase3NotIntegrated()
+    public void ISupervisorChannel_IsTheRealBridge_And_NotConnected_BeforeEnable()
     {
         var channel = _provider.GetRequiredService<ISupervisorChannel>();
-        channel.IsConnected.Should().BeFalse("stub channel is never connected");
+        channel.Should().BeOfType<SupervisorChannelBridge>();
+        channel.IsConnected.Should().BeFalse("the channel only connects after an explicit enable");
     }
+
+    [Fact]
+    public void IPadStateSink_Resolves_To_The_Channel_Slot()
+        => _provider.GetRequiredService<ApexMapper.Core.Pipeline.IPadStateSink>()
+            .Should().NotBeNull();
 
     [Fact]
     public void IPanicPolicyStore_Resolves()

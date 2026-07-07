@@ -1,5 +1,6 @@
 using ApexMapper.App.Persistence;
 using ApexMapper.App.Services;
+using ApexMapper.Core.Pipeline;
 using ApexMapper.App.ViewModels;
 using ApexMapper.App.ViewModels.Calibration;
 using ApexMapper.App.ViewModels.Devices;
@@ -106,7 +107,14 @@ public static class AppCompositionRoot
                 sp.GetRequiredService<IWindowEventSource>(),
                 sp.GetRequiredService<IForegroundProbe>()));
 
+        services.AddSingleton(SupervisorSessionId.Current());
+
         services.AddSingleton<ISupervisorChannel>(sp => SupervisorClientFactory.Create(sp));
+
+        // The mapping engine's sink is the channel's latest-wins pad-state slot;
+        // the bridge owns the adapter, so the sink is exposed through it.
+        services.AddSingleton<IPadStateSink>(sp =>
+            ((SupervisorChannelBridge)sp.GetRequiredService<ISupervisorChannel>()).Sink);
 
         services.AddSingleton<IPanicPolicyStore>(sp =>
             new JsonPanicPolicyStore(sp.GetRequiredService<PanicPolicyOptions>()));
