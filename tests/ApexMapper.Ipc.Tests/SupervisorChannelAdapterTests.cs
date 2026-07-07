@@ -152,6 +152,7 @@ public class SupervisorChannelAdapterTests
     {
         private readonly TaskCompletionSource<int> _readGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _writeGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _writeParked = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly object _lock = new();
         private readonly MemoryStream _written = new();
         private volatile bool _failWrites;
@@ -159,6 +160,10 @@ public class SupervisorChannelAdapterTests
         private volatile bool _disposed;
 
         public bool Disposed => _disposed;
+
+        /// <summary>Completes once a parked write has actually entered the stream —
+        /// i.e. the sender now holds the connection's frame write lock.</summary>
+        public Task WriteParked => _writeParked.Task;
 
         public void FailWrites() => _failWrites = true;
 
@@ -208,6 +213,7 @@ public class SupervisorChannelAdapterTests
         {
             if (_parkWrites)
             {
+                _writeParked.TrySetResult();
                 await _writeGate.Task.ConfigureAwait(false);
             }
 
@@ -460,6 +466,165 @@ public class SupervisorChannelAdapterTests
         hub.Attempts.Should().Be(3);
         statuses.Snapshot().Select(s => s.Connected).Should().Equal(true, false, true);
         statuses.Snapshot()[1].Error.Should().BeNull("a clean peer close carries no fault");
+    }
+
+    [Fact]
+    public async Task Panic_sends_the_panic_frame_then_disconnects_without_auto_reconnect()
+    {
+        var time = new ManualTimeProvider();
+        var hub = new FakeConnectHub();
+        var statuses = new StatusLog();
+        await using var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), timeProvider: time);
+        adapter.StatusChanged += statuses.Record;
+
+        adapter.Start();
+        await WaitUntilAsync(() => adapter.IsConnected && time.ScheduledTimerCount == 2);
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        await WaitUntilAsync(async () =>
+            (await hub.Stream(0).DecodeCompleteFramesAsync()).OfType<ControlFrame>().Any());
+
+        await adapter.SubmitPanicAsync("user hotkey", CancellationToken.None).WaitAsync(Timeout);
+
+        var frames = await hub.Stream(0).DecodeCompleteFramesAsync();
+        var panic = frames[^1].Should().BeOfType<PanicFrame>().Subject;
+        panic.Reason.Should().Be("user hotkey");
+
+        adapter.IsConnected.Should().BeFalse();
+        await WaitUntilAsync(() => statuses.Snapshot().Count == 2);
+        statuses.Snapshot().Select(s => s.Connected).Should().Equal(true, false);
+        await WaitUntilAsync(() => hub.Stream(0).Disposed);
+
+        // Panic means the user forced the pad off: no reconnect, no more frames,
+        // no matter how much time passes.
+        var framesAfterPanic = frames.Count;
+        for (var i = 0; i < 20; i++)
+        {
+            time.Advance(TimeSpan.FromMilliseconds(500));
+        }
+
+        await Task.Delay(50);
+        hub.Attempts.Should().Be(1);
+        (await hub.Stream(0).DecodeCompleteFramesAsync()).Count.Should().Be(framesAfterPanic);
+
+        // Only an explicit Start resumes.
+        adapter.Start();
+        await WaitUntilAsync(() => adapter.IsConnected);
+        hub.Attempts.Should().Be(2);
+        statuses.Snapshot().Select(s => s.Connected).Should().Equal(true, false, true);
+    }
+
+    [Fact]
+    public async Task Panic_is_not_wedged_behind_an_inflight_control_send()
+    {
+        var time = new ManualTimeProvider();
+        var hub = new FakeConnectHub();
+        await using var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), timeProvider: time);
+
+        adapter.Start();
+        await WaitUntilAsync(() => adapter.IsConnected && time.ScheduledTimerCount == 2);
+
+        // Wedge the transport: the next control send parks inside its write while
+        // holding the connection's frame write lock.
+        hub.Stream(0).ParkWrites();
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        await hub.Stream(0).WriteParked.WaitAsync(Timeout);
+
+        // Panic must not hang behind the wedged send: the caller's token cancels
+        // the wait for the write lock and local teardown still completes. The
+        // supervisor's heartbeat gap zeroes the pad regardless.
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+        Func<Task> act = async () => await adapter.SubmitPanicAsync("panic", cts.Token).WaitAsync(Timeout);
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        adapter.IsConnected.Should().BeFalse();
+        await Task.Delay(50);
+        hub.Attempts.Should().Be(1, "panic must never auto-reconnect, even when the panic frame could not be sent");
+    }
+
+    [Fact]
+    public async Task Disconnect_sends_a_best_effort_zero_then_stays_down_until_restarted()
+    {
+        var time = new ManualTimeProvider();
+        var hub = new FakeConnectHub();
+        var statuses = new StatusLog();
+        await using var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), timeProvider: time);
+        adapter.StatusChanged += statuses.Record;
+
+        adapter.Start();
+        await WaitUntilAsync(() => adapter.IsConnected && time.ScheduledTimerCount == 2);
+
+        await adapter.DisconnectAsync(CancellationToken.None).WaitAsync(Timeout);
+
+        var frames = await hub.Stream(0).DecodeCompleteFramesAsync();
+        frames[^1].Should().BeOfType<ZeroFrame>();
+        adapter.IsConnected.Should().BeFalse();
+        await WaitUntilAsync(() => hub.Stream(0).Disposed);
+        await WaitUntilAsync(() => statuses.Snapshot().Count == 2);
+        statuses.Snapshot().Select(s => s.Connected).Should().Equal(true, false);
+
+        // No reconnect while stopped.
+        for (var i = 0; i < 20; i++)
+        {
+            time.Advance(TimeSpan.FromMilliseconds(500));
+        }
+
+        await Task.Delay(50);
+        hub.Attempts.Should().Be(1);
+
+        // Idempotent.
+        await adapter.DisconnectAsync(CancellationToken.None).WaitAsync(Timeout);
+        statuses.Snapshot().Should().HaveCount(2);
+
+        // Explicit restart resumes.
+        adapter.Start();
+        await WaitUntilAsync(() => adapter.IsConnected);
+        hub.Attempts.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Disposed_adapter_never_resurrects_even_when_a_drop_races_disposal()
+    {
+        for (var i = 0; i < 25; i++)
+        {
+            var time = new ManualTimeProvider();
+            var hub = new FakeConnectHub();
+            var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), timeProvider: time);
+
+            adapter.Start();
+            await WaitUntilAsync(() => adapter.IsConnected);
+
+            // Race a peer drop (which triggers the reconnect path) against
+            // disposal: whatever interleaving results, the adapter must end
+            // disconnected, stop connecting, and leak no session.
+            var drop = Task.Run(() => hub.Stream(0).CompleteReadWithEof());
+            var dispose = Task.Run(async () => await adapter.DisposeAsync());
+            await Task.WhenAll(drop, dispose).WaitAsync(Timeout);
+
+            adapter.IsConnected.Should().BeFalse();
+            await Task.Delay(20);
+            var attempts = hub.Attempts;
+            await Task.Delay(30);
+            hub.Attempts.Should().Be(attempts, $"a disposed adapter must not keep connecting (iteration {i})");
+            adapter.IsConnected.Should().BeFalse();
+            await WaitUntilAsync(() => hub.AllStreamsDisposed);
+        }
+    }
+
+    [Fact]
+    public async Task Dispose_is_idempotent_and_start_after_dispose_throws()
+    {
+        var time = new ManualTimeProvider();
+        var hub = new FakeConnectHub();
+        var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), timeProvider: time);
+        adapter.Start();
+        await WaitUntilAsync(() => adapter.IsConnected);
+
+        await adapter.DisposeAsync().AsTask().WaitAsync(Timeout);
+        Func<Task> again = async () => await adapter.DisposeAsync();
+        await again.Should().NotThrowAsync();
+
+        Action restart = () => adapter.Start();
+        restart.Should().Throw<ObjectDisposedException>();
     }
 
     [Fact]

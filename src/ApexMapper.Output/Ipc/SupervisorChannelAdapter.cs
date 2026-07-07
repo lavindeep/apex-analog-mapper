@@ -126,6 +126,54 @@ public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
 
     void IPadStateSink.Push(in VirtualPadState state) => SetState(in state);
 
+    /// <summary>
+    /// Forwards a panic to the supervisor — which zeroes and disconnects the
+    /// pad and ends the session — then tears the channel down locally with NO
+    /// auto-reconnect: panic means the user forced the pad off, so only an
+    /// explicit <see cref="Start"/> resumes. The panic is never gated behind
+    /// the adapter's cadence bookkeeping; if an in-flight control send holds
+    /// the frame write lock on a wedged transport, the caller's token cancels
+    /// the wait and local teardown still completes — the supervisor's
+    /// heartbeat gap zeroes the pad regardless, so the path stays fail-closed.
+    /// A send failure or cancellation propagates after the local teardown.
+    /// </summary>
+    public async Task SubmitPanicAsync(string? reason, CancellationToken cancellationToken)
+    {
+        SupervisorClient? client = TakeSessionForShutdown(out long stamp);
+        try
+        {
+            if (client is not null && client.IsConnected)
+            {
+                await client.SubmitPanicAsync(reason, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            if (client is not null)
+            {
+                await DisposeQuietlyAsync(client).ConfigureAwait(false);
+                RaiseStatus(stamp, connected: false, error: null);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Clean stop: best-effort zero frame, session closed, no auto-reconnect
+    /// until an explicit <see cref="Start"/>. Idempotent.
+    /// </summary>
+    public async Task DisconnectAsync(CancellationToken cancellationToken)
+    {
+        SupervisorClient? client = TakeSessionForShutdown(out long stamp);
+        if (client is null)
+        {
+            return;
+        }
+
+        await TrySubmitZeroAsync(client, "tray disconnect", cancellationToken).ConfigureAwait(false);
+        await DisposeQuietlyAsync(client).ConfigureAwait(false);
+        RaiseStatus(stamp, connected: false, error: null);
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -135,10 +183,31 @@ public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
 
         await _lifetimeCts.CancelAsync().ConfigureAwait(false);
 
+        SupervisorClient? client = TakeSessionForShutdown(out long stamp);
+        if (client is not null)
+        {
+            // Best-effort courtesy zero so the pad rests immediately rather
+            // than after the supervisor's heartbeat gap; bounded so a wedged
+            // pipe cannot wedge disposal.
+            await TrySubmitZeroAsync(client, "channel disposed", CancellationToken.None).ConfigureAwait(false);
+            await DisposeQuietlyAsync(client).ConfigureAwait(false);
+            RaiseStatus(stamp, connected: false, error: null);
+        }
+
+        _lifetimeCts.Dispose();
+    }
+
+    /// <summary>
+    /// Disables auto-reconnect and detaches the live session (if any) with its
+    /// cadence timers, all atomically against the connect driver: a driver
+    /// that connected concurrently re-checks these fields before publishing
+    /// and discards its client, so a shutdown can never be resurrected.
+    /// </summary>
+    private SupervisorClient? TakeSessionForShutdown(out long stamp)
+    {
         SupervisorClient? client;
         ITimer? control;
         ITimer? heartbeat;
-        long stamp = 0;
         lock (_sync)
         {
             _autoReconnect = false;
@@ -148,26 +217,12 @@ public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
             heartbeat = _heartbeatTimer;
             _controlTimer = null;
             _heartbeatTimer = null;
-            if (client is not null)
-            {
-                stamp = ++_statusSeq;
-            }
+            stamp = client is not null ? ++_statusSeq : 0;
         }
 
         control?.Dispose();
         heartbeat?.Dispose();
-
-        if (client is not null)
-        {
-            // Best-effort courtesy zero so the pad rests immediately rather
-            // than after the supervisor's heartbeat gap; bounded so a wedged
-            // pipe cannot wedge disposal.
-            await TrySubmitZeroAsync(client, "channel disposed").ConfigureAwait(false);
-            await DisposeQuietlyAsync(client).ConfigureAwait(false);
-            RaiseStatus(stamp, connected: false, error: null);
-        }
-
-        _lifetimeCts.Dispose();
+        return client;
     }
 
     private static Func<SupervisorClient> CreateDefaultFactory(string sessionId, TimeProvider? timeProvider)
@@ -453,11 +508,16 @@ public sealed class SupervisorChannelAdapter : IPadStateSink, IAsyncDisposable
         }
     }
 
-    private static async Task TrySubmitZeroAsync(SupervisorClient client, string reason)
+    private static async Task TrySubmitZeroAsync(SupervisorClient client, string reason, CancellationToken cancellationToken)
     {
+        if (!client.IsConnected)
+        {
+            return;
+        }
+
         try
         {
-            await client.SubmitZeroAsync(reason, CancellationToken.None)
+            await client.SubmitZeroAsync(reason, cancellationToken)
                 .WaitAsync(TimeSpan.FromMilliseconds(250)).ConfigureAwait(false);
         }
         catch
