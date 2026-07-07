@@ -8,6 +8,9 @@ namespace ApexMapper.Supervisor;
 /// Per-session supervisor process. The tray launches one instance with
 /// <c>--session &lt;id&gt;</c>; it owns the virtual pad for that session and,
 /// on any shutdown signal, zeroes and disconnects the pad before exiting.
+/// With no connected session for a full idle window the server retires
+/// itself and the process exits cleanly rather than lingering after the
+/// tray exits; the tray respawns a supervisor on the next enable.
 ///
 /// Only the argument parsing (<see cref="SupervisorArgs"/>) and the
 /// single-instance decision are unit-tested; the composition below wires real
@@ -66,9 +69,12 @@ internal static class Program
         server.Start();
         log.Write(LogLevel.Info, "Supervisor accepting clients.");
 
+        var run = server.Completion;
         try
         {
-            await Task.Delay(Timeout.Infinite, shutdown.Token).ConfigureAwait(false);
+            // Wakes on whichever comes first: a shutdown signal, or the accept
+            // loop retiring itself after its idle window.
+            await run.WaitAsync(shutdown.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -79,7 +85,11 @@ internal static class Program
             Console.CancelKeyPress -= cancelHandler;
         }
 
-        log.Write(LogLevel.Info, "Supervisor stopping.");
+        log.Write(
+            LogLevel.Info,
+            run.IsCompletedSuccessfully && run.Result == ServerExitReason.IdleTimeout
+                ? "No client connected within the idle window; exiting."
+                : "Supervisor stopping.");
         try
         {
             await server.StopAsync().WaitAsync(StopTimeout).ConfigureAwait(false);

@@ -42,7 +42,9 @@ This app is intended to bridge that gap:
   profile switch (including a hot reload of the active profile), sleep/resume,
   panic, or crash. On any of these a currently-held key is gated —
   it must be released once before it maps again (end-to-end on real hardware
-  still pending)
+  still pending). The supervisor process exits on its own roughly a minute
+  after the tray disconnects or exits; re-enabling mapping starts a fresh one
+  automatically
 
 ## Current Status
 
@@ -59,7 +61,7 @@ Legend: ✅ done and tested · 🚧 in progress on this branch · ⏳ not starte
 | Raw Input digital path: per-device filtering, phantom-key suppression | ✅ Implemented, verified on Windows CI |
 | Mapping engine: ~1 ms tick, measured dt, zero-alloc steady state, atomic hot-swap | ✅ Implemented and tested |
 | Named-pipe IPC: length-prefixed MessagePack frames, per-session, current-user only | ✅ Implemented and tested |
-| Supervisor: owns the pad, heartbeat watchdog, fail-closed zero+disconnect | ✅ Implemented and tested |
+| Supervisor: owns the pad, heartbeat watchdog, fail-closed zero+disconnect, idle self-exit | ✅ Implemented and tested |
 | Virtual Xbox (ViGEm) output: atomic submit, fail-closed packing | ✅ Implemented and unit-tested; live pad needs ViGEmBus on a real desktop |
 | Anti-cheat detection & ViGEmBus pre-flight (detect-and-disable, fail-closed) | ✅ Implemented and tested |
 | Tray shell: toggle drives preflight → supervisor → engine, zero on exit | ✅ Implemented, verified on Windows CI |
