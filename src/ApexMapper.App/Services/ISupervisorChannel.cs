@@ -1,8 +1,12 @@
 namespace ApexMapper.App.Services;
 
 /// <summary>
-/// Phase-3 stand-in abstraction; Phase 4 consumers depend on this rather than on
-/// SupervisorClient directly. The integrate step will wire Phase 3's real client through it.
+/// App-side abstraction over the supervisor IPC channel. Production is
+/// <see cref="SupervisorChannelBridge"/> (over the resilient channel adapter);
+/// consumers depend on this interface so tests can substitute a fake.
+/// Note the panic contract: with no live session, <see cref="SubmitPanicAsync"/>
+/// completes as a silent fail-closed no-op — completion means "output forced
+/// off", never proof the panic frame was delivered.
 /// </summary>
 public interface ISupervisorChannel : IDisposable
 {

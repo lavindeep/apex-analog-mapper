@@ -11,12 +11,9 @@ namespace ApexMapper.App.Composition;
 
 /// <summary>
 /// Assembles the input pipeline (raw-input adapter, optional HID analog probe,
-/// ring buffer, key-state store) into an <see cref="InputHost"/>.
-///
-/// Not registered in the DI container: the raw-input adapter needs a live Win32
-/// HWND that only exists after the WPF Application has started. Nothing calls
-/// <see cref="Create"/> yet — it is invoked once the supervisor/output wiring
-/// lands (Phase 3) and a live HWND is available.
+/// ring buffer, key-state store) into an <see cref="InputHost"/>. Invoked by
+/// the composition root; the raw-input adapter hosts its own message-only
+/// window on its pump thread, so no caller-supplied HWND is involved.
 /// </summary>
 public static class InputHostFactory
 {
