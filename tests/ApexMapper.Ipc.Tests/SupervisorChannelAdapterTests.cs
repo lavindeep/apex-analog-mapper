@@ -171,6 +171,14 @@ public class SupervisorChannelAdapterTests
         /// test can wedge an in-flight send while it holds the frame write lock.</summary>
         public void ParkWrites() => _parkWrites = true;
 
+        /// <summary>Releases a parked write and lets subsequent writes flow, so a
+        /// test can drain a wedged send cleanly.</summary>
+        public void UnparkWrites()
+        {
+            _parkWrites = false;
+            _writeGate.TrySetResult();
+        }
+
         public void CompleteReadWithEof() => _readGate.TrySetResult(0);
 
         public async Task<List<IFrame>> DecodeCompleteFramesAsync()
@@ -558,6 +566,39 @@ public class SupervisorChannelAdapterTests
         adapter.IsConnected.Should().BeFalse();
         await Task.Delay(50);
         hub.Attempts.Should().Be(1, "panic must never auto-reconnect, even when the panic frame could not be sent");
+    }
+
+    [Fact]
+    public async Task Overlapping_control_ticks_are_skipped_while_a_send_is_in_flight()
+    {
+        var time = new ManualTimeProvider();
+        var hub = new FakeConnectHub();
+        // Push the heartbeat far out so only control ticks touch the transport;
+        // the decoded frame count then measures control sends alone.
+        var options = new SupervisorChannelOptions { HeartbeatInterval = TimeSpan.FromMinutes(1) };
+        await using var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), options, time);
+
+        adapter.Start();
+        await WaitUntilAsync(() => adapter.IsConnected && time.ScheduledTimerCount == 2);
+
+        // Wedge the first control send inside its write, holding the frame write lock.
+        hub.Stream(0).ParkWrites();
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        await hub.Stream(0).WriteParked.WaitAsync(Timeout);
+
+        // Two more control intervals fire while the first send is still parked.
+        // The in-flight guard must skip them rather than queue overlapping sends.
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        time.Advance(TimeSpan.FromMilliseconds(100));
+
+        // Release the parked send and let it drain. With the guard, only one
+        // control send was ever started, so exactly one frame reaches the stream.
+        hub.Stream(0).UnparkWrites();
+        await WaitUntilAsync(async () =>
+            (await hub.Stream(0).DecodeCompleteFramesAsync()).OfType<ControlFrame>().Any());
+        await Task.Delay(50);
+        var controlFrames = (await hub.Stream(0).DecodeCompleteFramesAsync()).OfType<ControlFrame>().Count();
+        controlFrames.Should().Be(1, "an in-flight control send skips overlapping ticks instead of queuing them behind the write lock");
     }
 
     [Fact]
