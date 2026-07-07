@@ -104,7 +104,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # The annotated tag message is the release notes: one honest source.
-          $flags = @('--verify-tag', '--notes-from-tag', '--title', "Apex Analog Mapper $env:PRODUCT_VERSION")
+          # checkout peels the triggering tag to a lightweight ref, losing the
+          # annotation, so re-fetch the real tag object and read it directly.
+          git fetch origin --force "+refs/tags/$($env:GITHUB_REF_NAME):refs/tags/$($env:GITHUB_REF_NAME)"
+          git tag -l --format='%(contents)' $env:GITHUB_REF_NAME |
+            Set-Content -Path release-notes.md -Encoding utf8
+          if (-not (Get-Content release-notes.md | Where-Object { $_.Trim() })) {
+            Write-Error "Tag $env:GITHUB_REF_NAME has no annotation to use as release notes"
+            exit 1
+          }
+          $flags = @('--verify-tag', '--notes-file', 'release-notes.md', '--title', "Apex Analog Mapper $env:PRODUCT_VERSION")
           if ($env:PRODUCT_VERSION -like '*-*') { $flags += '--prerelease' }
           gh release create $env:GITHUB_REF_NAME `
             "release-assets/apex-analog-mapper-$env:PRODUCT_VERSION.msi" `
