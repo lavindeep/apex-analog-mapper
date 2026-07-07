@@ -82,6 +82,20 @@ public sealed class ResumeGuardTests
     }
 
     [Fact]
+    public void Start_after_Dispose_does_not_resubscribe()
+    {
+        var source = new FakePowerModeSource();
+        var session = new RecordingSession();
+        var guard = new ResumeGuard(source, session, NullLogger<ResumeGuard>.Instance);
+        guard.Dispose();
+
+        guard.Start();
+        source.RaiseResumed();
+
+        session.ResumeCalls.Should().Be(0, "a disposed guard has no remaining unsubscribe path, so it must never attach");
+    }
+
+    [Fact]
     public void A_throwing_session_never_escapes_the_resume_handler()
     {
         var source = new FakePowerModeSource();

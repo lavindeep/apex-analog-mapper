@@ -141,7 +141,8 @@ public sealed class MappingSessionTests
     private static Harness Build(
         PreflightIssue? preflightResult = null,
         bool confirmAnswer = true,
-        Func<string, string, bool>? confirm = null)
+        Func<string, string, bool>? confirm = null,
+        Microsoft.Extensions.Logging.ILogger<MappingSession>? logger = null)
     {
         var store = new KeyStateStore(new KeyIndex(new[] { Throttle }));
         var engine = new MappingEngine(store, new NullSink());
@@ -168,7 +169,7 @@ public sealed class MappingSessionTests
                 prompts.Add(message);
                 return confirmAnswer;
             }),
-            NullLogger<MappingSession>.Instance);
+            logger ?? NullLogger<MappingSession>.Instance);
         session.StateChanged += (_, e) => states.Add(e);
 
         return new Harness(session, store, engine, channel, check, processes, launcher, foreground, prompts, states);
@@ -477,6 +478,35 @@ public sealed class MappingSessionTests
         h.Store.Get(Throttle).Value.Should().Be(0f);
         h.Store.IsGated(Throttle).Should().BeTrue("gating persists into the next enable even while off");
         h.Session.IsEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void OnSystemResumed_gates_even_when_the_logging_provider_throws()
+    {
+        var h = Build(logger: new ThrowingLogger());
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital);
+
+        var act = h.Session.OnSystemResumed;
+
+        act.Should().NotThrow("OnSystemResumed is documented never to throw, and its caller runs on a system broadcast thread");
+        h.Store.Get(Throttle).Value.Should().Be(0f);
+        h.Store.IsGated(Throttle).Should().BeTrue();
+    }
+
+    private sealed class ThrowingLogger : Microsoft.Extensions.Logging.ILogger<MappingSession>
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => throw new InvalidOperationException("logging provider failure");
     }
 
     [Fact]

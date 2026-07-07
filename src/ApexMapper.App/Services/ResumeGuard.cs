@@ -29,9 +29,16 @@ public sealed class ResumeGuard : IDisposable
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>Begins listening for resume events. Idempotent.</summary>
+    /// <summary>Begins listening for resume events. Idempotent; a no-op after
+    /// <see cref="Dispose"/> — a disposed guard has no remaining unsubscribe
+    /// path, so it must never attach to the (static) source event.</summary>
     public void Start()
     {
+        if (Volatile.Read(ref _disposed) == 1)
+        {
+            return;
+        }
+
         if (Interlocked.Exchange(ref _started, 1) != 0)
         {
             return;

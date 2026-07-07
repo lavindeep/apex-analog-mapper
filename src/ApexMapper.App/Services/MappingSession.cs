@@ -287,7 +287,15 @@ public sealed class MappingSession : IMappingSession
         // a panic; if mapping is enabled it stays enabled, and the gates persist
         // into the next enable if it is off.
         _store.GateHeldKeys();
-        _logger.LogInformation("System resumed; held keys gated until released once.");
+        try
+        {
+            _logger.LogInformation("System resumed; held keys gated until released once.");
+        }
+        catch
+        {
+            // The gate write above already completed; a throwing logging provider
+            // must not break the documented never-throws contract.
+        }
     }
 
     private string? EvaluateSteamAdvisory(ForegroundContext? foreground)
