@@ -28,8 +28,27 @@ the current user's processes can connect. No network socket is opened.
 
 Virtual-controller output requires the ViGEmBus kernel driver. ViGEmBus is
 **not bundled** and is **never silently installed**. When it is missing the app
-reports the problem and directs you to install it yourself from the official
-source (https://github.com/nefarius/ViGEmBus/releases).
+reports the problem and directs you to install it yourself. Three things to
+know before you do:
+
+- **Official source only.** Download ViGEmBus exclusively from the official
+  GitHub releases page: https://github.com/nefarius/ViGEmBus/releases. Top
+  search results for "ViGEmBus download" are third-party mirror sites — a
+  classic vector for bundled adware and malware. No mirror is official.
+- **ViGEmBus is end-of-life.** Nefarius retired and archived the project in
+  November 2023; v1.22.0 is the final release and no future updates or fixes
+  will be published. Its successor (Nefarius VirtualPad) is commercial and not
+  publicly available, and no maintained open fork exists. ViGEmBus nonetheless
+  remains the ecosystem-standard choice — actively maintained projects such as
+  DS4Windows still ship it — and this app's output layer sits behind an
+  `IControllerOutput` abstraction so it can move to a replacement if a viable
+  one emerges.
+- **The official binary's integrity is machine-verified.** The driver from the
+  official source is attestation/WHQL-signed by Nefarius Software Solutions
+  e.U., and 64-bit Windows independently verifies that signature at install
+  time and again every time the driver loads — a tampered binary will not
+  load. That protects the binary's integrity in transit; it does not protect
+  against bugs in the driver itself.
 
 ## Unsigned binaries
 
