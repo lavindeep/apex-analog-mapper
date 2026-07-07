@@ -153,6 +153,18 @@ dotnet test ApexAnalogMapper.sln
 - No real-hardware or in-game validation has been performed. Development uses
   unit tests and GitHub Actions only, and CI cannot load ViGEmBus, so the live
   virtual-pad submission path is not exercised anywhere in CI.
+- Under a sustained input flood the bounded event ring can drop raw events,
+  including a key release. A dropped release leaves that key's axis held until
+  the key is pressed and released once more (or mapping is toggled off and on,
+  which gates held keys). The app counts every drop and logs a warning on the
+  first overflow.
+- Some runtime behaviors cannot be exercised in CI and are deliberately recorded
+  as untested rather than claimed as verified:
+  - virtual-pad removal when the supervisor process dies (driver-owned behavior),
+  - end-to-end behavior when either process is force-killed,
+  - the supervisor's forced-exit path when a shutdown wedges,
+  - WPF application-exit teardown ordering,
+  - live ViGEmBus pad behaviors — only the driverless failure paths run in CI.
 - ViGEmBus is a user-installed runtime prerequisite for output.
 - Binaries are unsigned; there is no installer or updater yet.
 
