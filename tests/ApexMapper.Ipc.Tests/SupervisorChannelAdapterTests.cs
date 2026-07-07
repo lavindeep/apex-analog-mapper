@@ -71,10 +71,23 @@ public class SupervisorChannelAdapterTests
     {
         private readonly object _lock = new();
         private readonly List<FakeStream> _streams = new();
+        private readonly TaskCompletionSource _connectEntered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _connectGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _attempts;
 
         /// <summary>Whether the given 1-based connect attempt should fail.</summary>
         public Func<int, bool> FailAttempt { get; init; } = _ => false;
+
+        /// <summary>When set, a (non-failing) connect attempt parks after entering
+        /// until <see cref="ReleaseConnect"/> is called, so a test can drive the
+        /// window between a connect landing and the adapter deciding to publish it.</summary>
+        public bool GateConnects { get; init; }
+
+        /// <summary>Completes once a gated connect has entered and parked.</summary>
+        public Task ConnectEntered => _connectEntered.Task;
+
+        /// <summary>Releases a parked gated connect so it returns its stream.</summary>
+        public void ReleaseConnect() => _connectGate.TrySetResult();
 
         public int Attempts
         {
@@ -119,7 +132,7 @@ public class SupervisorChannelAdapterTests
 
         public SupervisorClient CreateClient(TimeProvider time) => new(ConnectAsync, time);
 
-        private Task<Stream> ConnectAsync(CancellationToken cancellationToken)
+        private async Task<Stream> ConnectAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             int attempt;
@@ -130,7 +143,13 @@ public class SupervisorChannelAdapterTests
 
             if (FailAttempt(attempt))
             {
-                return Task.FromException<Stream>(new IOException($"connect refused (attempt {attempt})"));
+                throw new IOException($"connect refused (attempt {attempt})");
+            }
+
+            if (GateConnects)
+            {
+                _connectEntered.TrySetResult();
+                await _connectGate.Task.ConfigureAwait(false);
             }
 
             var stream = new FakeStream();
@@ -139,7 +158,7 @@ public class SupervisorChannelAdapterTests
                 _streams.Add(stream);
             }
 
-            return Task.FromResult<Stream>(stream);
+            return stream;
         }
     }
 
@@ -668,6 +687,34 @@ public class SupervisorChannelAdapterTests
             adapter.IsConnected.Should().BeFalse();
             await WaitUntilAsync(() => hub.AllStreamsDisposed);
         }
+    }
+
+    [Fact]
+    public async Task A_connect_that_lands_after_disposal_is_discarded_not_published()
+    {
+        var time = new ManualTimeProvider();
+        var hub = new FakeConnectHub { GateConnects = true };
+        var statuses = new StatusLog();
+        var adapter = new SupervisorChannelAdapter(() => hub.CreateClient(time), timeProvider: time);
+        adapter.StatusChanged += statuses.Record;
+
+        adapter.Start();
+
+        // Hold the connect open inside its vulnerable window: the client finishes
+        // connecting only after disposal has already latched.
+        await hub.ConnectEntered.WaitAsync(Timeout);
+        await adapter.DisposeAsync().AsTask().WaitAsync(Timeout);
+
+        // Now let the connect complete. The publish guard must observe the
+        // disposal and discard the freshly connected client rather than
+        // resurrecting the session.
+        hub.ReleaseConnect();
+        await WaitUntilAsync(() => hub.StreamCount == 1);
+        await Task.Delay(50);
+
+        adapter.IsConnected.Should().BeFalse("a disposed adapter must never publish the session it just connected");
+        statuses.Snapshot().Should().BeEmpty("no connectivity transition may be raised for a discarded connect");
+        await WaitUntilAsync(() => hub.AllStreamsDisposed);
     }
 
     [Fact]
