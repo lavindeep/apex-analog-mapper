@@ -88,15 +88,17 @@ public sealed class MappingSession : IMappingSession
 
     public async Task<bool> EnableAsync(CancellationToken ct)
     {
+        // Snapshot the panic generation BEFORE waiting for the transition lock:
+        // an enable can queue here behind a slow disable, and a panic pressed
+        // while it is queued must still unwind this enable. Snapshotting after
+        // the wait would absorb that panic into the baseline and arm anyway.
+        // Any panic from this point on bumps the generation, and the recheck
+        // after the arm below unwinds.
+        var panicGenerationAtEntry = Volatile.Read(ref _panicGeneration);
+
         await _transition.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            // Snapshot the panic generation before doing anything: a panic that
-            // fires any time during this flow bumps it, and the recheck after we
-            // arm the engine below then unwinds. Read after taking the lock so a
-            // panic between lock acquisition and here is also caught.
-            var panicGenerationAtEntry = Volatile.Read(ref _panicGeneration);
-
             if (_enabled)
             {
                 return true;
@@ -151,10 +153,14 @@ public sealed class MappingSession : IMappingSession
             _enabled = true;
 
             // Panic race guard: a ForceLocalOff that interleaved anywhere above
-            // (typically while parked on the confirm dialog) already zeroed the
+            // (typically while parked on the confirm dialog, or while this
+            // enable was queued on the transition lock) already zeroed the
             // engine/store, but the arm just above would leave live output on.
-            // Detect it and unwind so panic keeps last-word authority.
-            if (Volatile.Read(ref _panicGeneration) != panicGenerationAtEntry)
+            // Detect it and unwind so panic keeps last-word authority. The read
+            // goes through a full fence: the arm's release-stores could
+            // otherwise reorder past a plain load on x64, letting a panic in
+            // the arm-to-recheck window slip the check.
+            if (Interlocked.CompareExchange(ref _panicGeneration, 0, 0) != panicGenerationAtEntry)
             {
                 _engine.SetEnabled(false);
                 _store.GateHeldKeys();

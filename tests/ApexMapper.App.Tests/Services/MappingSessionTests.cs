@@ -497,4 +497,46 @@ public sealed class MappingSessionTests
         h.Channel.IsConnected.Should().BeFalse("the unwind disconnects the channel it opened");
         h.States.Last().IsEnabled.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task Panic_while_an_enable_is_queued_behind_a_slow_disable_still_wins()
+    {
+        // An enable can queue on the transition lock behind a disable whose
+        // channel disconnect is slow. A panic pressed while the enable is
+        // queued must still unwind it: the generation snapshot is taken before
+        // the queue wait, so the panic bumps it and the post-arm recheck fires.
+        var disconnectEntered = new ManualResetEventSlim(false);
+        var releaseDisconnect = new ManualResetEventSlim(false);
+
+        var h = Build();
+        (await h.Session.EnableAsync(CancellationToken.None)).Should().BeTrue();
+
+        h.Channel.OnDisconnectEntered = () =>
+        {
+            disconnectEntered.Set();
+            releaseDisconnect.Wait(TimeSpan.FromSeconds(5));
+        };
+
+        var disableTask = Task.Run(() => h.Session.DisableAsync(CancellationToken.None));
+        disconnectEntered.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue("the disable must park inside the disconnect");
+
+        // The enable starts (snapshotting the panic generation) and queues on
+        // the transition lock the parked disable still holds.
+        var enableTask = Task.Run(() => h.Session.EnableAsync(CancellationToken.None));
+        await Task.Delay(200);
+
+        // Panic fires while the enable is queued; only then does the disable
+        // finish and hand the lock to the enable.
+        h.Session.ForceLocalOff("panic");
+        h.Channel.OnDisconnectEntered = null;
+        releaseDisconnect.Set();
+
+        await disableTask;
+        var result = await enableTask;
+
+        result.Should().BeFalse("a panic pressed while the enable was queued must unwind it");
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Engine.IsEnabled.Should().BeFalse();
+        h.Channel.IsConnected.Should().BeFalse();
+    }
 }
