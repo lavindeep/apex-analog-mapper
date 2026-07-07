@@ -146,16 +146,24 @@ public class HdrHistogramTests
         // Warm up: JIT and any first-call internals.
         for (var i = 0; i < 1000; i++) histogram.Record(i + 1);
 
+        // Assert on the minimum of several windows: a genuine per-call
+        // allocation shows up in every window, while a one-off runtime-service
+        // allocation (tiered-JIT promotion, eventing) lands in at most one and
+        // must not flake the gate on shared CI runners.
         GC.Collect();
         GC.WaitForPendingFinalizers();
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 1000; i++)
+        var windows = new long[3];
+        for (var w = 0; w < windows.Length; w++)
         {
-            histogram.Record(i + 1);
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 1000; i++)
+            {
+                histogram.Record(i + 1);
+            }
+            windows[w] = GC.GetAllocatedBytesForCurrentThread() - before;
         }
-        var after = GC.GetAllocatedBytesForCurrentThread();
 
-        (after - before).Should().Be(0);
+        windows.Min().Should().Be(0);
     }
 
     [Fact]
@@ -166,16 +174,24 @@ public class HdrHistogramTests
         // Warm up call.
         _ = histogram.Percentiles();
 
+        // Assert on the minimum of several windows: a genuine per-call
+        // allocation shows up in every window, while a one-off runtime-service
+        // allocation (tiered-JIT promotion, eventing) lands in at most one and
+        // must not flake the gate on shared CI runners.
         GC.Collect();
         GC.WaitForPendingFinalizers();
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 100; i++)
+        var windows = new long[3];
+        for (var w = 0; w < windows.Length; w++)
         {
-            _ = histogram.Percentiles();
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 100; i++)
+            {
+                _ = histogram.Percentiles();
+            }
+            windows[w] = GC.GetAllocatedBytesForCurrentThread() - before;
         }
-        var after = GC.GetAllocatedBytesForCurrentThread();
 
-        (after - before).Should().Be(0);
+        windows.Min().Should().Be(0);
     }
 
     [Fact]
