@@ -52,3 +52,80 @@ jobs:
         with:
           name: test-results-macos
           path: "**/TestResults/**/*.trx"
+
+  package:
+    runs-on: windows-latest
+    name: Package (per-user MSI)
+    timeout-minutes: 20
+    env:
+      PRODUCT_VERSION: 0.1.0
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish app + supervisor (self-contained win-x64) into one dir
+        run: |
+          # App first, supervisor second, into the same staging directory. Both
+          # are self-contained so the shared runtime files are identical; the
+          # second publish only adds ApexMapper.Supervisor.exe and its config.
+          dotnet publish src/ApexMapper.App/ApexMapper.App.csproj `
+            -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o staging
+          dotnet publish src/ApexMapper.Supervisor/ApexMapper.Supervisor.csproj `
+            -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o staging
+      - name: Assert staging layout
+        run: |
+          $staging = (Resolve-Path staging).Path
+          $required = @(
+            'ApexMapper.exe',
+            'ApexMapper.Supervisor.exe',
+            'ApexMapper.runtimeconfig.json',
+            'ApexMapper.Supervisor.runtimeconfig.json'
+          )
+          foreach ($name in $required) {
+            $path = Join-Path $staging $name
+            if (-not (Test-Path $path)) {
+              Write-Error "Expected staged file missing: $path"
+              exit 1
+            }
+          }
+          Write-Host "Staging layout OK: both executables and runtimeconfig files present in $staging"
+      - name: Build MSI
+        run: |
+          $staging = (Resolve-Path staging).Path
+          dotnet build installer/ApexAnalogMapper.wixproj `
+            -c Release -p:StagingDir=$staging -p:ProductVersion=$env:PRODUCT_VERSION
+      - name: Verify MSI co-locates app and supervisor
+        run: |
+          $msi = Get-ChildItem -Path installer/bin -Recurse -Filter *.msi | Select-Object -First 1
+          if (-not $msi) { Write-Error "No MSI was produced under installer/bin"; exit 1 }
+          $extract = Join-Path $PWD 'extract'
+          New-Item -ItemType Directory -Force -Path $extract | Out-Null
+          # Administrative install lays out the source image without running an
+          # actual install. Start-Process -Wait handles msiexec's async return.
+          $proc = Start-Process msiexec `
+            -ArgumentList "/a `"$($msi.FullName)`" /qn TARGETDIR=`"$extract`"" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) {
+            Write-Error "msiexec /a failed with exit code $($proc.ExitCode)"
+            exit 1
+          }
+          $exes  = Get-ChildItem -Path $extract -Recurse -Filter *.exe
+          $appEx = $exes | Where-Object { $_.Name -eq 'ApexMapper.exe' } | Select-Object -First 1
+          $supEx = $exes | Where-Object { $_.Name -eq 'ApexMapper.Supervisor.exe' } | Select-Object -First 1
+          if (-not $appEx) { Write-Error "ApexMapper.exe not found in extracted MSI image"; exit 1 }
+          if (-not $supEx) { Write-Error "ApexMapper.Supervisor.exe not found in extracted MSI image"; exit 1 }
+          if ($appEx.DirectoryName -ne $supEx.DirectoryName) {
+            Write-Error "App and supervisor are not co-located: '$($appEx.DirectoryName)' vs '$($supEx.DirectoryName)'"
+            exit 1
+          }
+          Write-Host "MSI verified: ApexMapper.exe and ApexMapper.Supervisor.exe co-located in $($appEx.DirectoryName)"
+      - name: Upload MSI
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apex-analog-mapper-msi-${{ env.PRODUCT_VERSION }}
+          path: installer/bin/**/*.msi
+          if-no-files-found: error

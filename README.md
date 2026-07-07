@@ -68,7 +68,8 @@ Legend: ✅ done and tested · 🚧 in progress on this branch · ⏳ not starte
 | HID analog path (feature/input routing, numbered reports, calibration) | 🚧 Exploratory; unproven without hardware |
 | Calibration wizard | 🚧 Present but stub-gated; raw capture pending |
 | Diagnostics components (latency histogram, log tail) | 🚧 Built and tested, not yet wired into the app shell |
-| Installer, signed distribution, updater | ⏳ Not started |
+| Per-user MSI installer (unsigned, built and verified in CI) | 🚧 On this branch; not yet released or hardware-tested |
+| Signed distribution, auto-updater | ⏳ Not started |
 | Real Apex Pro hardware verification | ⏳ Pending — no hardware available |
 
 ## Testing and Verification
@@ -120,6 +121,39 @@ perf/
   ApexMapper.Core.Benchmarks/
 ```
 
+## Installation
+
+Prebuilt Windows installers are published on the
+[Releases](https://github.com/lavindeep/apex-analog-mapper/releases) page.
+
+1. Download the latest `ApexAnalogMapper-<version>.msi`.
+2. Run it. Because the installer is **unsigned**, Windows SmartScreen warns that
+   the publisher is unrecognized — choose **More info → Run anyway**. See
+   [SECURITY.md](SECURITY.md) for why it is unsigned and how to check what you
+   are running.
+3. The MSI installs **per user** with no administrator prompt into
+   `%LocalAppData%\Programs\Apex Analog Mapper` and adds a Start Menu shortcut.
+   Both `ApexMapper.exe` and its supervisor process are self-contained, so no
+   separate .NET runtime install is required.
+
+### Prerequisite: ViGEmBus
+
+Virtual-controller output needs the ViGEmBus driver. It is **not** bundled and is
+never installed silently. Install it separately from the
+[official ViGEmBus releases](https://github.com/nefarius/ViGEmBus/releases)
+(v1.22.0). The app detects a missing driver and prompts you when you enable
+mapping.
+
+### Uninstalling
+
+Uninstall from **Windows Settings → Apps → Installed apps → Apex Analog Mapper**
+(or Control Panel's Programs and Features). The installer removes only the files
+and the shortcut it created. If you turned on start-with-Windows, **disable it in
+the app first** — the login task is created and removed by the app, not by the
+installer.
+
+Building from source is covered under [Build](#build) below.
+
 ## Build
 
 Requirements:
@@ -168,7 +202,8 @@ dotnet test ApexAnalogMapper.sln
   - WPF application-exit teardown ordering,
   - live ViGEmBus pad behaviors — only the driverless failure paths run in CI.
 - ViGEmBus is a user-installed runtime prerequisite for output.
-- Binaries are unsigned; there is no installer or updater yet.
+- Binaries and the MSI installer are unsigned (no code-signing certificate), so
+  SmartScreen will warn on first run. There is no auto-updater yet.
 
 ## License
 
