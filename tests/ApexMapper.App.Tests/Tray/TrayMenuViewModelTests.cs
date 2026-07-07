@@ -158,6 +158,8 @@ public sealed class TrayMenuViewModelTests
             StateChanged?.Invoke(this, new MappingSessionStateChangedEventArgs(false, $"Output forced off ({reason})."));
         }
 
+        public void OnSystemResumed() { }
+
         public async Task WaitForTransitionAsync()
         {
             (await _transitioned.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue("the toggle must reach the session");

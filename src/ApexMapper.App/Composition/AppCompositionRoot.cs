@@ -175,6 +175,17 @@ public static class AppCompositionRoot
                 sp.GetRequiredService<ILogger<ProfileActivationService>>());
         });
 
+        // Resume guard: on system resume from sleep/hibernate, held keys are
+        // gated so a key-up missed while suspended cannot latch an axis. The
+        // source binds a static OS event; both singletons are disposed on
+        // shutdown so the subscription never leaks.
+        services.AddSingleton<IPowerModeSource>(_ => new SystemEventsPowerModeSource());
+
+        services.AddSingleton(sp => new ResumeGuard(
+            sp.GetRequiredService<IPowerModeSource>(),
+            sp.GetRequiredService<IMappingSession>(),
+            sp.GetRequiredService<ILogger<ResumeGuard>>()));
+
         services.AddSingleton<IMappingSession>(sp => new MappingSession(
             sp.GetRequiredService<KeyStateStore>(),
             sp.GetRequiredService<MappingEngine>(),

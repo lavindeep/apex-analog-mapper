@@ -39,7 +39,9 @@ This app is intended to bridge that gap:
 - keep safety behavior explicit: a separate supervisor process owns the virtual
   pad and zeroes and disconnects it the moment liveness is lost, so stuck
   throttle/brake/steering cannot survive a disconnect, toggle, profile switch,
-  panic, or crash
+  sleep/resume, panic, or crash. On any of these a currently-held key is gated —
+  it must be released once before it maps again (end-to-end on real hardware
+  still pending)
 
 ## Current Status
 

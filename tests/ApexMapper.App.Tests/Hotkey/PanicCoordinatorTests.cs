@@ -118,6 +118,8 @@ public sealed class PanicCoordinatorTests
             _sequence?.Add("local-off");
             IsEnabled = false;
         }
+
+        public void OnSystemResumed() { }
     }
 
     private sealed class FakePanicPolicyStore : IPanicPolicyStore

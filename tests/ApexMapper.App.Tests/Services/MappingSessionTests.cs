@@ -425,6 +425,56 @@ public sealed class MappingSessionTests
     }
 
     // ---------------------------------------------------------------------------
+    // OnSystemResumed (sleep/resume)
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task OnSystemResumed_gates_held_keys_without_disabling_output()
+    {
+        var h = Build();
+        await h.Session.EnableAsync(CancellationToken.None);
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital);
+
+        h.Session.OnSystemResumed();
+
+        h.Store.Get(Throttle).Value.Should().Be(0f, "a key-up missed while suspended must not stay latched on resume");
+        h.Store.IsGated(Throttle).Should().BeTrue("the held key must release once before it maps again");
+        h.Session.IsEnabled.Should().BeTrue("resume gates held keys but never disables output");
+        h.Engine.IsEnabled.Should().BeTrue();
+        h.Channel.DisconnectCalls.Should().Be(0, "resume is not a panic; the channel is untouched");
+    }
+
+    [Fact]
+    public void OnSystemResumed_gates_even_while_disabled()
+    {
+        var h = Build();
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital);
+
+        h.Session.OnSystemResumed();
+
+        h.Store.Get(Throttle).Value.Should().Be(0f);
+        h.Store.IsGated(Throttle).Should().BeTrue("gating persists into the next enable even while off");
+        h.Session.IsEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Release_after_resume_clears_the_gate_and_the_next_press_maps()
+    {
+        var h = Build();
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital);
+        h.Session.OnSystemResumed();
+        h.Store.IsGated(Throttle).Should().BeTrue();
+
+        // The one release that clears the gate.
+        h.Store.Set(Throttle, 0f, KeyProvenance.Digital);
+        h.Store.IsGated(Throttle).Should().BeFalse();
+
+        // A fresh press after the release maps normally again.
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital);
+        h.Store.Get(Throttle).Value.Should().Be(1f);
+    }
+
+    // ---------------------------------------------------------------------------
     // ForceLocalOff (panic path)
     // ---------------------------------------------------------------------------
 

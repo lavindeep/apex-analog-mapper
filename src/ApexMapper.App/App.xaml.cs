@@ -118,6 +118,13 @@ public partial class App : Application
         };
         activation.Start();
 
+        // Resume guard: on system resume, gate held keys so a key-up missed
+        // while the machine was suspended cannot latch an axis until re-pressed.
+        // Start() subscribes to the OS power event; the host disposes the
+        // singleton on shutdown, which unsubscribes (a static-event handler
+        // would otherwise outlive the app).
+        _host.Services.GetRequiredService<ResumeGuard>().Start();
+
         // Bring the input pipeline and the mapping tick loop up off the UI
         // thread. The engine starts DISABLED — ticking only drains input and
         // keeps the channel slot zeroed; output requires the user's enable

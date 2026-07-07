@@ -38,6 +38,17 @@ public interface IMappingSession
     /// panic frame is the caller's job). Never throws.
     /// </summary>
     void ForceLocalOff(string reason);
+
+    /// <summary>
+    /// System resume from sleep/hibernate: gates currently-held mapped keys so
+    /// each needs one release before it maps again. Key-ups can be missed while
+    /// suspended, leaving stale non-zero depths that the control cadence would
+    /// transmit as a latched axis on resume. Output is NOT disabled — this is an
+    /// Off↔On-class held-key transition, not a panic; the session stays in
+    /// whatever enabled/disabled state it was in and the gates persist into the
+    /// next enable. Never throws.
+    /// </summary>
+    void OnSystemResumed();
 }
 
 public sealed class MappingSessionStateChangedEventArgs(bool isEnabled, string? message) : EventArgs

@@ -272,6 +272,19 @@ public sealed class MappingSession : IMappingSession
         }
     }
 
+    public void OnSystemResumed()
+    {
+        // Sleep/resume is an Off↔On-class transition for held keys: a key-up can
+        // be missed while the machine is suspended, leaving a stale non-zero depth
+        // that the 100 ms control cadence would keep transmitting as a latched
+        // axis until the key is pressed and released again. Gate held keys so each
+        // needs one release first. Output is deliberately left as-is — this is not
+        // a panic; if mapping is enabled it stays enabled, and the gates persist
+        // into the next enable if it is off.
+        _store.GateHeldKeys();
+        _logger.LogInformation("System resumed; held keys gated until released once.");
+    }
+
     private string? EvaluateSteamAdvisory(ForegroundContext? foreground)
     {
         if (foreground is null)
