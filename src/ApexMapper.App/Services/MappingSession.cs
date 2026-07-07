@@ -37,6 +37,15 @@ public sealed class MappingSession : IMappingSession
 
     private volatile bool _enabled;
 
+    // Bumped by every ForceLocalOff (panic) BEFORE it writes any state. An
+    // in-flight EnableAsync snapshots this at entry and re-reads it after it has
+    // armed the engine; a mismatch means a panic interleaved (worst case: while
+    // the enable was parked on the unbounded anti-cheat confirm dialog), so the
+    // enable unwinds instead of leaving live output post-panic. Panic keeps
+    // last-word authority: the increment-then-write in ForceLocalOff pairs with
+    // the arm-then-recheck here so one of the two orderings always ends off.
+    private int _panicGeneration;
+
     /// <param name="confirm">
     /// Blocking user confirmation (title, message) → proceed?. Production wires
     /// <see cref="IDialogService.Confirm"/>; tests inject a recorder.
@@ -74,6 +83,12 @@ public sealed class MappingSession : IMappingSession
         await _transition.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            // Snapshot the panic generation before doing anything: a panic that
+            // fires any time during this flow bumps it, and the recheck after we
+            // arm the engine below then unwinds. Read after taking the lock so a
+            // panic between lock acquisition and here is also caught.
+            var panicGenerationAtEntry = Volatile.Read(ref _panicGeneration);
+
             if (_enabled)
             {
                 return true;
@@ -126,6 +141,35 @@ public sealed class MappingSession : IMappingSession
             await _channel.ConnectAsync(ct).ConfigureAwait(false);
             _engine.SetEnabled(true);
             _enabled = true;
+
+            // Panic race guard: a ForceLocalOff that interleaved anywhere above
+            // (typically while parked on the confirm dialog) already zeroed the
+            // engine/store, but the arm just above would leave live output on.
+            // Detect it and unwind so panic keeps last-word authority.
+            if (Volatile.Read(ref _panicGeneration) != panicGenerationAtEntry)
+            {
+                _engine.SetEnabled(false);
+                _store.GateHeldKeys();
+                _enabled = false;
+
+                try
+                {
+                    await _channel.DisconnectAsync(ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Channel disconnect failed while unwinding an enable that raced a panic.");
+                }
+
+                _logger.LogWarning("Enable unwound: a panic fired during the enable flow; output stays off.");
+                RaiseState(false, "Output forced off (panic).");
+                return false;
+            }
+
             _logger.LogInformation("Mapping enabled.");
             RaiseState(true, warning ?? "Mapping enabled.");
             return true;
@@ -191,11 +235,13 @@ public sealed class MappingSession : IMappingSession
 
     public void ForceLocalOff(string reason)
     {
-        // Panic path: must complete instantly. No transition lock — a
-        // concurrent EnableAsync may interleave, but the engine/store writes
-        // here are the last-word safety writes; worst case the session ends
-        // connected-but-zeroed, never with latched input. The caller owns the
-        // panic frame; this is only the local half.
+        // Panic path: must complete instantly. No transition lock — a concurrent
+        // EnableAsync may interleave, but the panic-generation bump below (taken
+        // BEFORE any state write) makes that enable unwind rather than re-arm the
+        // engine, so the session always ends off, never latched-on or
+        // connected-and-live. The caller owns the panic frame; this is the local
+        // half only.
+        Interlocked.Increment(ref _panicGeneration);
         _engine.SetEnabled(false);
         _store.GateHeldKeys();
         _enabled = false;

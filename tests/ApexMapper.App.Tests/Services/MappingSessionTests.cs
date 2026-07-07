@@ -136,7 +136,8 @@ public sealed class MappingSessionTests
 
     private static Harness Build(
         PreflightIssue? preflightResult = null,
-        bool confirmAnswer = true)
+        bool confirmAnswer = true,
+        Func<string, string, bool>? confirm = null)
     {
         var store = new KeyStateStore(new KeyIndex(new[] { Throttle }));
         var engine = new MappingEngine(store, new NullSink());
@@ -158,11 +159,11 @@ public sealed class MappingSessionTests
             new SteamDetector(processes, new[] { @"C:\SteamLibrary" }),
             launcher,
             foreground,
-            confirm: (_, message) =>
+            confirm: confirm ?? ((_, message) =>
             {
                 prompts.Add(message);
                 return confirmAnswer;
-            },
+            }),
             NullLogger<MappingSession>.Instance);
         session.StateChanged += (_, e) => states.Add(e);
 
@@ -383,5 +384,44 @@ public sealed class MappingSessionTests
 
         act.Should().NotThrow();
         h.Engine.IsEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Panic_during_an_in_flight_enable_unwinds_the_enable_and_stays_off()
+    {
+        // An EnableAsync parked at the anti-cheat confirmation dialog (an
+        // unbounded wait) can be outraced by a panic: without the panic-generation
+        // guard the enable resumes after the panic, re-arms the engine, and leaves
+        // live output post-panic with no explicit user enable.
+        var confirmEntered = new ManualResetEventSlim(false);
+        var releaseConfirm = new ManualResetEventSlim(false);
+
+        var h = Build(confirm: (_, _) =>
+        {
+            confirmEntered.Set();
+            releaseConfirm.Wait();
+            return true; // user confirms — the enable would otherwise complete
+        });
+        // A positive anti-cheat verdict forces the confirmation prompt.
+        h.Processes.Processes.Add(new ProcessSnapshot(7, 1, "BEService.exe", null, new Dictionary<string, string>()));
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital);
+
+        var enableTask = Task.Run(() => h.Session.EnableAsync(CancellationToken.None));
+        confirmEntered.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue("the enable must reach the confirm prompt");
+
+        // Panic fires while the enable is still parked at the dialog.
+        h.Session.ForceLocalOff("panic");
+
+        // Let the enable resume; the generation guard must make it unwind.
+        releaseConfirm.Set();
+        var result = await enableTask;
+
+        result.Should().BeFalse("a panic mid-enable must unwind the enable and report off");
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Engine.IsEnabled.Should().BeFalse("the re-armed engine must be turned back off by the unwind");
+        h.Store.Get(Throttle).Value.Should().Be(0f);
+        h.Store.IsGated(Throttle).Should().BeTrue();
+        h.Channel.IsConnected.Should().BeFalse("the unwind disconnects the channel it opened");
+        h.States.Last().IsEnabled.Should().BeFalse();
     }
 }
