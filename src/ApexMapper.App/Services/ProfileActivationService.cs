@@ -23,6 +23,7 @@ public sealed class ProfileActivationService : IDisposable
     private readonly IForegroundWatcher _foreground;
     private readonly IProfileManualPinStore _pinStore;
     private readonly Action<Profile?> _applyProfile;
+    private readonly Action? _onProfileSwitch;
     private readonly ILogger<ProfileActivationService> _logger;
     private readonly object _lock = new();
 
@@ -34,13 +35,19 @@ public sealed class ProfileActivationService : IDisposable
 
     /// <param name="applyProfile">Receives the newly resolved profile (or null
     /// for none); production passes the engine's <c>SetProfile</c>.</param>
+    /// <param name="onProfileSwitch">Invoked whenever a profile is actually
+    /// applied because it is a switch, reload, or the initial load — but NOT on a
+    /// same-id re-resolution (which is skipped to preserve held ramps). Production
+    /// passes the store's held-key gate so a key held across a profile switch must
+    /// release once before it maps under the new profile.</param>
     public ProfileActivationService(
         Func<IReadOnlyList<Profile>> loadProfiles,
         IProfileHotReload hotReload,
         IForegroundWatcher foreground,
         IProfileManualPinStore pinStore,
         Action<Profile?> applyProfile,
-        ILogger<ProfileActivationService> logger)
+        ILogger<ProfileActivationService> logger,
+        Action? onProfileSwitch = null)
     {
         _loadProfiles = loadProfiles ?? throw new ArgumentNullException(nameof(loadProfiles));
         _hotReload = hotReload ?? throw new ArgumentNullException(nameof(hotReload));
@@ -48,6 +55,7 @@ public sealed class ProfileActivationService : IDisposable
         _pinStore = pinStore ?? throw new ArgumentNullException(nameof(pinStore));
         _applyProfile = applyProfile ?? throw new ArgumentNullException(nameof(applyProfile));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _onProfileSwitch = onProfileSwitch;
     }
 
     /// <summary>The id of the currently applied profile, or null when none resolves.</summary>
@@ -150,6 +158,14 @@ public sealed class ProfileActivationService : IDisposable
             if (changed || forceApply)
             {
                 _applyProfile(profile);
+
+                // A profile switch (or a reload, which applies changed bindings
+                // under the same id) is an Off<->On-class transition for held
+                // keys: gate them so a key held across the swap releases once
+                // before it maps under the new profile. A same-id re-resolution
+                // never reaches here, so held ramps survive an alt-tab.
+                _onProfileSwitch?.Invoke();
+
                 _hasApplied = true;
                 _currentProfileId = newId;
                 _logger.LogInformation("Active profile: {ProfileId}", newId ?? "(none)");

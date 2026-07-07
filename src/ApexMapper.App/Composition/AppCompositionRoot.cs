@@ -166,13 +166,17 @@ public static class AppCompositionRoot
         {
             var store = sp.GetRequiredService<ProfileStore>();
             var engine = sp.GetRequiredService<MappingEngine>();
+            var keyStore = sp.GetRequiredService<KeyStateStore>();
             return new ProfileActivationService(
                 loadProfiles: () => store.LoadAll(),
                 sp.GetRequiredService<IProfileHotReload>(),
                 sp.GetRequiredService<IForegroundWatcher>(),
                 sp.GetRequiredService<IProfileManualPinStore>(),
                 applyProfile: profile => engine.SetProfile(profile),
-                sp.GetRequiredService<ILogger<ProfileActivationService>>());
+                sp.GetRequiredService<ILogger<ProfileActivationService>>(),
+                // A profile switch/reload gates held keys so they release once
+                // before mapping under the new profile.
+                onProfileSwitch: keyStore.GateHeldKeys);
         });
 
         // Resume guard: on system resume from sleep/hibernate, held keys are

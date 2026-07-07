@@ -223,6 +223,81 @@ public sealed class ProfileActivationServiceTests
         changes.Should().Be(2);
     }
 
+    // ---------------------------------------------------------------------------
+    // Held-key gating on profile switch (spec: a profile switch requires held
+    // keys to release once; a same-id re-resolution must not, so ramps survive)
+    // ---------------------------------------------------------------------------
+
+    private static readonly KeyId Throttle = KeyId.FromScanCode(0x11);
+
+    private sealed record StoreHarness(
+        ProfileActivationService Service,
+        FakeForegroundWatcher Foreground,
+        FakeHotReload HotReload,
+        KeyStateStore Store);
+
+    private static StoreHarness BuildWithStore(IReadOnlyList<Profile> profiles)
+    {
+        var store = new KeyStateStore(new KeyIndex(new[] { Throttle }));
+        var hotReload = new FakeHotReload();
+        var foreground = new FakeForegroundWatcher();
+        var pinStore = new FakePinStore();
+
+        var service = new ProfileActivationService(
+            loadProfiles: () => profiles,
+            hotReload,
+            foreground,
+            pinStore,
+            applyProfile: _ => { },
+            NullLogger<ProfileActivationService>.Instance,
+            onProfileSwitch: store.GateHeldKeys);
+
+        return new StoreHarness(service, foreground, hotReload, store);
+    }
+
+    [Fact]
+    public void Switching_to_a_different_profile_gates_held_keys()
+    {
+        var generic = MakeProfile("generic");
+        var forza = MakeProfile("forza", "Forza.exe");
+        var h = BuildWithStore(new[] { generic, forza });
+        h.Service.Start();                                   // applies generic (nothing held)
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital);    // held under generic
+
+        h.Foreground.MoveTo("C:/Games/Forza.exe");           // switch generic -> forza
+
+        h.Store.Get(Throttle).Value.Should().Be(0f, "a key held across a profile switch must not carry into the new profile");
+        h.Store.IsGated(Throttle).Should().BeTrue("it must release once before it maps under the new profile");
+    }
+
+    [Fact]
+    public void A_same_id_re_resolution_does_not_gate_held_keys()
+    {
+        var generic = MakeProfile("generic");
+        var h = BuildWithStore(new[] { generic });
+        h.Service.Start();
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital);
+
+        h.Foreground.MoveTo("C:/Other/App.exe");             // still resolves generic
+
+        h.Store.IsGated(Throttle).Should().BeFalse("same-id re-resolution preserves ramps and must not gate");
+        h.Store.Get(Throttle).Value.Should().Be(1f);
+    }
+
+    [Fact]
+    public void A_hot_reload_gates_held_keys_like_a_profile_switch()
+    {
+        var v1 = MakeProfile("generic");
+        var h = BuildWithStore(new[] { v1 });
+        h.Service.Start();
+        h.Store.Set(Throttle, 1f, KeyProvenance.Digital);
+
+        h.HotReload.RaiseReloaded(new[] { MakeProfile("generic") }); // same id, new bindings
+
+        h.Store.Get(Throttle).Value.Should().Be(0f, "a hot reload behaves as a profile switch for held keys");
+        h.Store.IsGated(Throttle).Should().BeTrue();
+    }
+
     [Fact]
     public void Dispose_stops_reacting_to_sources()
     {
