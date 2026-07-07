@@ -44,6 +44,10 @@ public sealed class PanicCoordinatorTests
 
     private sealed class FakeSupervisorChannel : ISupervisorChannel
     {
+        private readonly List<string>? _sequence;
+
+        public FakeSupervisorChannel(List<string>? sequence = null) => _sequence = sequence;
+
         public int PanicCallCount { get; private set; }
         public Exception? ThrowOnPanic { get; set; }
 
@@ -60,6 +64,7 @@ public sealed class PanicCoordinatorTests
         public Task SubmitPanicAsync(CancellationToken ct)
         {
             PanicCallCount++;
+            _sequence?.Add("channel-panic");
             if (ThrowOnPanic is not null) throw ThrowOnPanic;
             return Task.CompletedTask;
         }
@@ -85,6 +90,34 @@ public sealed class PanicCoordinatorTests
         public void Start() { }
         public void Stop() { }
         public void Dispose() { }
+    }
+
+    private sealed class FakeMappingSession : IMappingSession
+    {
+        private readonly List<string>? _sequence;
+
+        public FakeMappingSession(List<string>? sequence = null) => _sequence = sequence;
+
+        public List<string> ForcedOffReasons { get; } = new();
+
+        public bool IsEnabled { get; private set; } = true;
+
+        public event EventHandler<MappingSessionStateChangedEventArgs>? StateChanged
+        {
+            add { }
+            remove { }
+        }
+
+        public Task<bool> EnableAsync(CancellationToken ct) => Task.FromResult(true);
+
+        public Task DisableAsync(CancellationToken ct) => Task.CompletedTask;
+
+        public void ForceLocalOff(string reason)
+        {
+            ForcedOffReasons.Add(reason);
+            _sequence?.Add("local-off");
+            IsEnabled = false;
+        }
     }
 
     private sealed class FakePanicPolicyStore : IPanicPolicyStore
@@ -120,11 +153,12 @@ public sealed class PanicCoordinatorTests
     private static readonly HotkeyGesture TestGesture =
         new(System.Windows.Input.Key.F12, System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Shift);
 
-    private static (PanicCoordinator coordinator, FakeHotkeyService hotkey, FakeSupervisorChannel supervisor, FakeForegroundWatcher foreground, FakePanicPolicyStore policyStore)
+    private static (PanicCoordinator coordinator, FakeHotkeyService hotkey, FakeSupervisorChannel supervisor, FakeForegroundWatcher foreground, FakePanicPolicyStore policyStore, FakeMappingSession session, List<string> sequence)
         Build(string foregroundExe = @"C:\Games\Forza.exe")
     {
+        var sequence = new List<string>();
         var hotkey = new FakeHotkeyService();
-        var supervisor = new FakeSupervisorChannel();
+        var supervisor = new FakeSupervisorChannel(sequence);
         var foreground = new FakeForegroundWatcher
         {
             Current = foregroundExe.Length == 0
@@ -132,8 +166,9 @@ public sealed class PanicCoordinatorTests
                 : new ForegroundContext(foregroundExe, "Test Window", 1234u, null, DateTimeOffset.UtcNow)
         };
         var policyStore = new FakePanicPolicyStore();
-        var coordinator = new PanicCoordinator(hotkey, supervisor, foreground, policyStore);
-        return (coordinator, hotkey, supervisor, foreground, policyStore);
+        var session = new FakeMappingSession(sequence);
+        var coordinator = new PanicCoordinator(hotkey, supervisor, foreground, policyStore, session);
+        return (coordinator, hotkey, supervisor, foreground, policyStore, session, sequence);
     }
 
     // ---------------------------------------------------------------------------
@@ -143,7 +178,7 @@ public sealed class PanicCoordinatorTests
     [Fact]
     public void Start_registers_panic_hotkey()
     {
-        var (coordinator, hotkey, _, _, _) = Build();
+        var (coordinator, hotkey, _, _, _, _, _) = Build();
 
         coordinator.Start(TestGesture);
 
@@ -154,7 +189,7 @@ public sealed class PanicCoordinatorTests
     [Fact]
     public void Stop_unregisters_panic_hotkey()
     {
-        var (coordinator, hotkey, _, _, _) = Build();
+        var (coordinator, hotkey, _, _, _, _, _) = Build();
         coordinator.Start(TestGesture);
 
         coordinator.Stop();
@@ -169,7 +204,7 @@ public sealed class PanicCoordinatorTests
     [Fact]
     public async Task PanicAsync_submits_panic_to_supervisor()
     {
-        var (coordinator, _, supervisor, _, _) = Build();
+        var (coordinator, _, supervisor, _, _, _, _) = Build();
         coordinator.Start(TestGesture);
 
         await coordinator.PanicAsync(CancellationToken.None);
@@ -181,7 +216,7 @@ public sealed class PanicCoordinatorTests
     public async Task PanicAsync_disables_auto_enable_for_current_foreground()
     {
         const string exe = @"C:\Games\Forza.exe";
-        var (coordinator, _, _, _, policyStore) = Build(foregroundExe: exe);
+        var (coordinator, _, _, _, policyStore, _, _) = Build(foregroundExe: exe);
         coordinator.Start(TestGesture);
 
         await coordinator.PanicAsync(CancellationToken.None);
@@ -192,7 +227,7 @@ public sealed class PanicCoordinatorTests
     [Fact]
     public async Task PanicAsync_handles_empty_foreground_executable()
     {
-        var (coordinator, _, supervisor, _, policyStore) = Build(foregroundExe: string.Empty);
+        var (coordinator, _, supervisor, _, policyStore, _, _) = Build(foregroundExe: string.Empty);
         coordinator.Start(TestGesture);
 
         await coordinator.PanicAsync(CancellationToken.None);
@@ -205,7 +240,7 @@ public sealed class PanicCoordinatorTests
     public async Task PanicAsync_propagates_supervisor_failure_via_event_args()
     {
         const string exe = @"C:\Games\Forza.exe";
-        var (coordinator, _, supervisor, _, policyStore) = Build(foregroundExe: exe);
+        var (coordinator, _, supervisor, _, policyStore, _, _) = Build(foregroundExe: exe);
         supervisor.ThrowOnPanic = new InvalidOperationException("simulated supervisor failure");
         coordinator.Start(TestGesture);
 
@@ -224,7 +259,7 @@ public sealed class PanicCoordinatorTests
     public async Task PanicAsync_submits_supervisor_even_when_policy_store_throws()
     {
         const string exe = @"C:\Games\Forza.exe";
-        var (coordinator, _, supervisor, _, policyStore) = Build(foregroundExe: exe);
+        var (coordinator, _, supervisor, _, policyStore, _, _) = Build(foregroundExe: exe);
         policyStore.ThrowOnDisable = new IOException("simulated disk-full policy write");
         coordinator.Start(TestGesture);
 
@@ -244,7 +279,7 @@ public sealed class PanicCoordinatorTests
     public async Task PanicAsync_surfaces_both_policy_and_supervisor_failures()
     {
         const string exe = @"C:\Games\Forza.exe";
-        var (coordinator, _, supervisor, _, policyStore) = Build(foregroundExe: exe);
+        var (coordinator, _, supervisor, _, policyStore, _, _) = Build(foregroundExe: exe);
         policyStore.ThrowOnDisable = new IOException("simulated policy write failure");
         supervisor.ThrowOnPanic = new InvalidOperationException("simulated supervisor failure");
         coordinator.Start(TestGesture);
@@ -261,13 +296,44 @@ public sealed class PanicCoordinatorTests
     }
 
     // ---------------------------------------------------------------------------
+    // Local-off ordering
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PanicAsync_forces_local_off_before_submitting_the_panic_frame()
+    {
+        var (coordinator, _, _, _, _, session, sequence) = Build();
+        coordinator.Start(TestGesture);
+
+        await coordinator.PanicAsync(CancellationToken.None);
+
+        session.ForcedOffReasons.Should().ContainSingle().Which.Should().Be("panic");
+        sequence.Should().Equal(
+            new[] { "local-off", "channel-panic" },
+            "input must stop feeding output before anything that could fail or block");
+    }
+
+    [Fact]
+    public async Task PanicAsync_forces_local_off_even_when_the_supervisor_throws()
+    {
+        var (coordinator, _, supervisor, _, _, session, _) = Build();
+        supervisor.ThrowOnPanic = new InvalidOperationException("simulated supervisor failure");
+        coordinator.Start(TestGesture);
+
+        await coordinator.PanicAsync(CancellationToken.None);
+
+        session.ForcedOffReasons.Should().ContainSingle();
+        session.IsEnabled.Should().BeFalse();
+    }
+
+    // ---------------------------------------------------------------------------
     // Hotkey callback test
     // ---------------------------------------------------------------------------
 
     [Fact]
     public async Task Hotkey_press_invokes_panic_asynchronously()
     {
-        var (coordinator, hotkey, supervisor, _, _) = Build();
+        var (coordinator, hotkey, supervisor, _, _, _, _) = Build();
         coordinator.Start(TestGesture);
 
         var tcs = new TaskCompletionSource<PanicCompletedEventArgs>(TaskCreationOptions.RunContinuationsAsynchronously);

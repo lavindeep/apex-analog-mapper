@@ -37,7 +37,9 @@ public sealed class TrayMenuViewModelTests
         }
 
         public void SetTooltip(string text) { }
-        public void ShowBalloon(string title, string message) { }
+        public void ShowBalloon(string title, string message) => Balloons.Add(message);
+
+        public List<string> Balloons { get; } = new();
 
         // ITrayServiceInternal — called by TrayMenuViewModel commands
         public void RequestOpenMainWindow() => OpenMainWindowRequested?.Invoke(this, EventArgs.Empty);
@@ -110,6 +112,58 @@ public sealed class TrayMenuViewModelTests
         public void Dispose() { }
     }
 
+    // Raises StateChanged synchronously inside Enable/Disable/ForceLocalOff and
+    // signals Transitioned so tests can await the Task.Run the toggle spawns.
+    private sealed class FakeMappingSession : IMappingSession
+    {
+        private readonly SemaphoreSlim _transitioned = new(0);
+
+        public bool IsEnabled { get; private set; }
+        public bool EnableResult { get; set; } = true;
+        public string? EnableFailureMessage { get; set; } = "blocked";
+        public int EnableCalls { get; private set; }
+        public int DisableCalls { get; private set; }
+
+        public event EventHandler<MappingSessionStateChangedEventArgs>? StateChanged;
+
+        public Task<bool> EnableAsync(CancellationToken ct)
+        {
+            EnableCalls++;
+            if (EnableResult)
+            {
+                IsEnabled = true;
+                StateChanged?.Invoke(this, new MappingSessionStateChangedEventArgs(true, null));
+            }
+            else
+            {
+                StateChanged?.Invoke(this, new MappingSessionStateChangedEventArgs(false, EnableFailureMessage));
+            }
+
+            _transitioned.Release();
+            return Task.FromResult(EnableResult);
+        }
+
+        public Task DisableAsync(CancellationToken ct)
+        {
+            DisableCalls++;
+            IsEnabled = false;
+            StateChanged?.Invoke(this, new MappingSessionStateChangedEventArgs(false, null));
+            _transitioned.Release();
+            return Task.CompletedTask;
+        }
+
+        public void ForceLocalOff(string reason)
+        {
+            IsEnabled = false;
+            StateChanged?.Invoke(this, new MappingSessionStateChangedEventArgs(false, $"Output forced off ({reason})."));
+        }
+
+        public async Task WaitForTransitionAsync()
+        {
+            (await _transitioned.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue("the toggle must reach the session");
+        }
+    }
+
     private sealed class FakeForegroundWatcher : IForegroundWatcher
     {
         public ForegroundContext Current => ForegroundContext.Empty;
@@ -138,19 +192,37 @@ public sealed class TrayMenuViewModelTests
     private static readonly TrayProfileEntry Profile1 = new("p1", "Profile One");
     private static readonly TrayProfileEntry Profile2 = new("p2", "Profile Two");
 
-    private static (TrayMenuViewModel vm, FakeTrayService tray, FakeTrayProfileSource source, FakeSupervisorChannel channel, PanicCoordinator coordinator)
+    private static (TrayMenuViewModel vm, FakeTrayService tray, FakeTrayProfileSource source, FakeSupervisorChannel channel, PanicCoordinator coordinator, FakeMappingSession session)
         Build(string currentId = "p1")
     {
         var tray = new FakeTrayService();
         var source = new FakeTrayProfileSource([Profile1, Profile2], currentId);
         var channel = new FakeSupervisorChannel();
+        var session = new FakeMappingSession();
         var coordinator = new PanicCoordinator(
             new FakeHotkeyService(),
             channel,
             new FakeForegroundWatcher(),
-            new FakePanicPolicyStore());
-        var vm = new TrayMenuViewModel(tray, source, coordinator);
-        return (vm, tray, source, channel, coordinator);
+            new FakePanicPolicyStore(),
+            session);
+
+        // Construct the VM without an ambient SynchronizationContext (xUnit
+        // installs one that queues posts asynchronously): the VM then applies
+        // session state inline on the raising thread, keeping tests
+        // deterministic. Production captures the WPF dispatcher context.
+        var previousContext = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(null);
+        TrayMenuViewModel vm;
+        try
+        {
+            vm = new TrayMenuViewModel(tray, source, coordinator, session);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previousContext);
+        }
+
+        return (vm, tray, source, channel, coordinator, session);
     }
 
     // ---------------------------------------------------------------------------
@@ -160,14 +232,14 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void NewVm_IsEnabled_is_false()
     {
-        var (vm, _, _, _, _) = Build();
+        var (vm, _, _, _, _, _) = Build();
         vm.IsEnabled.Should().BeFalse();
     }
 
     [Fact]
     public void NewVm_Profiles_reflects_source()
     {
-        var (vm, _, _, _, _) = Build();
+        var (vm, _, _, _, _, _) = Build();
         vm.Profiles.Should().HaveCount(2)
             .And.Contain(p => p.ProfileId == "p1")
             .And.Contain(p => p.ProfileId == "p2");
@@ -176,7 +248,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void NewVm_CurrentProfileName_matches_source_current_id()
     {
-        var (vm, _, _, _, _) = Build("p1");
+        var (vm, _, _, _, _, _) = Build("p1");
         vm.CurrentProfileName.Should().Be("Profile One");
     }
 
@@ -185,30 +257,58 @@ public sealed class TrayMenuViewModelTests
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public void ToggleEnabledCommand_flips_IsEnabled_to_true()
+    public async Task ToggleEnabledCommand_enables_through_the_session()
     {
-        var (vm, _, _, _, _) = Build();
-        vm.ToggleEnabledCommand.Execute(null);
-        vm.IsEnabled.Should().BeTrue();
-    }
+        var (vm, tray, _, _, _, session) = Build();
 
-    [Fact]
-    public void ToggleEnabledCommand_calls_tray_SetEnabled_with_new_value()
-    {
-        var (vm, tray, _, _, _) = Build();
         vm.ToggleEnabledCommand.Execute(null);
+        await session.WaitForTransitionAsync();
+
+        session.EnableCalls.Should().Be(1);
+        vm.IsEnabled.Should().BeTrue();
         tray.SetEnabledCalled.Should().BeTrue();
         tray.IsEnabled.Should().BeTrue();
     }
 
     [Fact]
-    public void ToggleEnabledCommand_flips_back_to_false_on_second_call()
+    public async Task ToggleEnabledCommand_disables_through_the_session_on_second_call()
     {
-        var (vm, tray, _, _, _) = Build();
+        var (vm, tray, _, _, _, session) = Build();
+
         vm.ToggleEnabledCommand.Execute(null);
+        await session.WaitForTransitionAsync();
         vm.ToggleEnabledCommand.Execute(null);
+        await session.WaitForTransitionAsync();
+
+        session.DisableCalls.Should().Be(1);
         vm.IsEnabled.Should().BeFalse();
         tray.IsEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Blocked_enable_leaves_the_toggle_off_and_surfaces_the_reason()
+    {
+        var (vm, tray, _, _, _, session) = Build();
+        session.EnableResult = false;
+        session.EnableFailureMessage = "Cannot enable: ViGEmBus driver not found.";
+
+        vm.ToggleEnabledCommand.Execute(null);
+        await session.WaitForTransitionAsync();
+
+        vm.IsEnabled.Should().BeFalse("the session refused; the menu must not flip optimistically");
+        tray.IsEnabled.Should().BeFalse();
+        tray.Balloons.Should().ContainSingle().Which.Should().Contain("ViGEmBus");
+    }
+
+    [Fact]
+    public void Session_forced_off_updates_the_menu_and_warns()
+    {
+        var (vm, tray, _, _, _, session) = Build();
+
+        session.ForceLocalOff("panic");
+
+        vm.IsEnabled.Should().BeFalse();
+        tray.Balloons.Should().ContainSingle().Which.Should().Contain("panic");
     }
 
     // ---------------------------------------------------------------------------
@@ -218,7 +318,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void SwitchProfileCommand_calls_source_Switch()
     {
-        var (vm, _, source, _, _) = Build("p1");
+        var (vm, _, source, _, _, _) = Build("p1");
         vm.SwitchProfileCommand.Execute("p2");
         source.CurrentProfileId.Should().Be("p2");
     }
@@ -226,7 +326,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void SwitchProfileCommand_refreshes_CurrentProfileName()
     {
-        var (vm, _, _, _, _) = Build("p1");
+        var (vm, _, _, _, _, _) = Build("p1");
         vm.SwitchProfileCommand.Execute("p2");
         vm.CurrentProfileName.Should().Be("Profile Two");
     }
@@ -238,7 +338,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public async Task PanicCommand_routes_through_coordinator_and_calls_supervisor_channel()
     {
-        var (vm, _, _, channel, coordinator) = Build();
+        var (vm, _, _, channel, coordinator, _) = Build();
 
         // Use PanicCompleted event to await the fire-and-forget task
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -258,7 +358,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void ExitCommand_fires_ExitRequested_event_on_tray_service()
     {
-        var (vm, tray, _, _, _) = Build();
+        var (vm, tray, _, _, _, _) = Build();
         bool raised = false;
         tray.ExitRequested += (_, _) => raised = true;
         vm.ExitCommand.Execute(null);
@@ -272,7 +372,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void OpenMainWindowCommand_fires_OpenMainWindowRequested_event_on_tray_service()
     {
-        var (vm, tray, _, _, _) = Build();
+        var (vm, tray, _, _, _, _) = Build();
         bool raised = false;
         tray.OpenMainWindowRequested += (_, _) => raised = true;
         vm.OpenMainWindowCommand.Execute(null);
@@ -286,7 +386,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void ProfilesChanged_event_raises_PropertyChanged_for_Profiles()
     {
-        var (vm, _, source, _, _) = Build();
+        var (vm, _, source, _, _, _) = Build();
         var changed = new List<string?>();
         ((INotifyPropertyChanged)vm).PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 
@@ -298,7 +398,7 @@ public sealed class TrayMenuViewModelTests
     [Fact]
     public void ProfilesChanged_event_raises_PropertyChanged_for_CurrentProfileName_when_renamed()
     {
-        var (vm, _, source, _, _) = Build();
+        var (vm, _, source, _, _, _) = Build();
         var changed = new List<string?>();
         ((INotifyPropertyChanged)vm).PropertyChanged += (_, e) => changed.Add(e.PropertyName);
 

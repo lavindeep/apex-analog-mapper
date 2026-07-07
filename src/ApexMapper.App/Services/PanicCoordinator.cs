@@ -13,17 +13,20 @@ public sealed class PanicCoordinator
     private readonly ISupervisorChannel _supervisor;
     private readonly IForegroundWatcher _foregroundWatcher;
     private readonly IPanicPolicyStore _policyStore;
+    private readonly IMappingSession _session;
 
     public PanicCoordinator(
         IHotkeyService hotkeyService,
         ISupervisorChannel supervisor,
         IForegroundWatcher foregroundWatcher,
-        IPanicPolicyStore policyStore)
+        IPanicPolicyStore policyStore,
+        IMappingSession session)
     {
         _hotkeyService = hotkeyService ?? throw new ArgumentNullException(nameof(hotkeyService));
         _supervisor = supervisor ?? throw new ArgumentNullException(nameof(supervisor));
         _foregroundWatcher = foregroundWatcher ?? throw new ArgumentNullException(nameof(foregroundWatcher));
         _policyStore = policyStore ?? throw new ArgumentNullException(nameof(policyStore));
+        _session = session ?? throw new ArgumentNullException(nameof(session));
     }
 
     /// <summary>Raised after <see cref="PanicAsync"/> completes (success or failure).</summary>
@@ -42,14 +45,22 @@ public sealed class PanicCoordinator
     }
 
     /// <summary>
-    /// Performs the panic sequence: best-effort disables auto-enable for the current
-    /// foreground exe (if non-empty), then always submits panic to the supervisor.
-    /// Exceptions from the policy write and from the supervisor are each caught and
-    /// routed through <see cref="PanicCompleted"/> — a failing policy store must never
-    /// block the panic frame (fail-closed: zeroing output is the safety-critical step).
+    /// Performs the panic sequence: local off FIRST (engine disabled and held
+    /// keys gated, synchronous and unfailable — input stops feeding output no
+    /// matter what happens next), then best-effort disables auto-enable for the
+    /// current foreground exe (if non-empty), then always submits panic to the
+    /// supervisor. Exceptions from the policy write and from the supervisor are
+    /// each caught and routed through <see cref="PanicCompleted"/> — a failing
+    /// policy store must never block the panic frame (fail-closed: zeroing
+    /// output is the safety-critical step). Note the channel contract: with no
+    /// live session the submit completes as a silent no-op, so completion means
+    /// "output forced off", never proof the panic frame was delivered.
+    /// Re-enabling after a panic is always an explicit user enable.
     /// </summary>
     public async Task PanicAsync(CancellationToken ct)
     {
+        _session.ForceLocalOff("panic");
+
         var exe = _foregroundWatcher.Current.ExecutablePath;
 
         // The policy write is best-effort: a throwing store (disk full, ACL, AV lock)
