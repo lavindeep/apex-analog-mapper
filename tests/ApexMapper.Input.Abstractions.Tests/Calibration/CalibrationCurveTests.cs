@@ -131,13 +131,21 @@ public class CalibrationCurveTests
             _ = curve.Normalize(128f);
         }
 
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < 10_000; i++)
+        // Assert on the minimum of several windows: a genuine per-call
+        // allocation shows up in every window, while a one-off runtime-service
+        // allocation (tiered-JIT promotion, eventing) lands in at most one and
+        // must not flake the gate on shared CI runners.
+        var windows = new long[3];
+        for (var w = 0; w < windows.Length; w++)
         {
-            _ = curve.Normalize(128f);
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 10_000; i++)
+            {
+                _ = curve.Normalize(128f);
+            }
+            windows[w] = GC.GetAllocatedBytesForCurrentThread() - before;
         }
-        var after = GC.GetAllocatedBytesForCurrentThread();
 
-        (after - before).Should().Be(0);
+        windows.Min().Should().Be(0, "Normalize must not allocate after warm-up in any clean window");
     }
 }
