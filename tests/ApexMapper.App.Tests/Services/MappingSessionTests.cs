@@ -520,10 +520,15 @@ public sealed class MappingSessionTests
         var disableTask = Task.Run(() => h.Session.DisableAsync(CancellationToken.None));
         disconnectEntered.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue("the disable must park inside the disconnect");
 
-        // The enable starts (snapshotting the panic generation) and queues on
-        // the transition lock the parked disable still holds.
-        var enableTask = Task.Run(() => h.Session.EnableAsync(CancellationToken.None));
-        await Task.Delay(200);
+        // Call EnableAsync directly, NOT via Task.Run: the async method runs
+        // synchronously through the generation snapshot up to the transition
+        // lock the parked disable still holds, so by the time this call
+        // returns the snapshot is guaranteed taken and the enable is queued.
+        // (A Task.Run plus a fixed delay flaked on a saturated CI runner: the
+        // task had not started when the panic fired, so the enable was
+        // legitimately a fresh post-panic enable and correctly succeeded.)
+        var enableTask = h.Session.EnableAsync(CancellationToken.None);
+        enableTask.IsCompleted.Should().BeFalse("the enable must be parked on the transition lock");
 
         // Panic fires while the enable is queued; only then does the disable
         // finish and hand the lock to the enable.
