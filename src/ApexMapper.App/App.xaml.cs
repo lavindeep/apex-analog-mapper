@@ -1,8 +1,13 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Threading;
 using ApexMapper.App.Composition;
 using ApexMapper.App.Services;
 using ApexMapper.App.SingleInstance;
+using ApexMapper.App.ViewModels.Profiles;
+using ApexMapper.Core.Engine;
+using ApexMapper.Input.Abstractions.Devices;
+using ApexMapper.Input.Abstractions.Hosting;
 using H.NotifyIcon;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -98,6 +103,47 @@ public partial class App : Application
         // disposes the singleton (stopping the watcher) on shutdown.
         _host.Services.GetRequiredService<IProfileHotReload>().Start();
 
+        // Profile activation: foreground/pin/reload changes flow into the
+        // engine. The selector list refreshes on hot reload (marshalled — the
+        // reload fires on a watcher/timer thread) and a pin change re-resolves
+        // immediately so the pinned profile takes effect without a focus change.
+        var activation = _host.Services.GetRequiredService<ProfileActivationService>();
+        var selectorVm = _host.Services.GetRequiredService<ProfileSelectorViewModel>();
+        activation.ProfilesReloaded += (_, _) =>
+            Dispatcher.InvokeAsync(() => selectorVm.RefreshCommand.Execute(null));
+        ((INotifyPropertyChanged)selectorVm).PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(ProfileSelectorViewModel.PinnedProfileId))
+                activation.Reevaluate();
+        };
+        activation.Start();
+
+        // Bring the input pipeline and the mapping tick loop up off the UI
+        // thread. The engine starts DISABLED — ticking only drains input and
+        // keeps the channel slot zeroed; output requires the user's enable
+        // flow. A startup failure here leaves the app running disabled with
+        // the error surfaced — never a crash loop, never silent success.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var selector = _host.Services.GetRequiredService<DeviceSelector>();
+                selector.Initialize();
+
+                var inputHost = _host.Services.GetRequiredService<InputHost>();
+                await inputHost.StartAsync(CancellationToken.None).ConfigureAwait(false);
+
+                var engine = _host.Services.GetRequiredService<MappingEngine>();
+                await engine.StartAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await Dispatcher.InvokeAsync(() => trayService.ShowBalloon(
+                    "Apex Analog Mapper",
+                    $"Input pipeline failed to start: {ex.Message}"));
+            }
+        });
+
         // Set the DataContext on the main window from DI.
         var mainWindowVm = _host.Services.GetRequiredService<ViewModels.MainWindowViewModel>();
         if (MainWindow is not null)
@@ -119,9 +165,39 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        if (_host is not null)
+        {
+            // Zero+disconnect ordering (safety contract): the engine stops
+            // first — its shutdown pushes a final zero into the channel slot
+            // and joins the tick thread (2 s bound) — then the channel sends
+            // its own best-effort zero frame and disconnects (bounded 250 ms),
+            // then the input host tears down. Every step is idempotent against
+            // the host's own disposal below, and the supervisor's heartbeat
+            // gap zeroes the pad even if all of this fails.
+            TryTeardown(() => _host.Services.GetRequiredService<MappingEngine>()
+                .DisposeAsync().AsTask().GetAwaiter().GetResult());
+            TryTeardown(() => _host.Services.GetRequiredService<ISupervisorChannel>()
+                .DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult());
+            TryTeardown(() => _host.Services.GetRequiredService<InputHost>()
+                .DisposeAsync().AsTask().GetAwaiter().GetResult());
+        }
+
         _host?.Dispose();
         _guard?.Dispose();
         base.OnExit(e);
+    }
+
+    private static void TryTeardown(Action step)
+    {
+        try
+        {
+            step();
+        }
+        catch
+        {
+            // Best-effort shutdown: a failing step must not block the rest of
+            // the teardown chain (each later step is an independent backstop).
+        }
     }
 
     // -------------------------------------------------------------------------
