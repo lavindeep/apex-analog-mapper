@@ -114,7 +114,7 @@ WiX. Use a higher numeric MSI version for an upgrade.
 ```powershell
 dotnet publish src/ApexMapper.App -c Release -r win-x64 --self-contained true -o artifacts/staging
 dotnet publish src/ApexMapper.Supervisor -c Release -r win-x64 --self-contained true -o artifacts/staging
-dotnet build installer/ApexAnalogMapper.wixproj -c Release -p:StagingDir="$PWD/artifacts/staging" -p:ProductVersion=0.1.2
+dotnet build installer/ApexAnalogMapper.wixproj -c Release -p:StagingDir="$PWD/artifacts/staging" -p:ProductVersion=0.1.3
 ```
 
 The tag-driven release workflow builds the MSI and SHA-256 manifest. Public

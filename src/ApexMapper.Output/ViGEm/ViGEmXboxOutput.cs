@@ -1,7 +1,10 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using ApexMapper.Core.Pipeline;
 using Nefarius.ViGEm.Client;
 using Nefarius.ViGEm.Client.Targets;
 using Nefarius.ViGEm.Client.Targets.Xbox360;
+using Nefarius.ViGEm.Client.Targets.Xbox360.Exceptions;
 
 namespace ApexMapper.Output.ViGEm;
 
@@ -46,11 +49,7 @@ public sealed class ViGEmXboxOutput : IControllerOutput
             _controller.AutoSubmitReport = false;
             _controller.Connect();
 
-            // ViGEmBus starts with an off-center USB report but a zeroed cache,
-            // so it discards an initial zero as unchanged. Prime one axis by
-            // one unit, then clear it to make the driver deliver neutral input.
-            ApplyReport(new Xbox360Report { LeftStickX = 1 });
-            ApplyReport(default);
+            InitializeNeutral();
         }
         catch (Exception ex)
         {
@@ -100,6 +99,55 @@ public sealed class ViGEmXboxOutput : IControllerOutput
         {
             throw new InvalidOperationException("The controller is not connected.");
         }
+    }
+
+    private void InitializeNeutral()
+    {
+        var elapsed = Stopwatch.StartNew();
+        while (elapsed.Elapsed < TimeSpan.FromSeconds(2))
+        {
+            int slot;
+            try { slot = _controller!.UserIndex; }
+            catch (Xbox360UserIndexNotReportedException)
+            {
+                Thread.Sleep(10);
+                continue;
+            }
+
+            if (slot is < 0 or > 3)
+                throw new InvalidOperationException("ViGEm reported an invalid XInput controller index.");
+
+            if (XInputGetState((uint)slot, out var state) == 0)
+            {
+                var pad = state.Gamepad;
+                if (pad.Buttons == 0 && pad.LeftTrigger == 0 && pad.RightTrigger == 0
+                    && pad.LeftX == 0 && pad.LeftY == 0 && pad.RightX == 0 && pad.RightY == 0)
+                    return;
+
+                // ViGEm's startup USB report has offsets but its cache is zero,
+                // so an initial zero is ignored. A one-unit axis change primes
+                // delivery. Retry until readback confirms zero: early reports
+                // can be dropped before an input request is pending.
+                ApplyReport(new Xbox360Report { LeftStickX = 1 });
+                ApplyReport(default);
+            }
+            Thread.Sleep(10);
+        }
+        throw new TimeoutException("Virtual controller did not become neutral within two seconds.");
+    }
+
+    [DllImport("xinput1_4.dll", ExactSpelling = true)]
+    private static extern uint XInputGetState(uint index, out XInputState state);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct XInputState { public uint Packet; public XInputGamepad Gamepad; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct XInputGamepad
+    {
+        public ushort Buttons;
+        public byte LeftTrigger, RightTrigger;
+        public short LeftX, LeftY, RightX, RightY;
     }
 
     private void ApplyReport(in Xbox360Report report)

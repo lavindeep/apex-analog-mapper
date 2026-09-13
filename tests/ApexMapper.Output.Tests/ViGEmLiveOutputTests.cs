@@ -14,33 +14,37 @@ public sealed class ViGEmLiveOutputTests
     {
         ConnectedSlots().Should().BeEmpty("live output checks require an idle desktop with no other XInput controllers");
         var output = new ViGEmXboxOutput();
-        uint? slot = null;
-        try
+        // Immediate reconnects exercise the driver's asynchronous initialization.
+        for (var cycle = 0; cycle < 3; cycle++)
         {
-            output.Connect();
-            Await(() => ConnectedSlots().Length == 1, "the new controller should appear in XInput");
-            slot = ConnectedSlots().Single();
-            Await(() => IsNeutral(slot.Value), "Connect must publish exact zero, not the driver's startup stick offsets");
-
-            output.Submit(new VirtualPadState
+            uint? slot = null;
+            try
             {
-                LeftStickX = 1f, LeftStickY = -1f, RightTrigger = 1f, ButtonA = true,
-            });
-            Await(() => XInputGetState(slot.Value, out var state) == 0
-                && state.Gamepad.LeftX == 32767 && state.Gamepad.LeftY == -32767
-                && state.Gamepad.RightTrigger == 255 && state.Gamepad.Buttons == 0x1000,
-                "submitted axes, trigger and button should reach XInput");
+                output.Connect();
+                Await(() => ConnectedSlots().Length == 1, "the new controller should appear in XInput");
+                slot = ConnectedSlots().Single();
+                Await(() => IsNeutral(slot.Value), "Connect must publish exact zero, not the driver's startup stick offsets");
 
-            output.Zero();
-            Await(() => IsNeutral(slot.Value), "Zero should clear all axes, triggers and buttons");
+                output.Submit(new VirtualPadState
+                {
+                    LeftStickX = 1f, LeftStickY = -1f, RightTrigger = 1f, ButtonA = true,
+                });
+                Await(() => XInputGetState(slot.Value, out var state) == 0
+                    && state.Gamepad.LeftX == 32767 && state.Gamepad.LeftY == -32767
+                    && state.Gamepad.RightTrigger == 255 && state.Gamepad.Buttons == 0x1000,
+                    "submitted axes, trigger and button should reach XInput");
+
+                output.Zero();
+                Await(() => IsNeutral(slot.Value), "Zero should clear all axes, triggers and buttons");
+            }
+            finally
+            {
+                output.Disconnect();
+                if (slot is uint owned)
+                    Await(() => XInputGetState(owned, out _) == 1167, "disconnect should remove the owned controller");
+            }
+            output.IsConnected.Should().BeFalse();
         }
-        finally
-        {
-            output.Disconnect();
-            if (slot is uint owned)
-                Await(() => XInputGetState(owned, out _) == 1167, "disconnect should remove the owned controller");
-        }
-        output.IsConnected.Should().BeFalse();
     }
 
     private static uint[] ConnectedSlots() => Enumerable.Range(0, 4).Select(i => (uint)i)
