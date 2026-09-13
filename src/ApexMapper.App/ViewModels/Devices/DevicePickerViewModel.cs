@@ -7,7 +7,6 @@ namespace ApexMapper.App.ViewModels.Devices;
 public sealed class DevicePickerViewModel : ApexMapper.App.ViewModels.ObservableViewModel
 {
     private readonly IDeviceSelectorFacade _selector;
-    private readonly IDeviceRegistryFacade _registry;
 
     // Captured at construction (the UI thread in production). Topology events
     // arrive on the enumerator/pump thread; mutating the WPF-bound collection
@@ -18,11 +17,9 @@ public sealed class DevicePickerViewModel : ApexMapper.App.ViewModels.Observable
     private DeviceListItem? _primary;
 
     public DevicePickerViewModel(
-        IDeviceSelectorFacade selector,
-        IDeviceRegistryFacade registry)
+        IDeviceSelectorFacade selector)
     {
         _selector = selector ?? throw new ArgumentNullException(nameof(selector));
-        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _syncContext = SynchronizationContext.Current;
 
         RefreshCommand = new RelayCommand(ExecuteRefresh);
@@ -116,7 +113,6 @@ public sealed class DevicePickerViewModel : ApexMapper.App.ViewModels.Observable
             }
             else
             {
-                var status = _registry.GetStatus(entry.Id);
                 _devices.Add(new DeviceListItem
                 {
                     Id = entry.Id,
@@ -125,7 +121,6 @@ public sealed class DevicePickerViewModel : ApexMapper.App.ViewModels.Observable
                     Pid = entry.Pid,
                     IsConnected = entry.IsConnected,
                     IsPrimary = entry.IsPrimary,
-                    CalibrationStatus = status,
                 });
             }
         }
@@ -154,7 +149,6 @@ public sealed class DevicePickerViewModel : ApexMapper.App.ViewModels.Observable
         foreach (var entry in entries)
         {
             connectedIds.Add(entry.Id);
-            var status = _registry.GetStatus(entry.Id);
             newCollection.Add(new DeviceListItem
             {
                 Id = entry.Id,
@@ -163,7 +157,6 @@ public sealed class DevicePickerViewModel : ApexMapper.App.ViewModels.Observable
                 Pid = entry.Pid,
                 IsConnected = entry.IsConnected,
                 IsPrimary = entry.IsPrimary,
-                CalibrationStatus = status,
             });
         }
 

@@ -39,6 +39,16 @@ internal static partial class RawInputNative
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    internal struct RAWINPUTDEVICELIST
+    {
+        public IntPtr Device;
+        public uint Type;
+    }
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    internal static partial uint GetRawInputDeviceList(IntPtr devices, ref uint count, uint size);
+
+    [StructLayout(LayoutKind.Sequential)]
     internal struct RAWINPUTHEADER
     {
         public uint Type;

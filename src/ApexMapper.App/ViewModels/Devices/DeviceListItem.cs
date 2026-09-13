@@ -1,4 +1,3 @@
-using ApexMapper.App.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ApexMapper.App.ViewModels.Devices;
@@ -23,6 +22,4 @@ public sealed partial class DeviceListItem : ApexMapper.App.ViewModels.Observabl
     [ObservableProperty]
     private bool _isConnected;
 
-    [ObservableProperty]
-    private DeviceCalibrationStatus _calibrationStatus;
 }

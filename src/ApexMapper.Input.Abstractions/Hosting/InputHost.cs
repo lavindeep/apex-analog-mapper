@@ -23,6 +23,8 @@ public sealed class InputHost : IAsyncDisposable
     // True once the input ring has reported at least one dropped event and we
     // have logged it. Touched only on the Drain (tick) thread.
     private bool _ringOverflowLogged;
+    private long _observedDroppedCount;
+    private int _overflowBacklog;
 
     // DeviceId of the selected device's raw-input source; 0 = no selection
     // (or not yet announced by the adapter), which drops every digital event.
@@ -116,13 +118,8 @@ public sealed class InputHost : IAsyncDisposable
     {
         if (maxEvents <= 0) return 0;
 
-        // Surface a ring overflow once: dropped digital events mean the tick
-        // loop fell behind and some key transitions were lost.
-        if (!_ringOverflowLogged && _ring.DroppedCount > 0)
-        {
-            _ringOverflowLogged = true;
-            _log?.Warn($"input ring overflow: dropped {_ring.DroppedCount} raw event(s)");
-        }
+        RecoverOverflow();
+        var recoveringBacklog = _overflowBacklog > 0;
 
         var selectedId = _selectedDeviceId;
         int drained = 0;
@@ -156,7 +153,32 @@ public sealed class InputHost : IAsyncDisposable
         {
             _store.GateHeldKeys();
         }
+        if (recoveringBacklog)
+        {
+            _overflowBacklog = Math.Max(0, _overflowBacklog - drained);
+            _store.GateHeldKeys(KeyProvenance.Digital);
+        }
+        // A producer may overflow while this batch is being drained.
+        RecoverOverflow();
         return drained;
+    }
+
+    private void RecoverOverflow()
+    {
+        var dropped = _ring.DroppedCount;
+        if (dropped == _observedDroppedCount) return;
+        _observedDroppedCount = dropped;
+        _overflowBacklog = _ring.Count;
+        _store.GateHeldKeys(KeyProvenance.Digital);
+
+        // A queued down may precede a lost release. Keep gating after each
+        // partial drain until the backlog present at overflow is consumed.
+        if (!_ringOverflowLogged)
+        {
+            _ringOverflowLogged = true;
+            try { _log?.Warn($"input ring overflow: dropped {dropped} raw event(s); held keys gated"); }
+            catch { /* Diagnostics must not interrupt fail-closed recovery. */ }
+        }
     }
 
     public async ValueTask DisposeAsync()

@@ -1,215 +1,120 @@
 # Apex Analog Mapper
 
-Apex Analog Mapper is a Windows-focused tool for turning selected SteelSeries
-Apex Pro keyboard input into virtual Xbox controller input. The goal is to make
-analog-friendly games see smooth steering, throttle, brake, and controller
-buttons from a keyboard setup.
+A Windows app that maps a selected SteelSeries keyboard to a virtual Xbox 360
+controller. It reads digital key events through Windows Raw Input and turns
+presses into smooth steering and trigger ramps. It does not measure key travel
+or pressure.
 
-The project is under active development, and the full software pipeline is now
-in place. The current build contains the cross-platform mapping core (per-binding
-deadzones and curves, synthetic ramps, SOCD resolution with hysteresis, and a
-store-level safety gate), profile and device-registry persistence with atomic
-writes, rolling backups, corrupt-file recovery, and lazy schema migration, a
-rotating log store, default profile loading, the Windows Raw Input digital path
-with per-device filtering and phantom-key suppression, an exploratory HID analog
-path, a dedicated ~1 ms mapping engine with a zero-allocation steady state, a
-named-pipe supervisor process that owns the virtual pad and zeroes it the moment
-liveness is lost, ViGEm-based Xbox controller output, anti-cheat detection with
-fail-closed pre-flight checks, and a system-tray shell that drives the whole
-pipeline end to end. The diagnostics components (a latency HDR histogram and a
-log tail) are built and tested but not yet surfaced in the UI. What remains is
-signed distribution, an updater, and validation on real hardware.
+## Quick start
 
-## Why This Exists
+1. Install the per-user MSI from [Releases](https://github.com/lavindeep/apex-analog-mapper/releases).
+2. Install ViGEmBus 1.22.0 from the [official Nefarius release](https://github.com/nefarius/ViGEmBus/releases/tag/v1.22.0).
+   This separate driver installation requires Windows administrator approval.
+3. Open Apex Analog Mapper. In Devices, choose **Make Primary** for your keyboard
+   input. Some boards expose multiple input interfaces; select another if the
+   selected interface does not produce the expected keys.
+4. In Profiles, pin **Racing**, then choose **Enable mapping**.
+5. Keep the app open while playing. Closing its window exits the mapper.
+   **Ctrl+Alt+F12** forces output off. Mapping starts disabled on every launch.
 
-SteelSeries Apex Pro boards use Hall-effect/OmniPoint switches, but SteelSeries
-does not expose a public per-key analog input API for games, and no public
-protocol has been found that reads per-key analog travel from the board. Games
-generally know how to consume analog values from a controller, not from a
-keyboard.
+The Racing profile is installed into an empty profile directory automatically.
+Existing profiles and recovery backups are preserved.
 
-This app is intended to bridge that gap:
-
-- read normal keyboard events through Windows Raw Input
-- treat any model-specific HID analog reports as exploratory, not the primary
-  path, until they can be proven safe on real hardware
-- fall back to synthetic analog ramps and curves when true travel is unavailable
-  (this synthetic-from-digital path is what the shipped product actually maps)
-- map keys to a virtual Xbox-style controller state
-- keep safety behavior explicit: a separate supervisor process owns the virtual
-  pad and zeroes and disconnects it the moment liveness is lost, so stuck
-  throttle/brake/steering cannot survive a disconnect, enable or disable,
-  profile switch (including a hot reload of the active profile), sleep/resume,
-  panic, or crash. On any of these a currently-held key is gated —
-  it must be released once before it maps again (end-to-end on real hardware
-  still pending). The supervisor process exits on its own roughly a minute
-  after the tray disconnects or exits; re-enabling mapping starts a fresh one
-  automatically
-
-## Current Status
-
-Legend: ✅ done and tested · 🚧 in progress on this branch · ⏳ not started / not built
-
-| Area | Status |
+| Key | Controller output |
 | --- | --- |
-| Mapping core: curves, per-binding deadzones, synthetic ramps | ✅ Implemented and tested |
-| SOCD resolution with stronger-analog hysteresis | ✅ Implemented and tested |
-| Store-level safety gate (held keys cannot latch across transitions) | ✅ Implemented and tested |
-| Profiles, device registry, atomic writes, backups, recovery, migration (v1→v2) | ✅ Implemented and tested |
-| Logging with rotation | ✅ Implemented and tested |
-| Default racing profile | ✅ Implemented |
-| Raw Input digital path: per-device filtering, phantom-key suppression | ✅ Implemented, verified on Windows CI |
-| Mapping engine: ~1 ms tick, measured dt, zero-alloc steady state, atomic hot-swap | ✅ Implemented and tested |
-| Named-pipe IPC: length-prefixed MessagePack frames, per-session, current-user only | ✅ Implemented and tested |
-| Supervisor: owns the pad, heartbeat watchdog, fail-closed zero+disconnect, idle self-exit | ✅ Implemented and tested |
-| Virtual Xbox (ViGEm) output: atomic submit, fail-closed packing | ✅ Implemented and unit-tested; live pad needs ViGEmBus on a real desktop |
-| Anti-cheat detection & ViGEmBus pre-flight (detect-and-disable, fail-closed) | ✅ Implemented and tested |
-| Tray shell: toggle drives preflight → supervisor → engine, zero on exit | ✅ Implemented, verified on Windows CI |
-| HID analog path (feature/input routing, numbered reports, calibration) | 🚧 Exploratory; unproven without hardware |
-| Calibration wizard | 🚧 Present but stub-gated; raw capture pending |
-| Diagnostics components (latency histogram, log tail) | 🚧 Built and tested, not yet wired into the app shell |
-| Per-user MSI installer (unsigned, built and verified in CI) | ✅ Released (v0.1.0, with SHA-256 checksums); not hardware-tested |
-| Signed distribution, auto-updater | ⏳ Not started |
-| Real Apex Pro hardware verification | ⏳ Pending — no hardware available |
+| W / S | Right / left trigger, with a 120 ms press ramp |
+| A / D | Left stick horizontal, with an 80 ms ramp |
+| Left Shift / Space | LB / RB |
+| Q / E | B / A |
 
-## Testing and Verification
+Keyboard events also continue to reach the game. Configure its bindings if it
+responds to both keyboard and controller input.
 
-This project is developed without an Apex Pro keyboard or Windows hardware. All
-verification is automated: unit tests locally and on GitHub Actions.
+## Installation and data
 
-- **macOS / cross-platform job** builds and runs the cross-platform subset:
-  **654 tests** — ApexMapper.Core (150), ApexMapper.Input.Abstractions (239),
-  ApexMapper.Persistence (73), ApexMapper.Logging (20), the IPC frame codec and
-  transport (52), ApexMapper.Output (63), and ApexMapper.Supervisor (57). The
-  supervisor, IPC, and output logic run over real named pipes on the dev box, so
-  everything except the ViGEm P/Invoke layer is exercised locally.
-- **Windows job** builds the full solution and additionally runs the
-  Windows-only suites — ApexMapper.Input (Raw Input / HidSharp adapters, 8) and
-  ApexMapper.App (230) — for **892 tests across nine assemblies**.
+The self-contained app and supervisor install together in
+`%LocalAppData%\Programs\Apex Analog Mapper`. No separate .NET runtime is needed.
+Profiles and selection settings live in `%AppData%\ApexMapper` and survive MSI
+upgrades and uninstallation. Edit profile JSON there and use Refresh or the
+built-in hot reload; there is no visual binding editor.
 
-Because the Windows runner is Windows Server, ViGEmBus cannot load there, so
-there are **no end-to-end virtual-pad tests anywhere in CI**. End-to-end behavior
-on a real desktop, and any in-game validation (including in-game stick
-direction), are **pending** and are not claimed as verified.
+The MSI upgrades older product versions. Close the app before upgrading. Use
+Windows Installed apps to uninstall it. If an older build registered a login
+task, remove that task separately; the MSI does not own app-created login tasks.
 
-## Repository Layout
+Installers are unsigned. Check release SHA-256 checksums and obtain binaries
+only from this repository. ViGEmBus is end-of-life; its final official installer
+is signed by Nefarius. See [SECURITY.md](SECURITY.md).
 
-```text
-src/
-  ApexMapper.Core/                 Mapping pipeline, curves, ramps, SOCD
-  ApexMapper.Input.Abstractions/   Cross-platform input contracts, decoder, host, store
-  ApexMapper.Input/                Windows Raw Input and HidSharp adapters
-  ApexMapper.Output/               ViGEm output, IPC frames/transport, detection, preflight
-  ApexMapper.Supervisor/           Supervisor process (owns the virtual pad, heartbeat watchdog)
-  ApexMapper.App/                  WPF tray shell, pipeline wiring, diagnostics components
-  ApexMapper.Persistence/          Profiles, registry, migrations, recovery, atomic files
-  ApexMapper.Logging/              Local rotating log store
-  ApexMapper.Profiles/             Embedded default profiles
+## Scope and safety
 
-tests/
-  ApexMapper.Core.Tests/
-  ApexMapper.Input.Abstractions.Tests/
-  ApexMapper.Input.Tests/                Windows-only
-  ApexMapper.Persistence.Tests/
-  ApexMapper.Logging.Tests/
-  ApexMapper.App.Tests/                  Windows-only
-  ApexMapper.Output.Tests/
-  ApexMapper.Supervisor.Tests/
-  ApexMapper.Ipc.Tests/
+The shipped app uses only digital Raw Input. Exploratory HID parsers and
+calibration primitives remain in the input libraries, but are not connected to
+the app and do not establish support for analog key travel. The unusable app
+calibration wizard has been removed.
 
-perf/
-  ApexMapper.Core.Benchmarks/
+A separate supervisor owns the virtual controller. Named-pipe liveness checks
+zero and disconnect it when the client disappears or heartbeat expires.
+Disable, panic, device changes, profile changes, resume, and input-queue overflow
+gate held keys so they must be released before mapping again. Overflow recovery
+runs when the mapping loop next drains input. No process injects code into games.
+
+The app performs driver and anti-cheat preflight checks before enabling output.
+Detection is a best-effort advisory, not a guarantee that a game's anti-cheat
+permits virtual controllers. There is no automatic enable path.
+
+## Build and test
+
+Requirements: Windows 10/11 x64 and .NET 8 SDK for the complete solution. ViGEmBus
+is required only for live controller output.
+
+```powershell
+dotnet build ApexAnalogMapper.sln -c Release
+dotnet test ApexAnalogMapper.sln -c Release --no-build
 ```
 
-## Installation
+Normal test runs report the desktop-injection and driver-absence tests as
+skipped. They require explicit opt-in so tests do not type into another app or
+assume a developer's machine has no driver. Composition tests use temporary
+app-data directories.
 
-Prebuilt Windows installers are published on the
-[Releases](https://github.com/lavindeep/apex-analog-mapper/releases) page.
+```powershell
+# Sequential build/test, with native opt-ins rejected.
+pwsh -File scripts/Test-WindowsBackground.ps1
 
-1. Download the latest `apex-analog-mapper-<version>.msi` and check it against
-   the `SHA256SUMS.txt` published alongside it.
-2. Run it. Because the installer is **unsigned**, Windows SmartScreen warns that
-   the publisher is unrecognized — choose **More info → Run anyway**. See
-   [SECURITY.md](SECURITY.md) for why it is unsigned and how to check what you
-   are running.
-3. The MSI installs **per user** with no administrator prompt into
-   `%LocalAppData%\Programs\Apex Analog Mapper` and adds a Start Menu shortcut.
-   Both `ApexMapper.exe` and its supervisor process are self-contained, so no
-   separate .NET runtime install is required.
+# Only on an idle interactive desktop: inject synthetic A key events.
+$env:APEX_TEST_DESKTOP_INPUT = '1'
+dotnet test tests/ApexMapper.Input.Tests -c Release
+Remove-Item Env:APEX_TEST_DESKTOP_INPUT
 
-### Prerequisite: ViGEmBus
-
-Virtual-controller output needs the ViGEmBus driver. It is **not** bundled and is
-never installed silently; the app detects a missing driver and prompts you when
-you enable mapping. Install it separately, and **only from the
-[official ViGEmBus releases page](https://github.com/nefarius/ViGEmBus/releases)**
-(v1.22.0) — third-party "ViGEmBus download" mirror sites are a known
-adware/malware vector. Be aware that ViGEmBus is end-of-life (retired and
-archived in November 2023; v1.22.0 is the final release), though it remains the
-ecosystem-standard virtual-pad driver. The official binary is signed by
-Nefarius, and Windows verifies that signature at install and every time the
-driver loads. See [SECURITY.md](SECURITY.md) for the full picture.
-
-### Uninstalling
-
-Uninstall from **Windows Settings → Apps → Installed apps → Apex Analog Mapper**
-(or Control Panel's Programs and Features). The installer removes only the files
-and the shortcut it created. If you turned on start-with-Windows, **disable it in
-the app first** — the login task is created and removed by the app, not by the
-installer.
-
-Building from source is covered under [Build](#build) below.
-
-## Build
-
-Requirements:
-
-- .NET 8 SDK
-- Windows 10/11 for the full app/input/output build (WPF and Windows-only input)
-- Windows Desktop SDK support for WPF projects
-- ViGEmBus (v1.22.0) installed at runtime for virtual-pad output — it is a
-  user-installed prerequisite and is never auto-installed by the app
-
-Cross-platform core subset (builds and tests on macOS/Linux/Windows):
-
-```bash
-dotnet build ApexAnalogMapper.CrossPlatform.slnf
-dotnet test ApexAnalogMapper.CrossPlatform.slnf
+# Only on a Windows machine WITHOUT ViGEmBus.
+$env:APEX_TEST_DRIVERLESS = '1'
+dotnet test tests/ApexMapper.Output.Tests -c Release
+Remove-Item Env:APEX_TEST_DRIVERLESS
 ```
 
-Full Windows solution:
+Synthetic injected keys do not prove physical-device mapping. Live acceptance
+must cover the physical keyboard, controller-axis direction, hold/release,
+profile switching, panic, disconnect, and process termination in an actual game.
 
-```bash
-dotnet build ApexAnalogMapper.sln
-dotnet test ApexAnalogMapper.sln
+The cross-platform subset is available with
+`dotnet test ApexAnalogMapper.CrossPlatform.slnf -c Release`.
+
+## Package
+
+Publish the app and supervisor to the same fresh staging directory, then build
+WiX. Use a higher numeric MSI version for an upgrade.
+
+```powershell
+dotnet publish src/ApexMapper.App -c Release -r win-x64 --self-contained true -o artifacts/staging
+dotnet publish src/ApexMapper.Supervisor -c Release -r win-x64 --self-contained true -o artifacts/staging
+dotnet build installer/ApexAnalogMapper.wixproj -c Release -p:StagingDir="$PWD/artifacts/staging" -p:ProductVersion=0.1.1
 ```
 
-## Known Limitations
-
-- No public protocol has been found that reads Apex Pro per-key analog travel, so
-  the HID analog path is exploratory: the shipped adapter's analog key map is
-  empty and the analog probe is never wired to a device at runtime. The reliable
-  path is digital Raw Input mapped through synthetic ramps and curves.
-- The calibration wizard is present in the UI but stub-gated — the raw-capture
-  plumbing it needs is not built yet.
-- No real-hardware or in-game validation has been performed. Development uses
-  unit tests and GitHub Actions only, and CI cannot load ViGEmBus, so the live
-  virtual-pad submission path is not exercised anywhere in CI.
-- Under a sustained input flood the bounded event ring can drop raw events,
-  including a key release. A dropped release leaves that key's axis held until
-  the key is pressed and released once more (or mapping is toggled off and on,
-  which gates held keys). The app counts every drop and logs a warning on the
-  first overflow.
-- Some runtime behaviors cannot be exercised in CI and are deliberately recorded
-  as untested rather than claimed as verified:
-  - virtual-pad removal when the supervisor process dies (driver-owned behavior),
-  - end-to-end behavior when either process is force-killed,
-  - the supervisor's forced-exit path when a shutdown wedges,
-  - WPF application-exit teardown ordering,
-  - live ViGEmBus pad behaviors — only the driverless failure paths run in CI.
-- ViGEmBus is a user-installed runtime prerequisite for output.
-- Binaries and the MSI installer are unsigned (no code-signing certificate), so
-  SmartScreen will warn on first run. There is no auto-updater yet.
+The tag-driven release workflow builds the MSI and SHA-256 manifest. Public
+release still requires live hardware acceptance. No signing or updater is
+implemented. The current source version is a preview, not a claim of completed
+in-game validation.
 
 ## License
 

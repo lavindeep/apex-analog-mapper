@@ -13,7 +13,7 @@ namespace ApexMapper.App.Composition;
 /// facade contract consumed by the tray and device-picker viewmodels.
 ///
 /// Guid identity is derived deterministically by SHA-1-truncating the
-/// string <c>vid:pid:serialnumber</c> to 16 bytes, then constructing
+/// string <c>vid:pid:serial:product</c> to 16 bytes, then constructing
 /// a <see cref="Guid"/> from those bytes.  The same identity always
 /// produces the same Guid regardless of process restart or enumeration
 /// order.
@@ -79,11 +79,11 @@ public sealed class DeviceSelectorFacade : IDeviceSelectorFacade
 
     /// <summary>
     /// Produces a deterministic <see cref="Guid"/> from a <see cref="DeviceIdentity"/>
-    /// by computing SHA-1 of "vid:pid:serial" and using the first 16 bytes.
+    /// by computing SHA-1 of "vid:pid:serial:product" and using the first 16 bytes.
     /// </summary>
     internal static Guid ToGuid(DeviceIdentity identity)
     {
-        var key = $"{identity.VendorId:x4}:{identity.ProductId:x4}:{identity.SerialNumber ?? string.Empty}";
+        var key = $"{identity.VendorId:x4}:{identity.ProductId:x4}:{identity.SerialNumber ?? string.Empty}:{identity.ProductName ?? string.Empty}";
         var hash = SHA1.HashData(Encoding.UTF8.GetBytes(key));
         // Take first 16 bytes of SHA-1 to form the Guid.
         return new Guid(hash.AsSpan(0, 16));
@@ -99,5 +99,6 @@ public sealed class DeviceSelectorFacade : IDeviceSelectorFacade
     private static bool IdentityMatches(DeviceIdentity a, DeviceIdentity b)
         => a.VendorId  == b.VendorId
         && a.ProductId == b.ProductId
-        && string.Equals(a.SerialNumber, b.SerialNumber, StringComparison.Ordinal);
+        && string.Equals(a.SerialNumber, b.SerialNumber, StringComparison.Ordinal)
+        && string.Equals(a.ProductName, b.ProductName, StringComparison.Ordinal);
 }

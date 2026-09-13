@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "phase-*"]
+    branches: [main, "phase-*", "codex/*"]
   pull_request:
 
 jobs:
@@ -58,7 +58,7 @@ jobs:
     name: Package (per-user MSI)
     timeout-minutes: 20
     env:
-      PRODUCT_VERSION: 0.1.0
+      PRODUCT_VERSION: 0.1.1
     defaults:
       run:
         shell: pwsh

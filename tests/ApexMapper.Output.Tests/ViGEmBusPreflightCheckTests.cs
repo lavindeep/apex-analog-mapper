@@ -34,18 +34,9 @@ public class ViGEmBusPreflightCheckTests
         issue.Remediation.Should().Contain("ViGEmBus");
     }
 
-    [Fact]
+    [DriverlessFact]
     public void Real_default_probe_on_a_driverless_machine_reports_a_vigembus_failure()
     {
-        // CI (Windows Server) is the only place the real probe runs, and it
-        // never has the ViGEmBus driver installed, so newing a ViGEmClient must
-        // fail with a ViGEmBus-flavored message. Off Windows the native P/Invoke
-        // is not reachable, so this contract is Windows-only.
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         var check = new ViGEmBusPreflightCheck();
 
         var issue = check.Run();

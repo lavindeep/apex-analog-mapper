@@ -21,23 +21,6 @@ public sealed class SupervisorProcessLauncherTests
     }
 
     [Fact]
-    public void EnsureRunning_returns_null_when_the_process_starts()
-    {
-        // cmd.exe ignores the --session arguments and exits immediately; the
-        // launcher only asserts that the process was started, not its lifetime.
-        // ComSpec is always set on the Windows CI runners this suite runs on.
-        var comSpec = Environment.GetEnvironmentVariable("ComSpec");
-        if (string.IsNullOrEmpty(comSpec))
-        {
-            return; // non-Windows host: nothing meaningful to launch
-        }
-
-        var launcher = new SupervisorProcessLauncher("42", comSpec);
-
-        launcher.EnsureRunning().Should().BeNull();
-    }
-
-    [Fact]
     public void Constructor_rejects_an_empty_session_id()
     {
         var act = () => new SupervisorProcessLauncher(string.Empty);

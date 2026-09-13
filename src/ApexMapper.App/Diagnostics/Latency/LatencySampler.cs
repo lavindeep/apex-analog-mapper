@@ -74,7 +74,9 @@ public sealed class LatencySampler : ILatencySampler, IDisposable
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _wallClockBaseMicros = NowMicros();
         var token = _cts.Token;
-        _thread = new Thread(() => Run(interval, token))
+        // Capture before scheduling so samples written after Start returns are new.
+        var lastWriteCount = _recorder.WriteCount;
+        _thread = new Thread(() => Run(interval, token, lastWriteCount))
         {
             IsBackground = true,
             Name = "ApexMapper.LatencySampler",
@@ -109,9 +111,8 @@ public sealed class LatencySampler : ILatencySampler, IDisposable
     /// <inheritdoc />
     public void Dispose() => Stop();
 
-    private void Run(TimeSpan interval, CancellationToken token)
+    private void Run(TimeSpan interval, CancellationToken token, long lastWriteCount)
     {
-        var lastWriteCount = _recorder.WriteCount;
         var nextDeadline = Environment.TickCount64 + (long)interval.TotalMilliseconds;
 
         while (!token.IsCancellationRequested)

@@ -1,42 +1,55 @@
 <Window x:Class="ApexMapper.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
         xmlns:profilesVm="clr-namespace:ApexMapper.App.ViewModels.Profiles"
         xmlns:devicesVm="clr-namespace:ApexMapper.App.ViewModels.Devices"
-        xmlns:calibrationVm="clr-namespace:ApexMapper.App.ViewModels.Calibration"
         xmlns:profilesViews="clr-namespace:ApexMapper.App.Views.Profiles"
         xmlns:devicesViews="clr-namespace:ApexMapper.App.Views.Devices"
-        xmlns:calibrationViews="clr-namespace:ApexMapper.App.Views.Calibration"
-        Title="Apex Mapper" Height="480" Width="640"
+        Title="Apex Mapper" Height="580" Width="760" MinHeight="480" MinWidth="640"
         WindowStartupLocation="CenterScreen">
-
     <Window.Resources>
-        <!-- Map ProfileSelectorViewModel → ProfileSelectorView -->
         <DataTemplate DataType="{x:Type profilesVm:ProfileSelectorViewModel}">
             <profilesViews:ProfileSelectorView />
         </DataTemplate>
-
-        <!-- Map DevicePickerViewModel → DevicePickerView -->
         <DataTemplate DataType="{x:Type devicesVm:DevicePickerViewModel}">
             <devicesViews:DevicePickerView />
         </DataTemplate>
-
-        <!-- Map CalibrationWizardViewModel → CalibrationWizardView -->
-        <DataTemplate DataType="{x:Type calibrationVm:CalibrationWizardViewModel}">
-            <calibrationViews:CalibrationWizardView />
-        </DataTemplate>
     </Window.Resources>
-
-    <TabControl>
-        <TabItem Header="Profiles">
-            <ContentControl Content="{Binding ProfileSelectorViewModel}" />
-        </TabItem>
-        <TabItem Header="Devices">
-            <ContentControl Content="{Binding DevicePickerViewModel}" />
-        </TabItem>
-        <TabItem Header="Calibration">
-            <ContentControl Content="{Binding CalibrationWizardViewModel}" />
-        </TabItem>
-    </TabControl>
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+            <TextBlock Text="Keyboard to controller" FontSize="22" FontWeight="SemiBold" />
+            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
+                       Text="Select your keyboard in Devices, pin a profile in Profiles, then enable mapping. Keep this app open while playing; closing the window exits the mapper." />
+            <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" Foreground="DimGray"
+                       Text="Digital mode uses key presses and timed ramps to simulate controller input. Key travel and pressure are not measured. Calibration is not required." />
+        </StackPanel>
+        <Border DockPanel.Dock="Bottom" Margin="0,12,0,0" Padding="10" Background="#F1F3F5">
+            <StackPanel DataContext="{Binding TrayMenuViewModel}">
+                <StackPanel Orientation="Horizontal">
+                    <Button Command="{Binding ToggleEnabledCommand}" Padding="12,5">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Content" Value="Enable mapping" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsEnabled}" Value="True">
+                                        <Setter Property="Content" Value="Disable mapping" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Content="Panic (Ctrl+Alt+F12)" Command="{Binding PanicCommand}" Margin="8,0,0,0" Padding="12,5" />
+                </StackPanel>
+                <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" Margin="0,8,0,0" />
+            </StackPanel>
+        </Border>
+        <TabControl>
+            <TabItem Header="Devices">
+                <ContentControl Content="{Binding DevicePickerViewModel}" />
+            </TabItem>
+            <TabItem Header="Profiles">
+                <ContentControl Content="{Binding ProfileSelectorViewModel}" />
+            </TabItem>
+        </TabControl>
+    </DockPanel>
 </Window>

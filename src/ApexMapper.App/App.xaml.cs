@@ -21,6 +21,9 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // This small control panel does not need GPU rendering. Software rendering
+        // also avoids blank WPF content on desktops with incompatible graphics drivers.
+        System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
         base.OnStartup(e);
 
         // ------------------------------------------------------------------
@@ -51,6 +54,7 @@ public partial class App : Application
         // ------------------------------------------------------------------
         var trayIcon    = (TaskbarIcon)Resources["ApexMapperTrayIcon"];
         var trayService = new TrayService(trayIcon);
+        trayService.Show();
 
         // ------------------------------------------------------------------
         // 4. Build host / DI container
@@ -109,6 +113,8 @@ public partial class App : Application
         // immediately so the pinned profile takes effect without a focus change.
         var activation = _host.Services.GetRequiredService<ProfileActivationService>();
         var selectorVm = _host.Services.GetRequiredService<ProfileSelectorViewModel>();
+        activation.ActiveProfileChanged += (_, _) =>
+            Dispatcher.InvokeAsync(() => selectorVm.RefreshCommand.Execute(null));
         activation.ProfilesReloaded += (_, _) =>
             Dispatcher.InvokeAsync(() => selectorVm.RefreshCommand.Execute(null));
         ((INotifyPropertyChanged)selectorVm).PropertyChanged += (_, args) =>
@@ -125,6 +131,19 @@ public partial class App : Application
         // would otherwise outlive the app).
         _host.Services.GetRequiredService<ResumeGuard>().Start();
 
+        // Populate the picker before its first binding and before the input pump starts.
+        try
+        {
+            _host.Services.GetRequiredService<DeviceSelector>().Initialize();
+        }
+        catch (Exception ex)
+        {
+            trayService.ShowBalloon("Apex Mapper", $"Keyboard discovery failed: {ex.Message}");
+        }
+
+        var mainWindowVm = _host.Services.GetRequiredService<ViewModels.MainWindowViewModel>();
+        MainWindow = new MainWindow { DataContext = mainWindowVm };
+
         // Bring the input pipeline and the mapping tick loop up off the UI
         // thread. The engine starts DISABLED — ticking only drains input and
         // keeps the channel slot zeroed; output requires the user's enable
@@ -134,9 +153,6 @@ public partial class App : Application
         {
             try
             {
-                var selector = _host.Services.GetRequiredService<DeviceSelector>();
-                selector.Initialize();
-
                 var inputHost = _host.Services.GetRequiredService<InputHost>();
                 await inputHost.StartAsync(CancellationToken.None).ConfigureAwait(false);
 
@@ -151,16 +167,6 @@ public partial class App : Application
             }
         });
 
-        // Set the DataContext on the main window from DI.
-        var mainWindowVm = _host.Services.GetRequiredService<ViewModels.MainWindowViewModel>();
-        if (MainWindow is not null)
-            MainWindow.DataContext = mainWindowVm;
-
-        // ------------------------------------------------------------------
-        // 5. Show the tray icon
-        // ------------------------------------------------------------------
-        trayService.Show();
-
         // Wire exit / open-window from tray icon events.
         trayService.OpenMainWindowRequested += (_, _) =>
         {
@@ -168,6 +174,8 @@ public partial class App : Application
             MainWindow?.Activate();
         };
         trayService.ExitRequested += (_, _) => Shutdown();
+
+        MainWindow.Show();
     }
 
     protected override void OnExit(ExitEventArgs e)

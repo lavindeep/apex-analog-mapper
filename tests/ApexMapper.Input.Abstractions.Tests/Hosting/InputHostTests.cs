@@ -11,6 +11,50 @@ namespace ApexMapper.Input.Abstractions.Tests.Hosting;
 
 public class InputHostTests
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    public async Task Dropped_releases_gate_held_and_queued_keys_until_a_new_release(int batchSize)
+    {
+        var device = MakeDevice();
+        var selector = MakeSelector(device);
+        var ring = MakeRing(2);
+        var raw = new FakeRawInputAdapter(ring);
+        var a = KeyId.FromScanCode(0x1E);
+        var b = KeyId.FromScanCode(0x30);
+        var store = new KeyStateStore(new KeyIndex(new[] { a, b }));
+        await using var host = new InputHost(raw, null, selector, ring, store);
+        AttachAndSelect(raw, selector, device, 7);
+
+        // Repeat the overflow to prove recovery is not limited to the first warning.
+        for (var cycle = 0; cycle < 2; cycle++)
+        {
+            store.Set(a, 1f, KeyProvenance.Digital);
+            ring.TryEnqueue(new RawKeyEvent(0x30, true, 1, 7)).Should().BeTrue();
+            ring.TryEnqueue(new RawKeyEvent(0x30, true, 2, 7)).Should().BeTrue();
+            ring.TryEnqueue(new RawKeyEvent(0x1E, false, 3, 7)).Should().BeFalse();
+            ring.TryEnqueue(new RawKeyEvent(0x30, false, 4, 7)).Should().BeFalse();
+
+            do
+            {
+                host.Drain(batchSize);
+                store.Get(a).Value.Should().Be(0f);
+                store.Get(b).Value.Should().Be(0f);
+            } while (!ring.IsEmpty);
+
+            ring.TryEnqueue(new RawKeyEvent(0x30, true, 5, 7));
+            host.Drain(8);
+            store.Get(b).Value.Should().Be(0f, "a repeated down must not undo the gate");
+
+            ring.TryEnqueue(new RawKeyEvent(0x1E, false, 6, 7));
+            ring.TryEnqueue(new RawKeyEvent(0x30, false, 7, 7));
+            host.Drain(8);
+            ring.TryEnqueue(new RawKeyEvent(0x30, true, 8, 7));
+            host.Drain(8);
+            store.Get(b).Value.Should().Be(1f, "release then press restores normal mapping");
+        }
+    }
+
     private static DiscoveredDevice MakeDevice(string path = "test://device/1", string serial = "SN-1") =>
         new(
             new DeviceIdentity(0x1038, 0x161C, serial, "SteelSeries", "Apex Pro"),

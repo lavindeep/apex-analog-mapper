@@ -15,7 +15,7 @@ public class RawInputAdapterSmokeTests
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const uint KEYEVENTF_SCANCODE = 0x0008;
 
-    [Fact]
+    [DesktopInputFact]
     public async Task synthetic_keypress_arrives_in_ring()
     {
         var ring = new SpscRingBuffer<RawKeyEvent>(1024);
@@ -60,7 +60,7 @@ public class RawInputAdapterSmokeTests
         }
     }
 
-    [Fact]
+    [DesktopInputFact]
     [Trait("perf", "true")]
     public async Task latency_p95_under_8ms_over_1000_events()
     {

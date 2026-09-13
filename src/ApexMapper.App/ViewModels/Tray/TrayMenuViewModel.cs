@@ -13,6 +13,7 @@ public sealed class TrayMenuViewModel : ObservableViewModel
     private readonly SynchronizationContext? _syncContext;
 
     private bool _isEnabled;
+    private string _statusMessage = "Mapping is disabled.";
     private IReadOnlyList<TrayProfileEntry> _profiles;
     private string _currentProfileName;
 
@@ -53,6 +54,12 @@ public sealed class TrayMenuViewModel : ObservableViewModel
     {
         get => _isEnabled;
         private set => SetProperty(ref _isEnabled, value);
+    }
+
+    public string StatusMessage
+    {
+        get => _statusMessage;
+        private set => SetProperty(ref _statusMessage, value);
     }
 
     public IReadOnlyList<TrayProfileEntry> Profiles
@@ -137,6 +144,7 @@ public sealed class TrayMenuViewModel : ObservableViewModel
     private void ApplySessionState(MappingSessionStateChangedEventArgs e)
     {
         IsEnabled = e.IsEnabled;
+        StatusMessage = e.Message ?? (e.IsEnabled ? "Mapping is enabled." : "Mapping is disabled.");
         _trayService.SetEnabled(e.IsEnabled);
         if (!string.IsNullOrEmpty(e.Message))
         {

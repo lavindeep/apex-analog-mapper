@@ -53,17 +53,6 @@ public sealed class DevicePickerViewModelTests
             => TopologyChanged?.Invoke(this, new TopologyChangedEventArgs(devices));
     }
 
-    private sealed class FakeRegistry : IDeviceRegistryFacade
-    {
-        private readonly Dictionary<Guid, DeviceCalibrationStatus> _statuses = new();
-
-        public void SetStatus(Guid id, DeviceCalibrationStatus status)
-            => _statuses[id] = status;
-
-        public DeviceCalibrationStatus GetStatus(Guid id)
-            => _statuses.TryGetValue(id, out var s) ? s : DeviceCalibrationStatus.Unknown;
-    }
-
     // ---------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------
@@ -77,10 +66,7 @@ public sealed class DevicePickerViewModelTests
         bool isPrimary = false) =>
         new(id, name, vid, pid, isConnected, isPrimary);
 
-    private static DevicePickerViewModel BuildVm(
-        FakeSelector selector,
-        FakeRegistry? registry = null) =>
-        new(selector, registry ?? new FakeRegistry());
+    private static DevicePickerViewModel BuildVm(FakeSelector selector) => new(selector);
 
     // ---------------------------------------------------------------------------
     // Tests
@@ -170,28 +156,6 @@ public sealed class DevicePickerViewModelTests
 
         vm.Devices.Should().HaveCount(2);
         vm.Devices.Should().Contain(d => d.Id == idNew);
-    }
-
-    [Fact]
-    public void Calibration_status_reflects_registry_state()
-    {
-        var idCalibrated = Guid.NewGuid();
-        var idPending = Guid.NewGuid();
-
-        var selector = new FakeSelector();
-        selector.AddEntry(MakeEntry(idCalibrated, "Calibrated Device"));
-        selector.AddEntry(MakeEntry(idPending, "Pending Device"));
-
-        var registry = new FakeRegistry();
-        registry.SetStatus(idCalibrated, DeviceCalibrationStatus.Calibrated);
-        registry.SetStatus(idPending, DeviceCalibrationStatus.NotCalibrated);
-
-        var vm = BuildVm(selector, registry);
-
-        vm.Devices.Single(d => d.Id == idCalibrated).CalibrationStatus
-            .Should().Be(DeviceCalibrationStatus.Calibrated);
-        vm.Devices.Single(d => d.Id == idPending).CalibrationStatus
-            .Should().Be(DeviceCalibrationStatus.NotCalibrated);
     }
 
     [Fact]

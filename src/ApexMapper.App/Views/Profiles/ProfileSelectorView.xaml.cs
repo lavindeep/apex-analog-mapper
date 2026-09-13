@@ -1,1 +1,8 @@
-// Code-behind is intentionally empty; all logic lives in ProfileSelectorViewModel.
+using System.Windows.Controls;
+
+namespace ApexMapper.App.Views.Profiles;
+
+public partial class ProfileSelectorView : UserControl
+{
+    public ProfileSelectorView() => InitializeComponent();
+}

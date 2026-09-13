@@ -21,7 +21,12 @@ public sealed class TrayService : ITrayService, ITrayServiceInternal, IDisposabl
         _icon.TrayLeftMouseDown += OnTrayLeftMouseDown;
     }
 
-    public void Show() => _icon.Visibility = System.Windows.Visibility.Visible;
+    public void Show()
+    {
+        // Resource-dictionary icons have no Loaded event to create the native icon.
+        _icon.ForceCreate(enablesEfficiencyMode: false);
+        _icon.Visibility = System.Windows.Visibility.Visible;
+    }
 
     public void Hide() => _icon.Visibility = System.Windows.Visibility.Collapsed;
 

@@ -37,10 +37,12 @@ public class LatencySamplerTests
             lock (collected)
             {
                 collected.AddRange(batch);
-                if (collected.Count >= 100) gate.Set();
+                if (collected.Count >= 200) gate.Set();
             }
         };
 
+        // Historical samples must be skipped, but all samples after Start must arrive.
+        recorder.Record(99_999);
         sampler.Start(TimeSpan.FromMilliseconds(10), CancellationToken.None);
 
         // Record some samples.
@@ -51,8 +53,8 @@ public class LatencySamplerTests
 
         lock (collected)
         {
-            collected.Should().NotBeEmpty();
-            collected.Should().OnlyContain(s => s.LatencyMicros > 0);
+            collected.Select(s => s.LatencyMicros).Should()
+                .Equal(Enumerable.Range(1, 200).Select(i => (long)i * 10));
         }
     }
 

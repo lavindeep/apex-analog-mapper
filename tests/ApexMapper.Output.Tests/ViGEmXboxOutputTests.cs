@@ -66,26 +66,21 @@ public class ViGEmXboxOutputTests
         output.IsConnected.Should().BeFalse();
     }
 
-    [Fact]
+    [DriverlessFact]
     public void Connect_without_the_driver_throws_a_descriptive_error_and_sets_LastError()
     {
-        // The only ViGEm runtime path any machine here can exercise. ViGEm's
-        // P/Invokes exist only on Windows, and no environment we run on ever has
-        // the ViGEmBus driver installed (dev box is macOS; CI is Windows Server,
-        // which cannot host the driver) — so Connect must always fail here, and
-        // that failure is a first-class fixture for the fail-closed contract.
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         var output = new ViGEmXboxOutput();
-
-        var act = output.Connect;
-
-        act.Should().Throw<InvalidOperationException>().WithMessage("*ViGEmBus*");
-        output.IsConnected.Should().BeFalse();
-        output.LastError.Should().NotBeNullOrEmpty();
-        output.LastError.Should().Contain("ViGEmBus");
+        try
+        {
+            var act = output.Connect;
+            act.Should().Throw<InvalidOperationException>().WithMessage("*ViGEmBus*");
+            output.IsConnected.Should().BeFalse();
+            output.LastError.Should().NotBeNullOrEmpty();
+            output.LastError.Should().Contain("ViGEmBus");
+        }
+        finally
+        {
+            output.Disconnect();
+        }
     }
 }

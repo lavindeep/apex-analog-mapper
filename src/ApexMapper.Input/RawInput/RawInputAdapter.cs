@@ -345,7 +345,7 @@ public sealed class RawInputAdapter : IRawInputAdapter
         DeviceChanged?.Invoke(this, new RawInputDeviceChanged(identity, attached, devicePath, deviceId));
     }
 
-    private static string? TryGetDevicePath(IntPtr deviceHandle)
+    internal static string? TryGetDevicePath(IntPtr deviceHandle)
     {
         uint size = 0;
         if (GetRawInputDeviceInfoW(deviceHandle, RIDI_DEVICENAME, IntPtr.Zero, ref size) != 0)

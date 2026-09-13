@@ -1,3 +1,4 @@
+using System.IO;
 using ApexMapper.App.Persistence;
 using ApexMapper.App.Services;
 using ApexMapper.Core.Engine;
@@ -6,12 +7,10 @@ using ApexMapper.Core.Pipeline;
 using ApexMapper.Input.Abstractions.Adapters;
 using ApexMapper.Input.Abstractions.Hosting;
 using ApexMapper.Input.Abstractions.Pipeline;
-using ApexMapper.Input.Hid;
 using ApexMapper.Input.RawInput;
 using ApexMapper.Output.Detection;
 using ApexMapper.Output.Preflight;
 using ApexMapper.App.ViewModels;
-using ApexMapper.App.ViewModels.Calibration;
 using ApexMapper.App.ViewModels.Devices;
 using ApexMapper.App.ViewModels.Profiles;
 using ApexMapper.App.ViewModels.Tray;
@@ -19,6 +18,7 @@ using ApexMapper.Input.Abstractions.Backends;
 using ApexMapper.Input.Abstractions.Devices;
 using ApexMapper.Persistence.Devices;
 using ApexMapper.Persistence.Profiles;
+using ApexMapper.Profiles;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -77,7 +77,13 @@ public static class AppCompositionRoot
         services.AddSingleton(sp =>
         {
             var opts = sp.GetRequiredService<ProfileStoreOptions>();
-            return new ProfileStore(opts);
+            var store = new ProfileStore(opts);
+            Directory.CreateDirectory(opts.Directory);
+            // Seed only an empty directory; existing files and recovery artifacts
+            // belong to the user, even when they cannot currently be loaded.
+            if (!Directory.EnumerateFileSystemEntries(opts.Directory).Any())
+                store.Save(DefaultProfiles.LoadRacing());
+            return store;
         });
 
         services.AddSingleton(sp =>
@@ -107,10 +113,8 @@ public static class AppCompositionRoot
         {
             var paths = sp.GetRequiredService<IAppPaths>();
             var registryFile = paths.DeviceRegistryFile;
-            var descriptor = sp.GetRequiredService<DeviceAdapterDescriptor>();
-
             return new DeviceSelector(
-                new HidSharpDeviceProvider(descriptor),
+                new RawInputKeyboardEnumerator(),
                 loadRegistry:  () => DeviceRegistry.Load(registryFile),
                 saveRegistry:  r  => DeviceRegistry.Save(registryFile, r));
         });
@@ -250,17 +254,6 @@ public static class AppCompositionRoot
         services.AddSingleton<IDeviceSelectorFacade>(sp =>
             new DeviceSelectorFacade(sp.GetRequiredService<DeviceSelector>()));
 
-        services.AddSingleton<IDeviceRegistryFacade>(sp =>
-            new DeviceRegistryFacade(sp.GetRequiredService<IAppPaths>()));
-
-        // CalibrationService requires IHidAnalogProbe which is not available until
-        // Phase 3 wires InputHost.  For now we register a stub that throws on use.
-        services.AddSingleton<ICalibrationService>(sp =>
-        {
-            var logger = sp.GetRequiredService<ILogger<StubCalibrationService>>();
-            return new StubCalibrationService(logger);
-        });
-
         services.AddSingleton<ITaskSchedulerFacade, WindowsTaskSchedulerFacade>();
 
         services.AddSingleton(sp =>
@@ -340,18 +333,7 @@ public static class AppCompositionRoot
                 sp.GetRequiredService<PanicCoordinator>(),
                 sp.GetRequiredService<IMappingSession>()));
 
-        services.AddSingleton<DevicePickerViewModel>(sp =>
-            new DevicePickerViewModel(
-                sp.GetRequiredService<IDeviceSelectorFacade>(),
-                sp.GetRequiredService<IDeviceRegistryFacade>()));
-
-        services.AddSingleton<CalibrationWizardViewModel>(sp =>
-        {
-            var calibrationService = sp.GetRequiredService<ICalibrationService>();
-            // Default wizard options: no specific device pre-selected.
-            var options = new CalibrationWizardOptions(Guid.Empty);
-            return new CalibrationWizardViewModel(calibrationService, options);
-        });
+        services.AddSingleton<DevicePickerViewModel>();
 
         services.AddSingleton<MainWindowViewModel>();
     }

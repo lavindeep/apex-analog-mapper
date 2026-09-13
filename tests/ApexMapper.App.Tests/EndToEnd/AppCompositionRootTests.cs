@@ -1,10 +1,12 @@
+using System.IO;
 using ApexMapper.App.Composition;
 using ApexMapper.App.Services;
 using ApexMapper.App.ViewModels;
-using ApexMapper.App.ViewModels.Calibration;
 using ApexMapper.App.ViewModels.Devices;
 using ApexMapper.App.ViewModels.Profiles;
 using ApexMapper.App.ViewModels.Tray;
+using ApexMapper.Persistence.Profiles;
+using ApexMapper.Profiles;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -30,11 +32,13 @@ namespace ApexMapper.App.Tests.EndToEnd;
 public sealed class AppCompositionRootTests : IAsyncLifetime
 {
     private readonly ServiceProvider _provider;
+    private readonly TestAppPaths _paths = new();
 
     public AppCompositionRootTests()
     {
         var services = new ServiceCollection();
         AppCompositionRoot.ConfigureServices(services);
+        services.AddSingleton<IAppPaths>(_paths);
         _provider = services.BuildServiceProvider(validateScopes: true);
     }
 
@@ -42,7 +46,50 @@ public sealed class AppCompositionRootTests : IAsyncLifetime
 
     // Async disposal: MappingEngine and InputHost are IAsyncDisposable-only, and
     // the sync ServiceProvider.Dispose() throws for such singletons.
-    public async Task DisposeAsync() => await _provider.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        await _provider.DisposeAsync();
+        if (Directory.Exists(_paths.Root))
+            Directory.Delete(_paths.Root, recursive: true);
+    }
+
+    [Fact]
+    public void Fresh_profile_directory_gets_the_default_racing_profile()
+    {
+        var store = _provider.GetRequiredService<ProfileStore>();
+
+        store.LoadAll().Should().ContainSingle().Which.Should()
+            .BeEquivalentTo(DefaultProfiles.LoadRacing());
+        File.Exists(Path.Combine(_paths.ProfilesDirectory, "racing.json")).Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("racing.json")]
+    [InlineData("racing.json.bak.1")]
+    public void Existing_profile_or_recovery_backup_is_preserved(string filename)
+    {
+        var existing = DefaultProfiles.LoadRacing() with { Name = "My racing setup" };
+        var originalStore = new ProfileStore(new ProfileStoreOptions(_paths.ProfilesDirectory));
+        originalStore.Save(existing);
+        var primary = Path.Combine(_paths.ProfilesDirectory, "racing.json");
+        if (filename != "racing.json")
+            File.Move(primary, Path.Combine(_paths.ProfilesDirectory, filename));
+
+        var store = _provider.GetRequiredService<ProfileStore>();
+
+        store.LoadAll().Should().ContainSingle().Which.Should().BeEquivalentTo(existing);
+    }
+
+    private sealed class TestAppPaths : IAppPaths
+    {
+        public string Root { get; } = Path.Combine(Path.GetTempPath(), "ApexMapper.Tests", Guid.NewGuid().ToString("N"));
+        public string ProfilesDirectory => Path.Combine(Root, "profiles");
+        public string DeviceRegistryFile => Path.Combine(Root, "device-registry.json");
+        public string PanicPolicyDirectory => Root;
+        public string ProfilePinDirectory => Root;
+        public string LogDirectory => Path.Combine(Root, "logs");
+        public string ExecutablePath => Path.Combine(Root, "ApexMapper.exe");
+    }
 
     // -----------------------------------------------------------------------
     // Services
@@ -131,9 +178,6 @@ public sealed class AppCompositionRootTests : IAsyncLifetime
     public void ITrayProfileSource_Resolves()
         => _provider.GetRequiredService<ITrayProfileSource>().Should().NotBeNull();
 
-    [Fact]
-    public void ICalibrationService_Resolves()
-        => _provider.GetRequiredService<ICalibrationService>().Should().NotBeNull();
 
     [Fact]
     public void ILoginTaskService_Resolves()
@@ -171,9 +215,6 @@ public sealed class AppCompositionRootTests : IAsyncLifetime
     public void DevicePickerViewModel_Resolves()
         => _provider.GetRequiredService<DevicePickerViewModel>().Should().NotBeNull();
 
-    [Fact]
-    public void CalibrationWizardViewModel_Resolves()
-        => _provider.GetRequiredService<CalibrationWizardViewModel>().Should().NotBeNull();
 
     // -----------------------------------------------------------------------
     // Singleton identity: same instance returned on repeated resolution
@@ -201,7 +242,7 @@ public sealed class AppCompositionRootTests : IAsyncLifetime
         var vm = _provider.GetRequiredService<MainWindowViewModel>();
         vm.ProfileSelectorViewModel.Should().NotBeNull();
         vm.DevicePickerViewModel.Should().NotBeNull();
-        vm.CalibrationWizardViewModel.Should().NotBeNull();
+        vm.TrayMenuViewModel.Should().BeSameAs(_provider.GetRequiredService<TrayMenuViewModel>());
     }
 
     // -----------------------------------------------------------------------
