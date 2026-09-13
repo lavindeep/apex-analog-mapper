@@ -24,9 +24,12 @@
       { "source": { "scan_code": 17 }, "target": "right_trigger", "curve": null, "press_ramp_ms": 120, "release_ramp_ms": 0 },
       { "source": { "scan_code": 31 }, "target": "left_trigger",  "curve": null, "press_ramp_ms": 120, "release_ramp_ms": 0 },
       { "source": { "scan_code": 42 }, "target": "button_lb",     "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 },
-      { "source": { "scan_code": 57 }, "target": "button_rb",     "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 },
-      { "source": { "scan_code": 16 }, "target": "button_b",      "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 },
-      { "source": { "scan_code": 18 }, "target": "button_a",      "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 }
+      { "source": { "scan_code": 57 }, "target": "button_a",      "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 },
+      { "source": { "scan_code": 19 }, "target": "button_y",      "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 },
+      { "source": { "scan_code": 18 }, "target": "button_b",      "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 },
+      { "source": { "scan_code": 16 }, "target": "button_x",      "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 },
+      { "source": { "scan_code": 15 }, "target": "button_rb",     "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 },
+      { "source": { "scan_code": 34 }, "target": "button_ls",     "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 }
     ],
     "axis_bindings": [
       {
@@ -37,8 +40,26 @@
         "press_ramp_ms": 80,
         "release_ramp_ms": 80,
         "socd": "neutral"
+      },
+      {
+        "negative_key": { "scan_code": 57419 },
+        "positive_key": { "scan_code": 57421 },
+        "target": "right_stick_x",
+        "curve": null,
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0,
+        "socd": "neutral"
+      },
+      {
+        "negative_key": { "scan_code": 57424 },
+        "positive_key": { "scan_code": 57416 },
+        "target": "right_stick_y",
+        "curve": null,
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0,
+        "socd": "neutral"
       }
     ],
-    "notes": "W=RT throttle, S=LT brake, A/D=LSX steer, LShift=LB clutch, Space=RB handbrake, Q=B gear down, E=A gear up."
+    "notes": "W=RT, S=LT, A/D=left stick X, Space=A, R=Y, E=B, Q=X, Left Shift=LB, Tab=RB, G=left stick click. Arrow keys=right stick camera, with instant response."
   }
 }

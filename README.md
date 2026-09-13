@@ -24,8 +24,11 @@ Existing profiles and recovery backups are preserved.
 | --- | --- |
 | W / S | Right / left trigger, with a 120 ms press ramp |
 | A / D | Left stick horizontal, with an 80 ms ramp |
-| Left Shift / Space | LB / RB |
-| Q / E | B / A |
+| Space / R / E / Q | A / Y / B / X |
+| Left Shift / Tab | LB / RB |
+| G | Left stick click |
+| Left / Right arrows | Right stick horizontal, instant response |
+| Down / Up arrows | Right stick vertical, instant response |
 
 Keyboard events also continue to reach the game. Configure its bindings if it
 responds to both keyboard and controller input.
