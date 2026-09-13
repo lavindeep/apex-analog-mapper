@@ -37,7 +37,10 @@ public sealed record DeviceFacadeEntry(
     ushort Vid,
     ushort Pid,
     bool IsConnected,
-    bool IsPrimary);
+    bool IsPrimary,
+    string? PhysicalDeviceId = null,
+    string? DevicePath = null,
+    string? SourceLabel = null);
 
 /// <summary>Event args for <see cref="IDeviceSelectorFacade.TopologyChanged"/>.</summary>
 public sealed class TopologyChangedEventArgs : EventArgs

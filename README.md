@@ -10,12 +10,12 @@ or pressure.
 1. Install the per-user MSI from [Releases](https://github.com/lavindeep/apex-analog-mapper/releases).
 2. Install ViGEmBus 1.22.0 from the [official Nefarius release](https://github.com/nefarius/ViGEmBus/releases/tag/v1.22.0).
    This separate driver installation requires Windows administrator approval.
-3. Open Apex Analog Mapper. In Devices, choose **Make Primary** for your keyboard
-   input. Some boards expose multiple input interfaces; select another if the
-   selected interface does not produce the expected keys.
-4. In Profiles, pin **Racing**, then choose **Enable mapping**.
+3. Open Apex Analog Mapper and choose your **Keyboard**. Windows input interfaces
+   belonging to the same physical keyboard appear as one choice. If keys do not
+   respond, try another **Input source** under **Advanced**.
+4. Choose the **Racing** profile, then **Start**. Its bindings appear below the profile.
 5. Keep the app open while playing. Closing its window exits the mapper.
-   **Ctrl+Alt+F12** forces output off. Mapping starts disabled on every launch.
+   **Stop** or **Ctrl+Alt+F12** forces output off. Mapping starts stopped on every launch.
 
 The Racing profile is installed into an empty profile directory automatically.
 Existing profiles and recovery backups are preserved.
@@ -35,8 +35,8 @@ responds to both keyboard and controller input.
 The self-contained app and supervisor install together in
 `%LocalAppData%\Programs\Apex Analog Mapper`. No separate .NET runtime is needed.
 Profiles and selection settings live in `%AppData%\ApexMapper` and survive MSI
-upgrades and uninstallation. Edit profile JSON there and use Refresh or the
-built-in hot reload; there is no visual binding editor.
+upgrades and uninstallation. Edit profile JSON there; changes reload automatically.
+There is no visual binding editor.
 
 The MSI upgrades older product versions. Close the app before upgrading. Use
 Windows Installed apps to uninstall it. If an older build registered a login
@@ -114,7 +114,7 @@ WiX. Use a higher numeric MSI version for an upgrade.
 ```powershell
 dotnet publish src/ApexMapper.App -c Release -r win-x64 --self-contained true -o artifacts/staging
 dotnet publish src/ApexMapper.Supervisor -c Release -r win-x64 --self-contained true -o artifacts/staging
-dotnet build installer/ApexAnalogMapper.wixproj -c Release -p:StagingDir="$PWD/artifacts/staging" -p:ProductVersion=0.1.3
+dotnet build installer/ApexAnalogMapper.wixproj -c Release -p:StagingDir="$PWD/artifacts/staging" -p:ProductVersion=0.1.4
 ```
 
 The tag-driven release workflow builds the MSI and SHA-256 manifest. Public

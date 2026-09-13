@@ -93,7 +93,9 @@ public partial class App : Application
         {
             if (args.Error is not null || args.PolicyError is not null)
                 Dispatcher.InvokeAsync(() =>
-                    trayService.ShowBalloon("Apex Mapper", "Panic did not fully complete — check that the mapper is still active."));
+                    trayService.ShowBalloon("Apex Analog Mapper", args.Error is not null
+                        ? "Could not stop the controller. Close the app and try again."
+                        : "Stopped. Could not save settings."));
         };
 
         // Start the foreground watcher on the UI thread: its WinEvent hook needs

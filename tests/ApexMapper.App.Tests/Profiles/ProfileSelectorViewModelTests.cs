@@ -6,6 +6,10 @@ using System.Linq;
 using ApexMapper.App.Services;
 using ApexMapper.App.ViewModels.Profiles;
 using ApexMapper.Core.Engine;
+using ApexMapper.Core.Curves;
+using ApexMapper.Core.Keys;
+using ApexMapper.Core.Pipeline;
+using ApexMapper.Core.Socd;
 using ApexMapper.Persistence.Profiles;
 using FluentAssertions;
 using Xunit;
@@ -85,6 +89,48 @@ public sealed class ProfileSelectorViewModelTests : IDisposable
         vm.Profiles.Should().Contain(p => p.Id == "p1");
         vm.Profiles.Should().Contain(p => p.Id == "p2");
         vm.Profiles.Should().Contain(p => p.Id == "p3");
+    }
+
+    [Fact]
+    public void Selecting_profile_persists_it_and_updates_bindings()
+    {
+        var profile = MakeProfile("p2", "Two") with
+        {
+            SingleBindings = [new SingleKeyBinding(new KeyId(0x39), BindingTarget.ButtonA,
+                LinearCurve.Instance, 0, 0)],
+            AxisBindings = [new AxisPairBinding(new KeyId(0x1E), new KeyId(0x20),
+                BindingTarget.RightStickX, LinearCurve.Instance, 0, 0, SocdMode.Neutral)],
+        };
+        var store = CreateStoreWith(MakeProfile("p1", "One"), profile);
+        var pinStore = new FakePinStore();
+        var vm = BuildVm(store, pinStore, new FakeResolver { ResolvedId = "p1" });
+
+        vm.Selected = vm.Profiles.Single(p => p.Id == "p2");
+
+        pinStore.Get().Should().Be("p2");
+        vm.CurrentProfileId.Should().Be("p2");
+        vm.BindingSummary.Should().Equal(
+            new BindingSummaryItem("Space", "A button"),
+            new BindingSummaryItem("A / D", "Right stick X"));
+    }
+
+    [Theory]
+    [InlineData(null, "p1")]
+    [InlineData("p2", "p2")]
+    public void Refresh_restores_active_selection_without_changing_pin(string? pin, string selectedId)
+    {
+        var store = CreateStoreWith(MakeProfile("p1", "One"), MakeProfile("p2", "Two"));
+        var pinStore = new FakePinStore();
+        pinStore.Set(pin);
+        var vm = BuildVm(store, pinStore, new FakeResolver { ResolvedId = "p1" });
+        vm.Selected!.Id.Should().Be(selectedId);
+        var previous = vm.Selected;
+
+        vm.RefreshCommand.Execute(null);
+
+        vm.Selected.Should().NotBeSameAs(previous);
+        vm.Selected!.Id.Should().Be(selectedId);
+        pinStore.Get().Should().Be(pin);
     }
 
     [Fact]

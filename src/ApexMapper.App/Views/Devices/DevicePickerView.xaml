@@ -1,93 +1,50 @@
-<UserControl
-    x:Class="ApexMapper.App.Views.Devices.DevicePickerView"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:vm="clr-namespace:ApexMapper.App.ViewModels.Devices"
-    x:Name="Root">
-
+<UserControl x:Class="ApexMapper.App.Views.Devices.DevicePickerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
-
-        <!-- Highlight primary device row -->
-        <Style x:Key="DeviceRowStyle" TargetType="ListBoxItem">
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsPrimary}" Value="True">
-                    <Setter Property="FontWeight" Value="Bold" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding IsConnected}" Value="False">
-                    <Setter Property="Foreground" Value="Gray" />
-                    <Setter Property="FontStyle" Value="Italic" />
-                </DataTrigger>
-            </Style.Triggers>
+        <Style x:Key="ConnectedChoice" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+            <Setter Property="IsEnabled" Value="{Binding IsConnected}" />
         </Style>
     </UserControl.Resources>
-
-    <Grid Margin="8">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
-        <!-- Device list -->
-        <ListBox
-            Grid.Row="0"
-            HorizontalContentAlignment="Stretch"
-            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-            ItemsSource="{Binding Devices}"
-            ItemContainerStyle="{StaticResource DeviceRowStyle}">
-            <ListBox.ItemTemplate>
-                <DataTemplate DataType="{x:Type vm:DeviceListItem}">
-                    <Grid Margin="0,2">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Device name + VID/PID -->
-                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis"
-                                       ToolTip="{Binding DisplayName}" />
-                            <TextBlock FontSize="10" Foreground="DimGray">
-                                <TextBlock.Text>
-                                    <MultiBinding StringFormat="VID:{0:X4}  PID:{1:X4}">
-                                        <Binding Path="Vid" />
-                                        <Binding Path="Pid" />
-                                    </MultiBinding>
-                                </TextBlock.Text>
-                            </TextBlock>
-                        </StackPanel>
-
-                        <!-- Current / Primary badge -->
-                        <Border
-                            Grid.Column="1"
-                            Margin="4,0"
-                            Padding="4,2"
-                            CornerRadius="3"
-                            Background="#2196F3"
-                            Visibility="{Binding IsPrimary, Converter={StaticResource BoolToVisibility}}">
-                            <TextBlock Text="Primary" Foreground="White" FontSize="10" />
-                        </Border>
-
-                        <!-- Make Primary button -->
-                        <Button
-                            Grid.Column="2"
-                            Margin="4,0,0,0"
-                            Padding="6,2"
-                            Content="Make Primary"
-                            Command="{Binding DataContext.MakePrimaryCommand, ElementName=Root}"
-                            CommandParameter="{Binding Id}" />
-                    </Grid>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
-
-        <!-- Toolbar -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,4,0,0">
-            <Button
-                Content="Refresh"
-                Command="{Binding RefreshCommand}"
-                Padding="8,3" />
-        </StackPanel>
-    </Grid>
+    <StackPanel>
+        <TextBlock Text="Keyboard" Style="{StaticResource SectionTitle}" />
+        <ComboBox ItemsSource="{Binding KeyboardGroups}" SelectedItem="{Binding SelectedKeyboard, Mode=TwoWay}"
+                  ItemContainerStyle="{StaticResource ConnectedChoice}"
+                  DisplayMemberPath="DisplayName" Margin="0,9,0,0" AutomationProperties.Name="Keyboard" />
+        <TextBlock Text="Disconnected" Foreground="#9A421A" FontSize="13" Margin="0,9,0,0">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedKeyboard.IsConnected}" Value="False">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+        <TextBlock Text="No keyboards found" Margin="0,9,0,0">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock" BasedOn="{StaticResource Caption}">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding KeyboardGroups.Count}" Value="0">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+        <Expander Header="Advanced" Margin="0,18,0,0">
+            <StackPanel Margin="0,12,0,0">
+                <TextBlock Text="Input uses key presses and timed ramps." Style="{StaticResource Caption}" Margin="0,0,0,14" />
+                <TextBlock Text="Input source" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,7" />
+                <ComboBox ItemsSource="{Binding SelectedKeyboard.Sources}" SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+                          ItemContainerStyle="{StaticResource ConnectedChoice}"
+                          DisplayMemberPath="SourceLabel" AutomationProperties.Name="Input source" />
+                <TextBlock Text="{Binding SelectedSource.DevicePath}" Style="{StaticResource Caption}" FontSize="11" Margin="0,10,0,0" />
+                <Button Content="Refresh keyboards" Command="{Binding RefreshCommand}" HorizontalAlignment="Left" Margin="0,14,0,0" />
+            </StackPanel>
+        </Expander>
+    </StackPanel>
 </UserControl>

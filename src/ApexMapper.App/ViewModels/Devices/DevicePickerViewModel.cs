@@ -4,57 +4,56 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace ApexMapper.App.ViewModels.Devices;
 
-public sealed class DevicePickerViewModel : ApexMapper.App.ViewModels.ObservableViewModel
+public sealed class DevicePickerViewModel : ObservableViewModel
 {
     private readonly IDeviceSelectorFacade _selector;
-
-    // Captured at construction (the UI thread in production). Topology events
-    // arrive on the enumerator/pump thread; mutating the WPF-bound collection
-    // there throws, so the merge is posted back onto this context.
     private readonly SynchronizationContext? _syncContext;
-
     private ObservableCollection<DeviceListItem> _devices = [];
+    private IReadOnlyList<KeyboardGroup> _keyboardGroups = [];
     private DeviceListItem? _primary;
+    private KeyboardGroup? _selectedKeyboard;
 
-    public DevicePickerViewModel(
-        IDeviceSelectorFacade selector)
+    public DevicePickerViewModel(IDeviceSelectorFacade selector)
     {
         _selector = selector ?? throw new ArgumentNullException(nameof(selector));
         _syncContext = SynchronizationContext.Current;
-
-        RefreshCommand = new RelayCommand(ExecuteRefresh);
-        MakePrimaryCommand = new RelayCommand<Guid>(ExecuteMakePrimary, CanMakePrimary);
-
+        RefreshCommand = new RelayCommand(() => { _selector.Refresh(); LoadFromSelector(); });
+        MakePrimaryCommand = new RelayCommand<Guid>(ExecuteMakePrimary,
+            id => Devices.Any(device => device.Id == id && device.IsConnected));
+        SelectKeyboardCommand = new RelayCommand<KeyboardGroup>(SelectKeyboard);
         _selector.TopologyChanged += OnTopologyChanged;
-
         LoadFromSelector();
     }
 
-    public ObservableCollection<DeviceListItem> Devices
+    public ObservableCollection<DeviceListItem> Devices => _devices;
+    public IReadOnlyList<KeyboardGroup> KeyboardGroups => _keyboardGroups;
+    public DeviceListItem? Primary => _primary;
+
+    public KeyboardGroup? SelectedKeyboard
     {
-        get => _devices;
-        private set => SetProperty(ref _devices, value);
+        get => _selectedKeyboard;
+        set { if (value is { IsConnected: true } && value.Id != _selectedKeyboard?.Id) SelectKeyboard(value); }
     }
 
-    /// <summary>Read-only projection: the item in <see cref="Devices"/> whose IsPrimary is true.</summary>
-    public DeviceListItem? Primary
+    public DeviceListItem? SelectedSource
     {
         get => _primary;
-        private set => SetProperty(ref _primary, value);
+        set
+        {
+            if (value is { IsConnected: true } && value.Id != _primary?.Id)
+                ExecuteMakePrimary(value.Id);
+        }
     }
 
     public IRelayCommand RefreshCommand { get; }
-
     public IRelayCommand<Guid> MakePrimaryCommand { get; }
+    public IRelayCommand<KeyboardGroup> SelectKeyboardCommand { get; }
 
-    // ---------------------------------------------------------------------------
-    // Command implementations
-    // ---------------------------------------------------------------------------
-
-    private void ExecuteRefresh()
+    private void SelectKeyboard(KeyboardGroup? keyboard)
     {
-        _selector.Refresh();
-        LoadFromSelector();
+        if (keyboard is not { IsConnected: true }) return;
+        var source = keyboard.SelectedSource ?? keyboard.Sources.FirstOrDefault(item => item.IsConnected);
+        if (source is not null) ExecuteMakePrimary(source.Id);
     }
 
     private void ExecuteMakePrimary(Guid id)
@@ -63,113 +62,60 @@ public sealed class DevicePickerViewModel : ApexMapper.App.ViewModels.Observable
         LoadFromSelector();
     }
 
-    private bool CanMakePrimary(Guid id)
-    {
-        var item = _devices.FirstOrDefault(d => d.Id == id);
-        return item?.IsConnected == true;
-    }
+    private void LoadFromSelector() => ApplySnapshot(_selector.ListAll());
 
-    // ---------------------------------------------------------------------------
-    // Event handler
-    // ---------------------------------------------------------------------------
-
-    private void OnTopologyChanged(object? sender, TopologyChangedEventArgs e)
+    private void OnTopologyChanged(object? sender, TopologyChangedEventArgs change)
     {
-        // Marshal onto the captured (UI) context when the event arrives elsewhere;
-        // run inline when already on it (or none was captured, as in tests).
         if (_syncContext is not null && _syncContext != SynchronizationContext.Current)
-            _syncContext.Post(_ => MergeTopology(e), null);
+            _syncContext.Post(_ => ApplySnapshot(change.Devices), null);
         else
-            MergeTopology(e);
+            ApplySnapshot(change.Devices);
     }
 
-    private void MergeTopology(TopologyChangedEventArgs e)
+    // Preserve disconnected choices, while treating Windows container identity
+    // as the only evidence that multiple input sources share one keyboard.
+    private void ApplySnapshot(IReadOnlyList<DeviceFacadeEntry> entries)
     {
-        // Merge topology update into the existing collection.
-        // Connected set comes from the event; we preserve disconnected rows (IsConnected = false).
-
-        var connectedIds = e.Devices.ToDictionary(d => d.Id);
-
-        // Mark previously-connected items as disconnected if they vanished.
-        foreach (var item in _devices)
-        {
-            if (!connectedIds.ContainsKey(item.Id))
-            {
-                item.IsConnected = false;
-                item.IsPrimary = false;
-            }
-        }
-
-        // Add or update rows for currently-connected devices.
-        var existingIds = _devices.Select(d => d.Id).ToHashSet();
-        foreach (var entry in e.Devices)
-        {
-            if (existingIds.Contains(entry.Id))
-            {
-                var existing = _devices.First(d => d.Id == entry.Id);
-                existing.IsConnected = entry.IsConnected;
-                existing.IsPrimary = entry.IsPrimary;
-                existing.DisplayName = entry.DisplayName;
-            }
-            else
-            {
-                _devices.Add(new DeviceListItem
-                {
-                    Id = entry.Id,
-                    DisplayName = entry.DisplayName,
-                    Vid = entry.Vid,
-                    Pid = entry.Pid,
-                    IsConnected = entry.IsConnected,
-                    IsPrimary = entry.IsPrimary,
-                });
-            }
-        }
-
-        Primary = _devices.FirstOrDefault(d => d.IsPrimary);
-        ((RelayCommand<Guid>)MakePrimaryCommand).NotifyCanExecuteChanged();
-    }
-
-    // ---------------------------------------------------------------------------
-    // Load helper
-    // ---------------------------------------------------------------------------
-
-    private void LoadFromSelector()
-    {
-        var entries = _selector.ListAll();
-
-        // Build a fresh collection preserving disconnected rows already tracked.
-        var existingDisconnected = _devices
-            .Where(d => !d.IsConnected)
-            .ToDictionary(d => d.Id);
-
-        var newCollection = new ObservableCollection<DeviceListItem>();
-
-        // Add connected/known entries from selector.
-        var connectedIds = new HashSet<Guid>();
+        var previousKeyboardId = _selectedKeyboard?.Id;
+        var previous = _devices.ToDictionary(item => item.Id);
+        var current = new HashSet<Guid>();
         foreach (var entry in entries)
         {
-            connectedIds.Add(entry.Id);
-            newCollection.Add(new DeviceListItem
-            {
-                Id = entry.Id,
-                DisplayName = entry.DisplayName,
-                Vid = entry.Vid,
-                Pid = entry.Pid,
-                IsConnected = entry.IsConnected,
-                IsPrimary = entry.IsPrimary,
-            });
+            current.Add(entry.Id);
+            if (!previous.TryGetValue(entry.Id, out var item))
+                previous[entry.Id] = item = new DeviceListItem { Id = entry.Id };
+            item.DisplayName = entry.DisplayName;
+            item.Vid = entry.Vid;
+            item.Pid = entry.Pid;
+            item.IsConnected = entry.IsConnected;
+            item.IsPrimary = entry.IsPrimary;
+            item.PhysicalDeviceId = entry.PhysicalDeviceId;
+            item.DevicePath = entry.DevicePath ?? string.Empty;
+            item.SourceLabel = entry.SourceLabel ?? "Keyboard input";
         }
-
-        // Re-append previously-seen disconnected rows that weren't returned by the selector.
-        foreach (var (id, item) in existingDisconnected)
+        foreach (var item in previous.Values.Where(item => !current.Contains(item.Id)))
         {
-            if (!connectedIds.Contains(id))
-                newCollection.Add(item);
+            item.IsConnected = false;
+            item.IsPrimary = false;
         }
 
-        _devices = newCollection;
+        _devices = new ObservableCollection<DeviceListItem>(previous.Values);
+        _primary = _devices.FirstOrDefault(item => item.IsPrimary);
+        _keyboardGroups = _devices
+            .GroupBy(item => item.PhysicalDeviceId ?? item.Id.ToString(), StringComparer.OrdinalIgnoreCase)
+            .Select(group => new KeyboardGroup(group.Key, group.First().DisplayName,
+                group.OrderBy(item => item.DevicePath, StringComparer.OrdinalIgnoreCase).ToArray()))
+            .OrderByDescending(group => group.IsConnected)
+            .ThenBy(group => group.DisplayName)
+            .ToArray();
+        _selectedKeyboard = _keyboardGroups.FirstOrDefault(group => group.IsSelected)
+            ?? _keyboardGroups.FirstOrDefault(group => group.Id == previousKeyboardId);
+
         OnPropertyChanged(nameof(Devices));
-        Primary = _devices.FirstOrDefault(d => d.IsPrimary);
-        ((RelayCommand<Guid>)MakePrimaryCommand).NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(Primary));
+        OnPropertyChanged(nameof(KeyboardGroups));
+        OnPropertyChanged(nameof(SelectedKeyboard));
+        OnPropertyChanged(nameof(SelectedSource));
+        MakePrimaryCommand.NotifyCanExecuteChanged();
     }
 }

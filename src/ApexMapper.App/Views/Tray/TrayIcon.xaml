@@ -11,11 +11,21 @@
 
         <tb:TaskbarIcon.ContextMenu>
             <ContextMenu>
-                <MenuItem
-                    Header="Enabled"
-                    IsCheckable="True"
-                    IsChecked="{Binding IsEnabled, Mode=OneWay}"
-                    Command="{Binding ToggleEnabledCommand}" />
+                <MenuItem>
+                    <MenuItem.Style>
+                        <Style TargetType="MenuItem">
+                            <Setter Property="Header" Value="Start" />
+                            <Setter Property="Command" Value="{Binding ToggleEnabledCommand}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsEnabled}" Value="True">
+                                    <Setter Property="Header" Value="Stop" />
+                                    <Setter Property="Command" Value="{Binding PanicCommand}" />
+                                    <Setter Property="InputGestureText" Value="Ctrl+Alt+F12" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </MenuItem.Style>
+                </MenuItem>
                 <Separator />
                 <!--
                     Switch Profile submenu: ItemsSource is bound to the VM's Profiles list.
@@ -38,8 +48,7 @@
                     </MenuItem.ItemContainerStyle>
                 </MenuItem>
                 <Separator />
-                <MenuItem Header="Open Apex Mapper" Command="{Binding OpenMainWindowCommand}" />
-                <MenuItem Header="Panic (zero output)" Command="{Binding PanicCommand}" />
+                <MenuItem Header="Open Apex Analog Mapper" Command="{Binding OpenMainWindowCommand}" />
                 <Separator />
                 <MenuItem Header="Exit" Command="{Binding ExitCommand}" />
             </ContextMenu>

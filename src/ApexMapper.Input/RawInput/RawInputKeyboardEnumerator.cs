@@ -17,7 +17,11 @@ public sealed class RawInputKeyboardEnumerator : IDeviceEnumerator
         {
             var identity = RawInputDevicePath.Parse(path);
             if (identity.VendorId == 0x1038 && identity.ProductId != 0 && paths.Add(path))
-                devices.Add(new DiscoveredDevice(identity, path, SupportsAnalog: false));
+            {
+                var (displayName, physicalDeviceId) = WindowsKeyboardMetadata.Read(path);
+                devices.Add(new DiscoveredDevice(identity, path, SupportsAnalog: false,
+                    DisplayName: displayName, PhysicalDeviceId: physicalDeviceId));
+            }
         }
         return devices;
     }

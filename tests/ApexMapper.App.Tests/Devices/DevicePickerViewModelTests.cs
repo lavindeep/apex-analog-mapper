@@ -91,6 +91,99 @@ public sealed class DevicePickerViewModelTests
     }
 
     [Fact]
+    public void Sources_in_one_container_show_one_keyboard_and_preserve_the_selected_source()
+    {
+        var first = MakeEntry(Guid.NewGuid(), "Apex Pro TKL") with
+            { PhysicalDeviceId = "keyboard-a", DevicePath = "interface-00" };
+        var second = MakeEntry(Guid.NewGuid(), "Apex Pro TKL", isPrimary: true) with
+            { PhysicalDeviceId = "keyboard-a", DevicePath = "interface-02" };
+        var selector = new FakeSelector();
+        selector.AddEntry(first);
+        selector.AddEntry(second);
+
+        var vm = BuildVm(selector);
+
+        var keyboard = vm.KeyboardGroups.Should().ContainSingle().Which;
+        keyboard.Sources.Select(source => source.Id).Should().Equal(first.Id, second.Id);
+        vm.SelectedKeyboard.Should().Be(keyboard);
+        vm.SelectedSource!.Id.Should().Be(second.Id);
+        selector.SelectPrimaryCalls.Should().BeEmpty();
+
+        vm.SelectKeyboardCommand.Execute(keyboard);
+
+        selector.SelectPrimaryCalls.Should().ContainSingle().Which.Should().Be(second.Id);
+        vm.SelectedSource!.Id.Should().Be(second.Id);
+    }
+
+    [Fact]
+    public void Same_product_with_distinct_or_unknown_containers_stays_separate()
+    {
+        var selector = new FakeSelector();
+        foreach (var container in new string?[] { "keyboard-a", "keyboard-b", null, null })
+            selector.AddEntry(MakeEntry(Guid.NewGuid(), "Apex Pro TKL") with
+                { PhysicalDeviceId = container });
+
+        var vm = BuildVm(selector);
+
+        vm.KeyboardGroups.Should().HaveCount(4);
+        vm.KeyboardGroups.Should().OnlyContain(group => group.Sources.Count == 1);
+    }
+
+    [Fact]
+    public void Detach_retains_keyboard_and_reconnect_restores_exact_source_without_selecting()
+    {
+        var first = MakeEntry(Guid.NewGuid(), "Apex Pro TKL") with
+            { PhysicalDeviceId = "keyboard-a", DevicePath = "interface-00" };
+        var second = MakeEntry(Guid.NewGuid(), "Apex Pro TKL", isPrimary: true) with
+            { PhysicalDeviceId = "keyboard-a", DevicePath = "interface-02" };
+        var other = MakeEntry(Guid.NewGuid(), "Other keyboard", isConnected: false) with
+            { PhysicalDeviceId = "keyboard-b" };
+        var selector = new FakeSelector();
+        selector.AddEntry(first);
+        selector.AddEntry(second);
+        selector.AddEntry(other);
+        var vm = BuildVm(selector);
+
+        selector.ReplaceEntries([]);
+        vm.RefreshCommand.Execute(null);
+
+        vm.SelectedKeyboard!.Id.Should().Be("keyboard-a");
+        vm.SelectedKeyboard.IsConnected.Should().BeFalse();
+        vm.SelectedSource.Should().BeNull();
+        vm.SelectedKeyboard = vm.KeyboardGroups.Single(group => group.Id == "keyboard-b");
+        vm.SelectedKeyboard.Id.Should().Be("keyboard-a");
+
+        selector.ReplaceEntries([first, second]);
+        vm.RefreshCommand.Execute(null);
+
+        vm.SelectedKeyboard!.Id.Should().Be("keyboard-a");
+        vm.SelectedKeyboard.IsConnected.Should().BeTrue();
+        vm.SelectedSource!.Id.Should().Be(second.Id);
+        selector.SelectPrimaryCalls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Selecting_a_keyboard_then_an_advanced_source_sends_the_exact_source_ids()
+    {
+        var first = MakeEntry(Guid.NewGuid(), "Apex Pro TKL") with
+            { PhysicalDeviceId = "keyboard-a", DevicePath = "interface-00" };
+        var second = MakeEntry(Guid.NewGuid(), "Apex Pro TKL") with
+            { PhysicalDeviceId = "keyboard-a", DevicePath = "interface-02" };
+        var selector = new FakeSelector();
+        selector.AddEntry(second);
+        selector.AddEntry(first);
+        var vm = BuildVm(selector);
+
+        vm.SelectedKeyboard = vm.KeyboardGroups.Single();
+        vm.SelectedSource!.Id.Should().Be(first.Id);
+        vm.SelectedSource = vm.SelectedKeyboard!.Sources.Single(source => source.Id == second.Id);
+
+        selector.SelectPrimaryCalls.Should().Equal(first.Id, second.Id);
+        vm.SelectedSource!.Id.Should().Be(second.Id);
+        vm.SelectedKeyboard!.SelectedSource!.Id.Should().Be(second.Id);
+    }
+
+    [Fact]
     public void TopologyChanged_event_replaces_devices_list()
     {
         var id1 = Guid.NewGuid();

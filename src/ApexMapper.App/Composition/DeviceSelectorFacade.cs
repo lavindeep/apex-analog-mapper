@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using ApexMapper.App.Services;
 using ApexMapper.Input.Abstractions.Backends;
 using ApexMapper.Input.Abstractions.Devices;
@@ -48,11 +49,14 @@ public sealed class DeviceSelectorFacade : IDeviceSelectorFacade
                 var isPrimary = primaryIdentity is { } p && IdentityMatches(d.Identity, p);
                 return new DeviceFacadeEntry(
                     Id:          id,
-                    DisplayName: BuildDisplayName(d.Identity),
+                    DisplayName: BuildDisplayName(d),
                     Vid:         (ushort)d.Identity.VendorId,
                     Pid:         (ushort)d.Identity.ProductId,
                     IsConnected: true,
-                    IsPrimary:   isPrimary);
+                    IsPrimary:   isPrimary,
+                    PhysicalDeviceId: d.PhysicalDeviceId,
+                    DevicePath: d.DevicePath,
+                    SourceLabel: BuildSourceLabel(d.DevicePath));
             })
             .ToList();
     }
@@ -89,11 +93,26 @@ public sealed class DeviceSelectorFacade : IDeviceSelectorFacade
         return new Guid(hash.AsSpan(0, 16));
     }
 
-    private static string BuildDisplayName(DeviceIdentity id)
+    private static string BuildDisplayName(DiscoveredDevice device)
     {
-        var product = id.ProductName ?? $"PID:{id.ProductId:X4}";
+        if (!string.IsNullOrWhiteSpace(device.DisplayName)) return device.DisplayName;
+        var id = device.Identity;
+        var product = id.ProductName;
+        if (string.IsNullOrWhiteSpace(product)
+            || string.Equals(product, device.DevicePath, StringComparison.OrdinalIgnoreCase)
+            || product.StartsWith(@"\\?\", StringComparison.Ordinal))
+            product = $"SteelSeries keyboard ({id.ProductId:X4})";
         var serial  = string.IsNullOrEmpty(id.SerialNumber) ? string.Empty : $" ({id.SerialNumber})";
         return $"{product}{serial}";
+    }
+
+    private static string BuildSourceLabel(string path)
+    {
+        var match = Regex.Match(path, @"MI_([0-9a-f]{2})(?:&Col([0-9a-f]{2}))?",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success) return "Keyboard input";
+        var collection = match.Groups[2].Success ? $", collection {match.Groups[2].Value}" : string.Empty;
+        return $"Interface {match.Groups[1].Value}{collection}";
     }
 
     private static bool IdentityMatches(DeviceIdentity a, DeviceIdentity b)

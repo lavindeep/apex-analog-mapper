@@ -155,7 +155,7 @@ public sealed class TrayMenuViewModelTests
         public void ForceLocalOff(string reason)
         {
             IsEnabled = false;
-            StateChanged?.Invoke(this, new MappingSessionStateChangedEventArgs(false, $"Output forced off ({reason})."));
+            StateChanged?.Invoke(this, new MappingSessionStateChangedEventArgs(false, null));
         }
 
         public void OnSystemResumed() { }
@@ -303,14 +303,15 @@ public sealed class TrayMenuViewModelTests
     }
 
     [Fact]
-    public void Session_forced_off_updates_the_menu_and_warns()
+    public void Session_forced_off_updates_the_menu_without_a_redundant_notice()
     {
         var (vm, tray, _, _, _, session) = Build();
 
         session.ForceLocalOff("panic");
 
         vm.IsEnabled.Should().BeFalse();
-        tray.Balloons.Should().ContainSingle().Which.Should().Contain("panic");
+        vm.Notice.Should().BeNull();
+        tray.Balloons.Should().BeEmpty();
     }
 
     // ---------------------------------------------------------------------------

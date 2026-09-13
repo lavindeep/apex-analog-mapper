@@ -257,6 +257,30 @@ public class DeviceSelectorTests
     }
 
     [Fact]
+    public void Refresh_updates_presentation_metadata_without_detaching_the_selected_source()
+    {
+        var original = Dev("keyboard-source", serial: "SN-A");
+        var enumerator = new InMemoryDeviceEnumerator(new[] { original });
+        DeviceRegistry registry = new(original.Identity, []);
+        var saves = new SaveRecorder();
+        var selector = new DeviceSelector(enumerator, () => registry, r => saves.Saves.Add(r));
+        selector.Initialize();
+        var recorder = new EventRecorder();
+        selector.Changed += recorder.Handle;
+
+        var renamed = original with { DisplayName = "SteelSeries Apex Pro TKL", PhysicalDeviceId = "container-a" };
+        enumerator.Remove(original);
+        enumerator.Add(renamed);
+        selector.Refresh();
+
+        selector.Discovered.Should().ContainSingle().Which.Should().Be(renamed);
+        selector.SelectedDevice.Should().Be(renamed);
+        selector.SelectedIdentity.Should().Be(original.Identity);
+        recorder.Events.Should().BeEmpty();
+        saves.Count.Should().Be(0);
+    }
+
+    [Fact]
     public void Refresh_after_detach_of_selected_device_unselects_but_keeps_persisted_identity()
     {
         var a = Dev("a", serial: "SN-A");

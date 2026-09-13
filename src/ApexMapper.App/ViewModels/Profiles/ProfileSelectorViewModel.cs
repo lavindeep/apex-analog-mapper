@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using ApexMapper.App.Services;
 using ApexMapper.App.ViewModels;
+using ApexMapper.Core.Engine;
 using ApexMapper.Persistence.Profiles;
 using CommunityToolkit.Mvvm.Input;
 
@@ -16,6 +17,9 @@ public sealed class ProfileSelectorViewModel : ObservableViewModel
     private ProfileListItem? _selected;
     private string? _pinnedProfileId;
     private string? _resolvedProfileName;
+    private IReadOnlyList<Profile> _loadedProfiles = [];
+    private IReadOnlyList<BindingSummaryItem> _bindingSummary = [];
+    private bool _loading;
 
     public ProfileSelectorViewModel(
         ProfileStore store,
@@ -42,7 +46,17 @@ public sealed class ProfileSelectorViewModel : ObservableViewModel
     public ProfileListItem? Selected
     {
         get => _selected;
-        set => SetProperty(ref _selected, value);
+        set
+        {
+            if (_loading || value is null || !SetProperty(ref _selected, value)) return;
+            ExecutePin(value.Id);
+        }
+    }
+
+    public IReadOnlyList<BindingSummaryItem> BindingSummary
+    {
+        get => _bindingSummary;
+        private set => SetProperty(ref _bindingSummary, value);
     }
 
     public string? PinnedProfileId
@@ -72,6 +86,7 @@ public sealed class ProfileSelectorViewModel : ObservableViewModel
         _pinStore.Set(profileId);
         PinnedProfileId = profileId;
         UpdatePinnedFlags();
+        UpdateSelection();
         OnPropertyChanged(nameof(CurrentProfileId));
     }
 
@@ -80,34 +95,53 @@ public sealed class ProfileSelectorViewModel : ObservableViewModel
         _pinStore.Set(null);
         PinnedProfileId = null;
         UpdatePinnedFlags();
+        UpdateSelection();
         OnPropertyChanged(nameof(CurrentProfileId));
     }
 
     private void LoadFromStore()
     {
-        var profiles = _store.LoadAll();
-        var pinnedId = _pinStore.Get();
-        PinnedProfileId = pinnedId;
+        _loading = true;
+        try
+        {
+            var profiles = _store.LoadAll();
+            _loadedProfiles = profiles;
+            var pinnedId = _pinStore.Get();
+            PinnedProfileId = pinnedId;
 
-        var resolvedId = _resolveCurrentId();
-        ResolvedProfileName = profiles.FirstOrDefault(p => p.Id == resolvedId)?.Name;
+            var resolvedId = _resolveCurrentId();
+            ResolvedProfileName = profiles.FirstOrDefault(p => p.Id == resolvedId)?.Name;
 
-        var items = profiles
-            .OrderBy(p => p.Name)
-            .Select(p => new ProfileListItem
-            {
-                Id = p.Id,
-                DisplayName = p.Name,
-                IsResolved = p.Id == resolvedId,
-                IsPinned = p.Id == pinnedId,
-            })
-            .ToList();
+            var items = profiles
+                .OrderBy(p => p.Name)
+                .Select(p => new ProfileListItem
+                {
+                    Id = p.Id,
+                    DisplayName = p.Name,
+                    IsResolved = p.Id == resolvedId,
+                    IsPinned = p.Id == pinnedId,
+                })
+                .ToList();
 
-        var collection = new ObservableCollection<ProfileListItem>(items);
-        // Replace the collection so Profiles property fires changed
-        _profiles = collection;
-        OnPropertyChanged(nameof(Profiles));
-        OnPropertyChanged(nameof(CurrentProfileId));
+            var collection = new ObservableCollection<ProfileListItem>(items);
+            // Replace the collection so Profiles property fires changed
+            _profiles = collection;
+            OnPropertyChanged(nameof(Profiles));
+            UpdateSelection();
+            OnPropertyChanged(nameof(CurrentProfileId));
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void UpdateSelection()
+    {
+        var currentId = CurrentProfileId;
+        SetProperty(ref _selected, _profiles.FirstOrDefault(p => p.Id == currentId), nameof(Selected));
+        var profile = _loadedProfiles.FirstOrDefault(p => p.Id == currentId);
+        BindingSummary = profile is null ? [] : BindingSummaryItem.FromProfile(profile);
     }
 
     private void UpdatePinnedFlags()

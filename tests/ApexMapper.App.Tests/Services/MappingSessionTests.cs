@@ -409,7 +409,7 @@ public sealed class MappingSessionTests
 
         var state = h.States.Should().ContainSingle().Subject;
         state.IsEnabled.Should().BeTrue("the user's enable still stands; only connectivity dropped");
-        state.Message.Should().Contain("reconnecting");
+        state.Message.Should().ContainEquivalentOf("reconnecting");
     }
 
     [Fact]
@@ -424,7 +424,7 @@ public sealed class MappingSessionTests
 
         var state = h.States.Should().ContainSingle().Subject;
         state.IsEnabled.Should().BeTrue();
-        state.Message.Should().Contain("connected");
+        state.Message.Should().BeNull();
     }
 
     [Fact]
@@ -548,7 +548,7 @@ public sealed class MappingSessionTests
         h.Channel.DisconnectCalls.Should().Be(0, "the panic frame is the coordinator's job, not this method's");
         h.Channel.PanicCalls.Should().Be(0);
         h.States.Last().IsEnabled.Should().BeFalse();
-        h.States.Last().Message.Should().Contain("panic");
+        h.States.Last().Message.Should().BeNull();
     }
 
     [Fact]

@@ -60,7 +60,7 @@ public sealed class DeviceSelector
         var removed = new List<DiscoveredDevice>();
         foreach (var prev in previous)
         {
-            if (!current.Contains(prev))
+            if (!current.Any(device => SameSource(device, prev)))
             {
                 removed.Add(prev);
             }
@@ -69,7 +69,7 @@ public sealed class DeviceSelector
         var added = new List<DiscoveredDevice>();
         foreach (var cur in current)
         {
-            if (!previous.Contains(cur))
+            if (!previous.Any(device => SameSource(device, cur)))
             {
                 added.Add(cur);
             }
@@ -79,10 +79,11 @@ public sealed class DeviceSelector
         _discovered.AddRange(current);
 
         DiscoveredDevice? detachedSelection = null;
-        if (SelectedDevice is { } sel && removed.Contains(sel))
+        if (SelectedDevice is { } sel)
         {
-            detachedSelection = sel;
-            SelectedDevice = null;
+            SelectedDevice = current.FirstOrDefault(device => SameSource(device, sel));
+            if (SelectedDevice is null)
+                detachedSelection = sel;
         }
 
         foreach (var device in removed)
@@ -147,6 +148,12 @@ public sealed class DeviceSelector
         _lastRegistry = next;
         _saveRegistry(next);
     }
+
+    // Display metadata can change without disconnecting the input source.
+    private static bool SameSource(DiscoveredDevice a, DiscoveredDevice b)
+        => a.Identity == b.Identity
+        && a.DevicePath == b.DevicePath
+        && a.SupportsAnalog == b.SupportsAnalog;
 
     private DiscoveredDevice? FindMatch(DeviceIdentity saved, out bool ambiguous)
     {

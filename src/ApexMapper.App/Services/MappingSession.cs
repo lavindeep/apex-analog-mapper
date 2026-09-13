@@ -91,7 +91,7 @@ public sealed class MappingSession : IMappingSession
     internal void CompleteInputStartup(string? error = null)
     {
         _inputStartupBlocker = error is null ? null : $"Input pipeline failed to start: {error}";
-        RaiseState(false, _inputStartupBlocker ?? "Mapping is disabled.");
+        RaiseState(false, _inputStartupBlocker);
     }
 
     public async Task<bool> EnableAsync(CancellationToken ct)
@@ -143,7 +143,7 @@ public sealed class MappingSession : IMappingSession
                 if (!_confirm("Apex Analog Mapper", $"{reason}\n\nEnable the mapper anyway?"))
                 {
                     _logger.LogInformation("Enable declined by the user after anti-cheat verdict: {Reason}", reason);
-                    RaiseState(false, "Mapping stays disabled.");
+                    RaiseState(false, null);
                     return false;
                 }
 
@@ -199,12 +199,12 @@ public sealed class MappingSession : IMappingSession
                 }
 
                 _logger.LogWarning("Enable unwound: a panic fired during the enable flow; output stays off.");
-                RaiseState(false, "Output forced off (panic).");
+                RaiseState(false, null);
                 return false;
             }
 
             _logger.LogInformation("Mapping enabled.");
-            RaiseState(true, warning ?? "Mapping enabled.");
+            RaiseState(true, warning);
             return true;
         }
         catch (OperationCanceledException)
@@ -282,7 +282,7 @@ public sealed class MappingSession : IMappingSession
         try
         {
             _logger.LogWarning("Local mapping forced off ({Reason}).", reason);
-            RaiseState(false, $"Output forced off ({reason}).");
+            RaiseState(false, null);
         }
         catch
         {
@@ -362,7 +362,7 @@ public sealed class MappingSession : IMappingSession
             return;
         }
 
-        RaiseState(true, e.IsConnected ? "Output connected." : "Output reconnecting…");
+        RaiseState(true, e.IsConnected ? null : "Controller disconnected. Reconnecting…");
     }
 
     private void RaiseState(bool enabled, string? message)

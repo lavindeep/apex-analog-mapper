@@ -5,8 +5,8 @@
         xmlns:devicesVm="clr-namespace:ApexMapper.App.ViewModels.Devices"
         xmlns:profilesViews="clr-namespace:ApexMapper.App.Views.Profiles"
         xmlns:devicesViews="clr-namespace:ApexMapper.App.Views.Devices"
-        Title="Apex Mapper" Height="580" Width="760" MinHeight="480" MinWidth="640"
-        WindowStartupLocation="CenterScreen">
+        Title="Apex Analog Mapper" Height="680" Width="920" MinHeight="520" MinWidth="740"
+        WindowStartupLocation="CenterScreen" Style="{StaticResource {x:Type Window}}">
     <Window.Resources>
         <DataTemplate DataType="{x:Type profilesVm:ProfileSelectorViewModel}">
             <profilesViews:ProfileSelectorView />
@@ -15,41 +15,74 @@
             <devicesViews:DevicePickerView />
         </DataTemplate>
     </Window.Resources>
-    <DockPanel Margin="16">
-        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
-            <TextBlock Text="Keyboard to controller" FontSize="22" FontWeight="SemiBold" />
-            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap"
-                       Text="Select your keyboard in Devices, pin a profile in Profiles, then enable mapping. Keep this app open while playing; closing the window exits the mapper." />
-            <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" Foreground="DimGray"
-                       Text="Digital mode uses key presses and timed ramps to simulate controller input. Key travel and pressure are not measured. Calibration is not required." />
-        </StackPanel>
-        <Border DockPanel.Dock="Bottom" Margin="0,12,0,0" Padding="10" Background="#F1F3F5">
-            <StackPanel DataContext="{Binding TrayMenuViewModel}">
-                <StackPanel Orientation="Horizontal">
-                    <Button Command="{Binding ToggleEnabledCommand}" Padding="12,5">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="30,28,30,24">
+            <TextBlock Text="Apex Analog Mapper" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,24" />
+            <Border Style="{StaticResource Card}" Margin="0,0,0,18" DataContext="{Binding TrayMenuViewModel}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,22,0" VerticalAlignment="Center">
+                        <TextBlock FontSize="22" FontWeight="SemiBold">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="Stopped" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsEnabled}" Value="True">
+                                            <Setter Property="Text" Value="Running" />
+                                            <Setter Property="Foreground" Value="#18724A" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding Notice}" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="13">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Notice}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Notice}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                    <Button Grid.Column="1" VerticalAlignment="Center" MinWidth="144">
                         <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Content" Value="Enable mapping" />
+                            <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
+                                <Setter Property="Content" Value="Start" />
+                                <Setter Property="Command" Value="{Binding ToggleEnabledCommand}" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsEnabled}" Value="True">
-                                        <Setter Property="Content" Value="Disable mapping" />
+                                        <Setter Property="Content" Value="Stop" />
+                                        <Setter Property="Command" Value="{Binding PanicCommand}" />
+                                        <Setter Property="ToolTip" Value="Ctrl+Alt+F12" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Button.Style>
                     </Button>
-                    <Button Content="Panic (Ctrl+Alt+F12)" Command="{Binding PanicCommand}" Margin="8,0,0,0" Padding="12,5" />
-                </StackPanel>
-                <TextBlock Text="{Binding StatusMessage}" TextWrapping="Wrap" Margin="0,8,0,0" />
-            </StackPanel>
-        </Border>
-        <TabControl>
-            <TabItem Header="Devices">
-                <ContentControl Content="{Binding DevicePickerViewModel}" />
-            </TabItem>
-            <TabItem Header="Profiles">
-                <ContentControl Content="{Binding ProfileSelectorViewModel}" />
-            </TabItem>
-        </TabControl>
-    </DockPanel>
+                </Grid>
+            </Border>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="18" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Style="{StaticResource Card}" VerticalAlignment="Top">
+                    <ContentControl Content="{Binding DevicePickerViewModel}" />
+                </Border>
+                <Border Grid.Column="2" Style="{StaticResource Card}" VerticalAlignment="Top">
+                    <ContentControl Content="{Binding ProfileSelectorViewModel}" />
+                </Border>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
 </Window>
