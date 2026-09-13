@@ -46,8 +46,10 @@ public sealed class ViGEmXboxOutput : IControllerOutput
             _controller.AutoSubmitReport = false;
             _controller.Connect();
 
-            // Present a neutral pad the instant it appears, so a game never sees
-            // an undefined report between plug-in and the first mapped frame.
+            // ViGEmBus starts with an off-center USB report but a zeroed cache,
+            // so it discards an initial zero as unchanged. Prime one axis by
+            // one unit, then clear it to make the driver deliver neutral input.
+            ApplyReport(new Xbox360Report { LeftStickX = 1 });
             ApplyReport(default);
         }
         catch (Exception ex)

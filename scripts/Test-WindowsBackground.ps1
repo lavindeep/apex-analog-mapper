@@ -2,8 +2,8 @@
 # Requires the .NET 8 SDK on PATH. Run from any directory.
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path $PSScriptRoot -Parent
-if ($env:APEX_TEST_DESKTOP_INPUT -eq '1' -or $env:APEX_TEST_DRIVERLESS -eq '1') {
-    throw 'Unset APEX_TEST_DESKTOP_INPUT and APEX_TEST_DRIVERLESS for background testing.'
+if ($env:APEX_TEST_DESKTOP_INPUT -eq '1' -or $env:APEX_TEST_DRIVERLESS -eq '1' -or $env:APEX_TEST_LIVE_OUTPUT -eq '1') {
+    throw 'Unset APEX_TEST_DESKTOP_INPUT, APEX_TEST_DRIVERLESS and APEX_TEST_LIVE_OUTPUT for background testing.'
 }
 
 Push-Location $repository

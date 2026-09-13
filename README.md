@@ -73,7 +73,7 @@ dotnet build ApexAnalogMapper.sln -c Release
 dotnet test ApexAnalogMapper.sln -c Release --no-build
 ```
 
-Normal test runs report the desktop-injection and driver-absence tests as
+Normal test runs report desktop-injection, driver-absence and live-output tests as
 skipped. They require explicit opt-in so tests do not type into another app or
 assume a developer's machine has no driver. Composition tests use temporary
 app-data directories.
@@ -91,6 +91,12 @@ Remove-Item Env:APEX_TEST_DESKTOP_INPUT
 $env:APEX_TEST_DRIVERLESS = '1'
 dotnet test tests/ApexMapper.Output.Tests -c Release
 Remove-Item Env:APEX_TEST_DRIVERLESS
+
+# Only on an idle desktop WITH ViGEmBus and no other XInput controllers.
+# Creates a pad, checks exact neutral and nonzero reports, then removes it.
+$env:APEX_TEST_LIVE_OUTPUT = '1'
+dotnet test tests/ApexMapper.Output.Tests -c Release --filter FullyQualifiedName~ViGEmLiveOutputTests
+Remove-Item Env:APEX_TEST_LIVE_OUTPUT
 ```
 
 Synthetic injected keys do not prove physical-device mapping. Live acceptance
@@ -108,7 +114,7 @@ WiX. Use a higher numeric MSI version for an upgrade.
 ```powershell
 dotnet publish src/ApexMapper.App -c Release -r win-x64 --self-contained true -o artifacts/staging
 dotnet publish src/ApexMapper.Supervisor -c Release -r win-x64 --self-contained true -o artifacts/staging
-dotnet build installer/ApexAnalogMapper.wixproj -c Release -p:StagingDir="$PWD/artifacts/staging" -p:ProductVersion=0.1.1
+dotnet build installer/ApexAnalogMapper.wixproj -c Release -p:StagingDir="$PWD/artifacts/staging" -p:ProductVersion=0.1.2
 ```
 
 The tag-driven release workflow builds the MSI and SHA-256 manifest. Public
