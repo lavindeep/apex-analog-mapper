@@ -16,6 +16,8 @@ namespace ApexMapper.Core.Pipeline;
 /// 0/1 step would be a no-op (it can only remap the two endpoints). Ramping first turns the step
 /// into a smooth ramp the curve can actually shape, then SOCD resolves the two ramped/shaped sides
 /// of an axis pair into a single signed value.
+/// Analog input bypasses press ramps. Its optional release ramp runs after
+/// shaping and SOCD, while gates and conflicting directions remain immediate.
 /// </remarks>
 public sealed class BindingPipeline
 {
@@ -27,6 +29,10 @@ public sealed class BindingPipeline
     private readonly Ramp[] _axisNegRamps;
     private readonly Ramp[] _axisPosRamps;
     private readonly SocdState[] _axisSocd;
+    private readonly AnalogReturn[] _singleAnalogReturns;
+    private readonly AnalogReturn[] _axisAnalogReturns;
+    private readonly byte[] _axisAnalogSources;
+    private long _storeResetGeneration;
 
     public BindingPipeline(
         IReadOnlyList<SingleKeyBinding> singles,
@@ -38,6 +44,9 @@ public sealed class BindingPipeline
         _axisNegRamps = _axes.Select(b => new Ramp(b.PressRampMs, b.ReleaseRampMs)).ToArray();
         _axisPosRamps = _axes.Select(b => new Ramp(b.PressRampMs, b.ReleaseRampMs)).ToArray();
         _axisSocd = new SocdState[_axes.Length];
+        _singleAnalogReturns = new AnalogReturn[_singles.Length];
+        _axisAnalogReturns = new AnalogReturn[_axes.Length];
+        _axisAnalogSources = new byte[_axes.Length];
     }
 
     /// <summary>
@@ -63,6 +72,12 @@ public sealed class BindingPipeline
         long startTicks = measure ? Stopwatch.GetTimestamp() : 0;
 
         pad.Reset();
+        var resetGeneration = store.ResetGeneration;
+        if (resetGeneration != _storeResetGeneration)
+        {
+            ResetAnalogReturns();
+            _storeResetGeneration = resetGeneration;
+        }
 
         for (var i = 0; i < _singles.Length; i++)
         {
@@ -70,6 +85,14 @@ public sealed class BindingPipeline
             var state = store.Get(b.Source);
             var value = ResolveValue(state, _singleRamps[i], dtMs);
             var shaped = b.Curve.Map(value);
+            if (state.Source == KeyProvenance.Analog
+                && b.Target is BindingTarget.LeftStickX or BindingTarget.LeftStickY
+                    or BindingTarget.RightStickX or BindingTarget.RightStickY
+                    or BindingTarget.LeftTrigger or BindingTarget.RightTrigger
+                && !store.IsGated(b.Source))
+                shaped = ReturnAnalog(ref _singleAnalogReturns[i], shaped, b.ReleaseRampMs, dtMs);
+            else
+                _singleAnalogReturns[i] = default;
             ApplyTarget(b.Target, shaped, ref pad);
         }
 
@@ -96,6 +119,18 @@ public sealed class BindingPipeline
             var posShaped = b.Curve.Map(posValue);
 
             var signed = SocdResolver.Resolve(b.Socd, negShaped, posShaped, ref _axisSocd[i]);
+            var sources = (byte)((negState.Source == KeyProvenance.Analog ? 1 : 0)
+                | (posState.Source == KeyProvenance.Analog ? 2 : 0));
+            if (sources != _axisAnalogSources[i]) _axisAnalogReturns[i] = default;
+            _axisAnalogSources[i] = sources;
+            var analog = sources != 0
+                && (negState.Source == KeyProvenance.Analog || negValue == 0f)
+                && (posState.Source == KeyProvenance.Analog || posValue == 0f);
+            var neutralConflict = signed == 0f && negShaped > 0f && posShaped > 0f;
+            if (analog && !neutralConflict && !store.IsGated(b.NegativeKey) && !store.IsGated(b.PositiveKey))
+                signed = ReturnAnalog(ref _axisAnalogReturns[i], signed, b.ReleaseRampMs, dtMs);
+            else
+                _axisAnalogReturns[i] = default;
             switch (b.Target)
             {
                 case BindingTarget.LeftStickX: pad.LeftStickX = signed; break;
@@ -111,10 +146,50 @@ public sealed class BindingPipeline
     {
         if (state.Source == KeyProvenance.Analog)
         {
+            ramp.Reset();
             return state.Value;
         }
         ramp.Update(state.Value > 0.5f, dtMs);
         return ramp.Value;
+    }
+
+    // Sensor increases and direction changes stay immediate. Only return
+    // motion is limited, after shaping and SOCD, in full-scale units per ms.
+    private struct AnalogReturn
+    {
+        public float Value;
+        public float Target;
+    }
+
+    private static float ReturnAnalog(ref AnalogReturn history, float target, float releaseMs, float dtMs)
+    {
+        var value = target;
+        if (releaseMs > 0f && float.IsFinite(releaseMs) && float.IsFinite(dtMs)
+            && MathF.Abs(target) < MathF.Abs(history.Value)
+            && MathF.Abs(target) <= MathF.Abs(history.Target) && history.Value * target >= 0f)
+        {
+            var magnitude = MathF.Max(MathF.Abs(target), MathF.Abs(history.Value) - MathF.Max(0f, dtMs) / releaseMs);
+            value = MathF.CopySign(magnitude, history.Value);
+        }
+        history.Value = value;
+        history.Target = target;
+        return value;
+    }
+
+    internal void Reset()
+    {
+        foreach (var ramp in _singleRamps) ramp.Reset();
+        foreach (var ramp in _axisNegRamps) ramp.Reset();
+        foreach (var ramp in _axisPosRamps) ramp.Reset();
+        Array.Clear(_axisSocd);
+        ResetAnalogReturns();
+    }
+
+    internal void ResetAnalogReturns()
+    {
+        Array.Clear(_singleAnalogReturns);
+        Array.Clear(_axisAnalogReturns);
+        Array.Clear(_axisAnalogSources);
     }
 
     private static void ApplyTarget(BindingTarget target, float value, ref VirtualPadState pad)

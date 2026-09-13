@@ -51,6 +51,21 @@ internal sealed class HidSharpStreamAdapter : IHidStream
         }
     }
 
+    public void Write(ReadOnlySpan<byte> buffer)
+    {
+        if (buffer.IsEmpty) return;
+        var rented = ArrayPool<byte>.Shared.Rent(buffer.Length);
+        try
+        {
+            buffer.CopyTo(rented);
+            _stream.Write(rented, 0, buffer.Length);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
     public void GetFeature(Span<byte> buffer)
     {
         if (buffer.Length == 0)

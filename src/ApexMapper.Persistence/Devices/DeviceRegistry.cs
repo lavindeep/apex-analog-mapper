@@ -8,6 +8,9 @@ public sealed record DeviceRegistry(
     DeviceIdentity? SelectedDevice,
     IReadOnlyList<KeyCalibration> Calibrations)
 {
+    public string? CalibrationDeviceId { get; init; }
+    public string? CalibrationFirmware { get; init; }
+
     public const int CurrentSchemaVersion = 1;
     public const int DefaultBackupCount = 5;
 

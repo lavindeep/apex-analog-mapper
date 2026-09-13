@@ -35,9 +35,9 @@
                 </Style>
             </TextBlock.Style>
         </TextBlock>
+        <Button Content="Calibrate keys" Click="CalibrateKeys" HorizontalAlignment="Left" Margin="0,14,0,0" />
         <Expander Header="Advanced" Margin="0,18,0,0">
             <StackPanel Margin="0,12,0,0">
-                <TextBlock Text="Input uses key presses and timed ramps." Style="{StaticResource Caption}" Margin="0,0,0,14" />
                 <TextBlock Text="Input source" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,7" />
                 <ComboBox ItemsSource="{Binding SelectedKeyboard.Sources}" SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
                           ItemContainerStyle="{StaticResource ConnectedChoice}"

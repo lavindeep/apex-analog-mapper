@@ -5,7 +5,10 @@
         <TextBlock Text="Profile" Style="{StaticResource SectionTitle}" />
         <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding Selected, Mode=TwoWay}"
                   DisplayMemberPath="DisplayName" Margin="0,9,0,18" AutomationProperties.Name="Profile" />
-        <TextBlock Text="Bindings" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,10" />
+        <DockPanel Margin="0,0,0,10">
+            <Button Content="Edit bindings" DockPanel.Dock="Right" Click="EditBindings" Padding="10,6" />
+            <TextBlock Text="Bindings" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center" />
+        </DockPanel>
         <ItemsControl ItemsSource="{Binding BindingSummary}">
             <ItemsControl.ItemTemplate>
                 <DataTemplate>

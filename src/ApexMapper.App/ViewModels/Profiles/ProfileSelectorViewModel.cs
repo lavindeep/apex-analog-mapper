@@ -78,6 +78,14 @@ public sealed class ProfileSelectorViewModel : ObservableViewModel
     public IRelayCommand<string> PinCommand { get; }
     public IRelayCommand UnpinCommand { get; }
 
+    public Profile? SelectedProfile => _loadedProfiles.FirstOrDefault(profile => profile.Id == CurrentProfileId);
+
+    public void SaveBindings(Profile profile)
+    {
+        _store.Save(profile);
+        LoadFromStore();
+    }
+
     private void ExecuteRefresh() => LoadFromStore();
 
     private void ExecutePin(string? profileId)

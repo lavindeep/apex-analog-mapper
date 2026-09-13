@@ -77,6 +77,12 @@ public sealed class DevicePickerViewModel : ObservableViewModel
     private void ApplySnapshot(IReadOnlyList<DeviceFacadeEntry> entries)
     {
         var previousKeyboardId = _selectedKeyboard?.Id;
+        // Clear both selection boxes before replacing their item collections.
+        // Otherwise a refresh can keep SelectedItem while blanking its text.
+        _primary = null;
+        OnPropertyChanged(nameof(SelectedSource));
+        _selectedKeyboard = null;
+        OnPropertyChanged(nameof(SelectedKeyboard));
         var previous = _devices.ToDictionary(item => item.Id);
         var current = new HashSet<Guid>();
         foreach (var entry in entries)

@@ -13,7 +13,7 @@ public sealed record BindingSummaryItem(string Input, string Output)
                 $"{KeyName(binding.NegativeKey)} / {KeyName(binding.PositiveKey)}", TargetName(binding.Target))))
             .ToArray();
 
-    private static string KeyName(KeyId key) => key.ScanCode switch
+    internal static string KeyName(KeyId key) => key.ScanCode switch
     {
         0x01 => "Esc",
         >= 0x02 and <= 0x0A => (key.ScanCode - 1).ToString(),
@@ -40,7 +40,7 @@ public sealed record BindingSummaryItem(string Input, string Output)
         _ => $"Scan code {key}",
     };
 
-    private static string TargetName(BindingTarget target) => target switch
+    internal static string TargetName(BindingTarget target) => target switch
     {
         BindingTarget.LeftStickX => "Left stick X",
         BindingTarget.LeftStickY => "Left stick Y",

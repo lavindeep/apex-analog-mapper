@@ -10,6 +10,10 @@ public sealed class InputHost : IAsyncDisposable
 {
     private readonly IRawInputAdapter _rawInput;
     private readonly IHidAnalogProbe? _hidProbe;
+    private readonly IAnalogInputSource? _analogInput;
+    // Raw removal is authoritative while HID enumeration catches up.
+    // Guarded by _deviceIdsLock, cleared by explicit selection or reattach.
+    private string? _removedAnalogDevicePath;
     private readonly DeviceSelector _deviceSelector;
     private readonly SpscRingBuffer<RawKeyEvent> _ring;
     private readonly KeyStateStore _store;
@@ -45,17 +49,19 @@ public sealed class InputHost : IAsyncDisposable
         DeviceSelector deviceSelector,
         SpscRingBuffer<RawKeyEvent> ring,
         KeyStateStore store,
-        ILogSink? log = null)
+        ILogSink? log = null,
+        IAnalogInputSource? analogInput = null)
     {
         _rawInput = rawInput ?? throw new ArgumentNullException(nameof(rawInput));
         _hidProbe = hidProbe;
+        _analogInput = analogInput;
         _deviceSelector = deviceSelector ?? throw new ArgumentNullException(nameof(deviceSelector));
         _ring = ring ?? throw new ArgumentNullException(nameof(ring));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _log = log;
 
         _digitalStatus = _rawInput.Status;
-        _analogStatus = _hidProbe?.Status ?? BackendStatus.Stopped;
+        _analogStatus = _analogInput?.Status ?? _hidProbe?.Status ?? BackendStatus.Stopped;
 
         _rawInput.StatusChanged += OnRawStatusChanged;
         _rawInput.DeviceChanged += OnRawDeviceChanged;
@@ -64,11 +70,16 @@ public sealed class InputHost : IAsyncDisposable
         {
             _hidProbe.StatusChanged += OnHidStatusChanged;
         }
+        if (_analogInput is not null)
+        {
+            _analogInput.StatusChanged += OnAnalogStatusChanged;
+        }
     }
 
     public BackendStatus DigitalStatus => _digitalStatus;
     public BackendStatus AnalogStatus => _analogStatus;
     public string? AnalogFallbackReason => _analogFallbackReason;
+    public string? AnalogReadinessError => _analogInput?.ReadinessError;
 
     // Number of raw-input events the ring has dropped because it was full — a
     // sign the tick loop is not draining fast enough. Surfaces the otherwise
@@ -79,7 +90,18 @@ public sealed class InputHost : IAsyncDisposable
 
     public async Task StartAsync(CancellationToken ct)
     {
+        UpdateSelectedDeviceId(updateAnalog: true);
         await _rawInput.StartAsync(ct).ConfigureAwait(false);
+
+        if (_analogInput is not null)
+        {
+            try { await _analogInput.StartAsync(ct).ConfigureAwait(false); }
+            catch (Exception ex)
+            {
+                OnAnalogStatusChanged(this, new BackendStatusChanged(
+                    BackendKind.HidAnalog, BackendStatus.FaultedAnalog, ex.Message));
+            }
+        }
 
         if (_hidProbe is not null)
         {
@@ -99,6 +121,13 @@ public sealed class InputHost : IAsyncDisposable
 
     public async Task StopAsync(CancellationToken ct)
     {
+        if (_analogInput is not null)
+        {
+            try { await _analogInput.StopAsync(ct).ConfigureAwait(false); }
+            catch (Exception ex) { _log?.Warn("analog input stop failed: " + ex.Message); }
+            finally { _store.GateHeldKeys(KeyProvenance.Analog); }
+        }
+
         if (_hidProbe is not null)
         {
             try
@@ -139,6 +168,8 @@ public sealed class InputHost : IAsyncDisposable
             // pressed writes (including auto-repeat downs) and a key-up
             // clears the gate.
             var keyId = KeyId.FromScanCode(ev.ScanCode);
+            // Raw releases must not clear an analog key's held-key gate.
+            if (_analogInput?.OwnsKey(keyId) == true) continue;
             _store.Set(keyId, ev.IsDown ? 1f : 0f, KeyProvenance.Digital);
         }
 
@@ -160,6 +191,7 @@ public sealed class InputHost : IAsyncDisposable
         }
         // A producer may overflow while this batch is being drained.
         RecoverOverflow();
+        _analogInput?.ApplyTo(_store);
         return drained;
     }
 
@@ -195,6 +227,10 @@ public sealed class InputHost : IAsyncDisposable
         {
             _hidProbe.StatusChanged -= OnHidStatusChanged;
         }
+        if (_analogInput is not null)
+        {
+            _analogInput.StatusChanged -= OnAnalogStatusChanged;
+        }
 
         try
         {
@@ -209,12 +245,27 @@ public sealed class InputHost : IAsyncDisposable
         {
             try { await _hidProbe.DisposeAsync().ConfigureAwait(false); } catch { /* swallow */ }
         }
+        if (_analogInput is not null)
+        {
+            try { await _analogInput.DisposeAsync().ConfigureAwait(false); } catch { /* swallow */ }
+        }
         try { await _rawInput.DisposeAsync().ConfigureAwait(false); } catch { /* swallow */ }
     }
 
     private void OnRawStatusChanged(object? sender, BackendStatusChanged e)
     {
         _digitalStatus = e.Status;
+        StatusChanged?.Invoke(this, e);
+    }
+
+    private void OnAnalogStatusChanged(object? sender, BackendStatusChanged e)
+    {
+        _analogStatus = e.Status;
+        _analogFallbackReason = e.Reason;
+        if (e.Status is BackendStatus.Stopped or BackendStatus.FaultedAnalog)
+        {
+            _store.GateHeldKeys(KeyProvenance.Analog);
+        }
         StatusChanged?.Invoke(this, e);
     }
 
@@ -247,6 +298,14 @@ public sealed class InputHost : IAsyncDisposable
     {
         lock (_deviceIdsLock)
         {
+            // Resolve against the selector's current device before purging the
+            // map. Its selection can already have changed while the matching
+            // host callback waits for this lock, leaving _selectedDeviceId old.
+            var selected = _deviceSelector.SelectedDevice;
+            var removedSelection = !e.Attached && selected is not null &&
+                ((e.DevicePath.Length != 0 && string.Equals(
+                    e.DevicePath, selected.DevicePath, StringComparison.OrdinalIgnoreCase)) ||
+                 (e.DeviceId != 0 && e.DeviceId == ResolveDeviceId(selected)));
             if (e.Attached)
             {
                 if (e.DevicePath.Length != 0)
@@ -276,21 +335,15 @@ public sealed class InputHost : IAsyncDisposable
                     }
                 }
             }
-        }
-
-        if (!e.Attached && IsSelectedDevice(e))
-        {
-            // Fail-safe: stop admitting the vanished unit's events NOW. The
-            // HID enumerator can lag the raw-input removal, so the Refresh
-            // below may keep the selection alive; a later Refresh or attach
-            // reconciles and re-publishes the id. Publish the drop before
-            // sweeping so no event admitted after the sweep can re-latch.
-            _selectedDeviceId = 0;
-
-            // The selected device vanishing mid-press must not leave keys
-            // latched. A non-selected keyboard unplugging is not a mapping
-            // transition and must not zero live input.
-            _store.GateHeldKeys();
+            if (removedSelection)
+            {
+                // Use the same selection snapshot we matched, so a concurrent
+                // selection cannot tombstone a different, still-live keyboard.
+                _removedAnalogDevicePath = selected!.DevicePath;
+                _analogInput?.SelectDevice(null);
+                _selectedDeviceId = 0;
+                _store.GateHeldKeys();
+            }
         }
 
         try { _deviceSelector.Refresh(); }
@@ -299,11 +352,29 @@ public sealed class InputHost : IAsyncDisposable
         // Bind the id even when the refresh produced no topology delta — the
         // selected device may have been restored silently at Initialize and
         // only now announced by the adapter.
-        UpdateSelectedDeviceId();
+        lock (_deviceIdsLock)
+        {
+            if (e.Attached && string.Equals(e.DevicePath, _removedAnalogDevicePath, StringComparison.OrdinalIgnoreCase))
+            {
+                _removedAnalogDevicePath = null;
+                UpdateSelectedDeviceId(updateAnalog: true);
+            }
+            else
+            {
+                UpdateSelectedDeviceId();
+            }
+        }
     }
 
     private void OnDeviceTopologyChanged(object? sender, DeviceTopologyChanged e)
     {
+        if (_analogInput is not null && e.ChangeKind == DeviceTopologyChangeKind.Attached &&
+            !Equals(e.Device, _deviceSelector.SelectedDevice))
+        {
+            UpdateSelectedDeviceId();
+            return;
+        }
+
         switch (e.ChangeKind)
         {
             case DeviceTopologyChangeKind.Attached:
@@ -321,29 +392,18 @@ public sealed class InputHost : IAsyncDisposable
                 // Drain's own post-loop re-sweep. Sweep-before-publish would
                 // leave a window where a stale-id down lands after the sweep
                 // and latches.
-                UpdateSelectedDeviceId();
+                lock (_deviceIdsLock)
+                {
+                    if (e.ChangeKind == DeviceTopologyChangeKind.Selected)
+                        _removedAnalogDevicePath = null;
+                    UpdateSelectedDeviceId(updateAnalog: true);
+                }
                 _store.GateHeldKeys();
                 break;
         }
     }
 
-    private bool IsSelectedDevice(RawInputDeviceChanged e)
-    {
-        var selectedId = _selectedDeviceId;
-        if (e.DeviceId != 0 && e.DeviceId == selectedId)
-        {
-            return true;
-        }
-
-        // Windows removals may only carry the id (the path is often gone by
-        // the time we query it); fakes and legacy sources may only carry the
-        // path. Either credential identifies the selected device.
-        return e.DevicePath.Length != 0 &&
-            _deviceSelector.SelectedDevice is { } selected &&
-            string.Equals(selected.DevicePath, e.DevicePath, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private void UpdateSelectedDeviceId()
+    private void UpdateSelectedDeviceId(bool updateAnalog = false)
     {
         // Recompute-and-publish is serialized under the map lock: this runs
         // on the adapter's pump thread and on the UI thread, and without the
@@ -352,9 +412,16 @@ public sealed class InputHost : IAsyncDisposable
         // path — Drain only reads the volatile field.
         lock (_deviceIdsLock)
         {
-            _selectedDeviceId = _deviceSelector.SelectedDevice is { } selected
-                ? ResolveDeviceId(selected)
-                : 0;
+            var selected = _deviceSelector.SelectedDevice;
+            var removed = selected is not null && string.Equals(
+                selected.DevicePath, _removedAnalogDevicePath, StringComparison.OrdinalIgnoreCase);
+            if (updateAnalog)
+            {
+                _analogInput?.SelectDevice(removed ? null : selected);
+            }
+            _selectedDeviceId = selected is null || (_analogInput is not null && removed)
+                ? 0
+                : ResolveDeviceId(selected);
         }
     }
 

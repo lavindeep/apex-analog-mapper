@@ -34,6 +34,7 @@ public sealed class MappingSessionTests
         public int DisconnectCalls { get; private set; }
         public int PanicCalls { get; private set; }
         public Exception? ThrowOnDisconnect { get; set; }
+        public Action? OnConnectEntered { get; set; }
 
         /// <summary>Invoked at the moment DisconnectAsync is entered — lets a
         /// test snapshot engine/store state to prove the local-off ran first.</summary>
@@ -49,6 +50,7 @@ public sealed class MappingSessionTests
         public Task ConnectAsync(CancellationToken ct)
         {
             ConnectCalls++;
+            OnConnectEntered?.Invoke();
             return Task.CompletedTask;
         }
 
@@ -143,7 +145,8 @@ public sealed class MappingSessionTests
         bool confirmAnswer = true,
         Func<string, string, bool>? confirm = null,
         Microsoft.Extensions.Logging.ILogger<MappingSession>? logger = null,
-        bool inputStarted = true)
+        bool inputStarted = true,
+        Func<string?>? inputReadiness = null)
     {
         var store = new KeyStateStore(new KeyIndex(new[] { Throttle }));
         var engine = new MappingEngine(store, new NullSink());
@@ -170,7 +173,8 @@ public sealed class MappingSessionTests
                 prompts.Add(message);
                 return confirmAnswer;
             }),
-            logger ?? NullLogger<MappingSession>.Instance);
+            logger ?? NullLogger<MappingSession>.Instance,
+            inputReadiness);
         if (inputStarted) session.CompleteInputStartup();
         session.StateChanged += (_, e) => states.Add(e);
 
@@ -399,7 +403,7 @@ public sealed class MappingSessionTests
     // ---------------------------------------------------------------------------
 
     [Fact]
-    public async Task Supervisor_disconnect_while_enabled_surfaces_a_reconnecting_state()
+    public async Task Supervisor_disconnect_while_enabled_turns_mapping_off()
     {
         var h = Build();
         await h.Session.EnableAsync(CancellationToken.None);
@@ -408,12 +412,14 @@ public sealed class MappingSessionTests
         h.Channel.RaiseStatus(connected: false, error: "pipe broken");
 
         var state = h.States.Should().ContainSingle().Subject;
-        state.IsEnabled.Should().BeTrue("the user's enable still stands; only connectivity dropped");
-        state.Message.Should().ContainEquivalentOf("reconnecting");
+        state.IsEnabled.Should().BeFalse();
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Engine.IsEnabled.Should().BeFalse();
+        state.Message.Should().ContainEquivalentOf("disconnected");
     }
 
     [Fact]
-    public async Task Supervisor_reconnect_while_enabled_surfaces_a_connected_state()
+    public async Task Supervisor_reconnect_does_not_restart_mapping()
     {
         var h = Build();
         await h.Session.EnableAsync(CancellationToken.None);
@@ -422,9 +428,9 @@ public sealed class MappingSessionTests
 
         h.Channel.RaiseStatus(connected: true, error: null);
 
-        var state = h.States.Should().ContainSingle().Subject;
-        state.IsEnabled.Should().BeTrue();
-        state.Message.Should().BeNull();
+        h.States.Should().BeEmpty();
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Engine.IsEnabled.Should().BeFalse();
     }
 
     [Fact]
@@ -666,5 +672,97 @@ public sealed class MappingSessionTests
         h.Channel.ConnectCalls.Should().Be(0);
         h.States.Should().OnlyContain(state => !state.IsEnabled);
         h.States.Last().Message.Should().Be($"Cannot enable: {expectedMessage}");
+    }
+
+    [Fact]
+    public async Task Analog_readiness_blocks_enable_before_starting_output()
+    {
+        var h = Build(inputReadiness: () => "Calibrate the selected keyboard first.");
+
+        var enabled = await h.Session.EnableAsync(CancellationToken.None);
+
+        enabled.Should().BeFalse();
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Engine.IsEnabled.Should().BeFalse();
+        h.Preflight.Runs.Should().Be(0);
+        h.Launcher.Calls.Should().Be(0);
+        h.Channel.ConnectCalls.Should().Be(0);
+        h.States.Last().Message.Should().Be("Calibrate the selected keyboard first.");
+    }
+
+    [Fact]
+    public async Task Analog_readiness_lost_during_connect_unwinds_enable()
+    {
+        string? readiness = null;
+        var h = Build(inputReadiness: () => readiness);
+        h.Store.Set(Throttle, 0.4f, KeyProvenance.Analog);
+        h.Channel.OnConnectEntered = () => readiness = "Selected keyboard disconnected.";
+        h.Channel.OnDisconnectEntered = () =>
+        {
+            h.Engine.IsEnabled.Should().BeFalse();
+            h.Store.Get(Throttle).Value.Should().Be(0f);
+        };
+
+        var enabled = await h.Session.EnableAsync(CancellationToken.None);
+
+        enabled.Should().BeFalse();
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Engine.IsEnabled.Should().BeFalse();
+        h.Store.IsGated(Throttle).Should().BeTrue();
+        h.Channel.ConnectCalls.Should().Be(1);
+        h.Channel.DisconnectCalls.Should().Be(1);
+        h.Channel.IsConnected.Should().BeFalse();
+        h.States.Should().OnlyContain(state => !state.IsEnabled);
+    }
+
+    [Fact]
+    public async Task Nested_calibration_scopes_block_enable_until_each_is_closed_once()
+    {
+        var h = Build();
+        (await h.Session.EnableAsync(CancellationToken.None)).Should().BeTrue();
+        h.Store.Set(Throttle, 0.4f, KeyProvenance.Analog);
+
+        using var first = h.Session.BlockForInputEditing();
+        using var second = h.Session.BlockForInputEditing();
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Engine.IsEnabled.Should().BeFalse();
+        h.Store.Get(Throttle).Value.Should().Be(0f);
+        (await h.Session.EnableAsync(CancellationToken.None)).Should().BeFalse();
+
+        first.Dispose();
+        first.Dispose();
+        (await h.Session.EnableAsync(CancellationToken.None)).Should().BeFalse();
+        h.Channel.ConnectCalls.Should().Be(1);
+
+        second.Dispose();
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Engine.IsEnabled.Should().BeFalse();
+        (await h.Session.EnableAsync(CancellationToken.None)).Should().BeTrue();
+
+        second.Dispose();
+        using var later = h.Session.BlockForInputEditing();
+        (await h.Session.EnableAsync(CancellationToken.None)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Calibration_opened_and_closed_during_connect_still_cancels_enable()
+    {
+        var h = Build();
+        h.Channel.OnConnectEntered = () =>
+        {
+            using var calibration = h.Session.BlockForInputEditing();
+        };
+
+        var enabled = await h.Session.EnableAsync(CancellationToken.None);
+
+        enabled.Should().BeFalse();
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Engine.IsEnabled.Should().BeFalse();
+        h.Channel.IsConnected.Should().BeFalse();
+        h.Channel.DisconnectCalls.Should().Be(1);
+        h.States.Should().OnlyContain(state => !state.IsEnabled);
+
+        h.Channel.OnConnectEntered = null;
+        (await h.Session.EnableAsync(CancellationToken.None)).Should().BeTrue();
     }
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ApexMapper.Core.Engine;
 using ApexMapper.Core.Keys;
 using ApexMapper.Output.Detection;
@@ -21,7 +22,7 @@ namespace ApexMapper.App.Services;
 /// must consult the same detector and skip enabling entirely on a
 /// DisableAutoEnable verdict.
 /// </summary>
-public sealed class MappingSession : IMappingSession
+public sealed class MappingSession : IMappingSession, IDisposable
 {
     private readonly KeyStateStore _store;
     private readonly MappingEngine _engine;
@@ -33,6 +34,16 @@ public sealed class MappingSession : IMappingSession
     private readonly IForegroundWatcher _foreground;
     private readonly Func<string, string, bool> _confirm;
     private readonly ILogger<MappingSession> _logger;
+    private readonly Func<string?> _inputReadiness;
+    private readonly IGameSelection? _gameSelection;
+    private readonly IKeyboardSuppression? _keyboardSuppression;
+    private readonly Func<IReadOnlyCollection<KeyId>> _suppressionKeys;
+    private readonly Func<IReadOnlyCollection<KeyId>> _mappedKeys;
+    private IDisposable? _suppressionLease;
+    private int _inputEditors;
+    private int _starting;
+    private int _channelArmed;
+    private int _disposed;
     private readonly SemaphoreSlim _transition = new(1, 1);
 
     private volatile bool _enabled;
@@ -61,7 +72,12 @@ public sealed class MappingSession : IMappingSession
         ISupervisorProcessLauncher launcher,
         IForegroundWatcher foreground,
         Func<string, string, bool> confirm,
-        ILogger<MappingSession> logger)
+        ILogger<MappingSession> logger,
+        Func<string?>? inputReadiness = null,
+        IGameSelection? gameSelection = null,
+        IKeyboardSuppression? keyboardSuppression = null,
+        Func<IReadOnlyCollection<KeyId>>? suppressionKeys = null,
+        Func<IReadOnlyCollection<KeyId>>? mappedKeys = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
@@ -73,17 +89,37 @@ public sealed class MappingSession : IMappingSession
         _foreground = foreground ?? throw new ArgumentNullException(nameof(foreground));
         _confirm = confirm ?? throw new ArgumentNullException(nameof(confirm));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-        // Surface supervisor connectivity so an enabled-but-disconnected session
-        // is visible (the channel retries forever in the background). Both the
-        // session and the channel are app-lifetime singletons, so this handler
-        // never needs unsubscribing. No auto-relaunch here — surfacing only;
-        // a future follow-up may add a relaunch affordance if the supervisor
-        // process itself has died rather than just the pipe.
+        _inputReadiness = inputReadiness ?? (() => null);
+        _gameSelection = gameSelection;
+        _keyboardSuppression = keyboardSuppression;
+        _suppressionKeys = suppressionKeys ?? (() => Array.Empty<KeyId>());
+        _mappedKeys = mappedKeys ?? (() => Array.Empty<KeyId>());
         _channel.StatusChanged += OnChannelStatusChanged;
+        if (_gameSelection is not null) _gameSelection.Changed += OnGameChanged;
+        if (_keyboardSuppression is not null) _keyboardSuppression.Faulted += OnSuppressionFaulted;
     }
 
     public bool IsEnabled => _enabled;
+
+    internal IDisposable BlockForInputEditing()
+    {
+        Interlocked.Increment(ref _inputEditors);
+        ForceLocalOff("Input editor opened.");
+        return new InputEditLease(this);
+    }
+
+    private string? InputReadiness() => Volatile.Read(ref _inputEditors) > 0
+        ? "Close the editor before starting." : _inputReadiness();
+
+    private sealed class InputEditLease(MappingSession owner) : IDisposable
+    {
+        private MappingSession? _owner = owner;
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _owner, null) is { } session)
+                Interlocked.Decrement(ref session._inputEditors);
+        }
+    }
 
     public event EventHandler<MappingSessionStateChangedEventArgs>? StateChanged;
 
@@ -105,6 +141,8 @@ public sealed class MappingSession : IMappingSession
         var panicGenerationAtEntry = Volatile.Read(ref _panicGeneration);
 
         await _transition.WaitAsync(ct).ConfigureAwait(false);
+        var connectionAttempted = false;
+        var completed = false;
         try
         {
             if (_enabled)
@@ -112,9 +150,30 @@ public sealed class MappingSession : IMappingSession
                 return true;
             }
 
+            Volatile.Write(ref _starting, 1);
+            using var cancellation = ct.Register(() => ForceLocalOff("Start cancelled."));
+            ct.ThrowIfCancellationRequested();
+            if (Volatile.Read(ref _disposed) != 0
+                || Volatile.Read(ref _panicGeneration) != panicGenerationAtEntry)
+                return false;
+
             if (_inputStartupBlocker is { } inputBlocker)
             {
                 RaiseState(false, $"Cannot enable: {inputBlocker}");
+                return false;
+            }
+
+            GameProcess? selectedGame = null;
+            var gameError = _gameSelection?.ValidateSelectedGame(out selectedGame);
+            if (gameError is not null || (_keyboardSuppression is not null && selectedGame is null))
+            {
+                RaiseState(false, gameError ?? "Choose a running game before starting.");
+                return false;
+            }
+
+            if (InputReadiness() is { } readinessError)
+            {
+                RaiseState(false, readinessError);
                 return false;
             }
 
@@ -161,8 +220,48 @@ public sealed class MappingSession : IMappingSession
                 return false;
             }
 
-            // 5. Channel on (background reconnect), engine last.
+            // ConnectAsync starts a background connection attempt. Wait for an
+            // actual ready channel before suppressing any physical key.
+            connectionAttempted = true;
             await _channel.ConnectAsync(ct).ConfigureAwait(false);
+            var connectedAt = Stopwatch.GetTimestamp();
+            while (!_channel.IsConnected)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (Volatile.Read(ref _panicGeneration) != panicGenerationAtEntry)
+                    return false;
+                if (Stopwatch.GetElapsedTime(connectedAt) >= TimeSpan.FromSeconds(5))
+                {
+                    RaiseState(false, "Controller did not connect. Start again.");
+                    return false;
+                }
+                await Task.Delay(25, ct).ConfigureAwait(false);
+            }
+            Volatile.Write(ref _channelArmed, 1);
+            if (ActivationError(panicGenerationAtEntry, selectedGame) is { } activationError)
+            {
+                RaiseState(false, activationError);
+                return false;
+            }
+
+            if (_keyboardSuppression is not null)
+            {
+                var analogKeys = _suppressionKeys().ToArray();
+                var digitalKeys = _mappedKeys().Except(analogKeys).ToArray();
+                // Native startup is bounded but must not block the UI's Stop.
+                // Always observe the result, even after cancellation, so its
+                // lease can be released by the generation check below.
+                var lease = await Task.Run(() => _keyboardSuppression.Enable(selectedGame!.ProcessId, analogKeys, digitalKeys))
+                    .ConfigureAwait(false);
+                Interlocked.Exchange(ref _suppressionLease, lease)?.Dispose();
+            }
+
+            ct.ThrowIfCancellationRequested();
+            if (ActivationError(panicGenerationAtEntry, selectedGame) is { } errorBeforeArming)
+            {
+                RaiseState(false, errorBeforeArming);
+                return false;
+            }
 
             // Every Off->On transition ignores currently-held mapped keys until
             // they release once: a key first pressed while OFF and still down at
@@ -179,32 +278,17 @@ public sealed class MappingSession : IMappingSession
             // goes through a full fence: the arm's release-stores could
             // otherwise reorder past a plain load on x64, letting a panic in
             // the arm-to-recheck window slip the check.
-            if (Interlocked.CompareExchange(ref _panicGeneration, 0, 0) != panicGenerationAtEntry)
+            ct.ThrowIfCancellationRequested();
+            if (ActivationError(panicGenerationAtEntry, selectedGame) is { } errorAfterArming)
             {
-                _engine.SetEnabled(false);
-                _store.GateHeldKeys();
-                _enabled = false;
-
-                try
-                {
-                    await _channel.DisconnectAsync(ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Channel disconnect failed while unwinding an enable that raced a panic.");
-                }
-
-                _logger.LogWarning("Enable unwound: a panic fired during the enable flow; output stays off.");
-                RaiseState(false, null);
+                _logger.LogWarning("Enable cancelled: input changed or Stop was pressed.");
+                RaiseState(false, errorAfterArming);
                 return false;
             }
 
             _logger.LogInformation("Mapping enabled.");
             RaiseState(true, warning);
+            completed = true;
             return true;
         }
         catch (OperationCanceledException)
@@ -213,6 +297,7 @@ public sealed class MappingSession : IMappingSession
         }
         catch (Exception ex)
         {
+            StopLocalOutput();
             // Contract: EnableAsync never throws — a failed enable leaves the
             // session disabled with the failure surfaced.
             _logger.LogError(ex, "Enable failed unexpectedly.");
@@ -221,27 +306,29 @@ public sealed class MappingSession : IMappingSession
         }
         finally
         {
+            if (connectionAttempted && !completed)
+            {
+                StopLocalOutput();
+                await DisconnectAfterFailedStartAsync().ConfigureAwait(false);
+            }
+            Volatile.Write(ref _starting, 0);
             _transition.Release();
         }
     }
 
     public async Task DisableAsync(CancellationToken ct)
     {
+        var hadWork = _enabled || Volatile.Read(ref _starting) != 0;
+        // Stop cannot queue behind a native filter startup or a slow connection.
+        StopLocalOutput();
+        if (!hadWork) return;
+        RaiseState(false, null);
+
         await _transition.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            if (!_enabled)
-            {
-                return;
-            }
-
-            // Local off first: the engine's next tick pushes a zero into the
-            // channel slot, and gating means a key still held across a
-            // disable/enable cycle must be released once before it maps again.
-            _engine.SetEnabled(false);
-            _store.GateHeldKeys();
-            _enabled = false;
-
+            StopLocalOutput();
+            if (!_channel.IsConnected) return;
             try
             {
                 await _channel.DisconnectAsync(ct).ConfigureAwait(false);
@@ -258,7 +345,6 @@ public sealed class MappingSession : IMappingSession
             }
 
             _logger.LogInformation("Mapping disabled.");
-            RaiseState(false, null);
         }
         finally
         {
@@ -274,10 +360,7 @@ public sealed class MappingSession : IMappingSession
         // engine, so the session always ends off, never latched-on or
         // connected-and-live. The caller owns the panic frame; this is the local
         // half only.
-        Interlocked.Increment(ref _panicGeneration);
-        _engine.SetEnabled(false);
-        _store.GateHeldKeys();
-        _enabled = false;
+        StopLocalOutput();
 
         try
         {
@@ -289,6 +372,48 @@ public sealed class MappingSession : IMappingSession
             // The safety writes above already completed; neither a throwing
             // logging provider nor a throwing subscriber may break the panic path.
         }
+    }
+
+    private void StopLocalOutput()
+    {
+        Interlocked.Increment(ref _panicGeneration);
+        Volatile.Write(ref _channelArmed, 0);
+        _engine.SetEnabled(false);
+        _store.GateHeldKeys();
+        _enabled = false;
+        // Exchange before disposing gives Stop, faults and startup cancellation
+        // one owner. Native disposal disables filtering before the worker retires.
+        var lease = Interlocked.Exchange(ref _suppressionLease, null);
+        try { lease?.Dispose(); }
+        catch { /* Local output must stay off even if filter cleanup fails. */ }
+    }
+
+    private string? ActivationError(int generation, GameProcess? expectedGame)
+    {
+        if (InputReadiness() is { } inputError) return inputError;
+        if (_gameSelection is not null)
+        {
+            if (_gameSelection.ValidateSelectedGame(out var current) is { } gameError) return gameError;
+            if (expectedGame?.IsSameProcess(current) != true) return "Game changed. Start again.";
+        }
+        if (!_channel.IsConnected) return "Controller disconnected. Start again.";
+        return Interlocked.CompareExchange(ref _panicGeneration, 0, 0) != generation
+            || Volatile.Read(ref _disposed) != 0 ? "Start cancelled. Start again." : null;
+    }
+
+    private async Task DisconnectAfterFailedStartAsync()
+    {
+        try { await _channel.DisconnectAsync(CancellationToken.None).ConfigureAwait(false); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Channel disconnect failed after a cancelled start."); }
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        ForceLocalOff("Application closing.");
+        _channel.StatusChanged -= OnChannelStatusChanged;
+        if (_gameSelection is not null) _gameSelection.Changed -= OnGameChanged;
+        if (_keyboardSuppression is not null) _keyboardSuppression.Faulted -= OnSuppressionFaulted;
     }
 
     public void OnSystemResumed()
@@ -354,15 +479,17 @@ public sealed class MappingSession : IMappingSession
 
     private void OnChannelStatusChanged(object? sender, SupervisorStatusEventArgs e)
     {
-        // Only meaningful once the user has enabled mapping: connectivity churn
-        // while disabled is noise. The enable itself stands — only the transport
-        // state changed — so IsEnabled stays true and just the message updates.
-        if (!_enabled)
-        {
-            return;
-        }
+        if (e.IsConnected || (!_enabled && Volatile.Read(ref _channelArmed) == 0)) return;
+        StopLocalOutput();
+        RaiseState(false, "Controller disconnected. Start again.");
+    }
 
-        RaiseState(true, e.IsConnected ? null : "Controller disconnected. Reconnecting…");
+    private void OnGameChanged(object? sender, EventArgs e) => ForceLocalOff("Game changed.");
+
+    private void OnSuppressionFaulted(string reason)
+    {
+        StopLocalOutput();
+        RaiseState(false, reason);
     }
 
     private void RaiseState(bool enabled, string? message)

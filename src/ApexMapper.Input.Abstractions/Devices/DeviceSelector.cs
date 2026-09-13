@@ -144,9 +144,43 @@ public sealed class DeviceSelector
 
     private void PersistSelection(DeviceIdentity? identity)
     {
-        var next = new DeviceRegistry(identity, _lastRegistry.Calibrations);
-        _lastRegistry = next;
+        var next = _lastRegistry with { SelectedDevice = identity };
         _saveRegistry(next);
+        _lastRegistry = next;
+    }
+
+    public IReadOnlyList<KeyCalibration> GetCalibrations(DiscoveredDevice device, string firmware)
+    {
+        var registry = _lastRegistry;
+        return !string.IsNullOrWhiteSpace(device.PhysicalDeviceId)
+            && string.Equals(device.PhysicalDeviceId, registry.CalibrationDeviceId, StringComparison.OrdinalIgnoreCase)
+            && firmware == registry.CalibrationFirmware
+            ? registry.Calibrations : Array.Empty<KeyCalibration>();
+    }
+
+    /// <summary>Saves measurements for the selected physical keyboard without losing them on later selection changes.</summary>
+    public void SaveCalibrations(string physicalDeviceId, string firmware, IReadOnlyList<KeyCalibration> calibrations)
+    {
+        if (string.IsNullOrWhiteSpace(physicalDeviceId) || SelectedDevice is not { } selected
+            || !string.Equals(selected.PhysicalDeviceId, physicalDeviceId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The selected keyboard changed. Open calibration again.");
+        if (string.IsNullOrWhiteSpace(firmware)) throw new ArgumentException("Firmware is required.", nameof(firmware));
+        ArgumentNullException.ThrowIfNull(calibrations);
+        var copy = calibrations.ToArray();
+        if (copy.Select(c => c.Key).Distinct().Count() != copy.Length || copy.Any(c =>
+            !float.IsFinite(c.RestValue) || !float.IsFinite(c.MaxPressValue) || !float.IsFinite(c.NoiseBand)
+            || c.RestValue is < 0 or > 4095 || c.MaxPressValue is < 0 or > 4095
+            || MathF.Abs(c.MaxPressValue - c.RestValue) < 100
+            || c.NoiseBand <= 0 || c.NoiseBand >= MathF.Abs(c.MaxPressValue - c.RestValue)))
+            throw new ArgumentException("Each key needs distinct released and fully pressed readings.", nameof(calibrations));
+        var next = _lastRegistry with
+        {
+            Calibrations = copy,
+            CalibrationDeviceId = physicalDeviceId,
+            CalibrationFirmware = firmware,
+        };
+        _saveRegistry(next);
+        _lastRegistry = next;
     }
 
     // Display metadata can change without disconnecting the input source.

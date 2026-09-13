@@ -332,4 +332,65 @@ public sealed class DevicePickerViewModelTests
         vm.MakePrimaryCommand.CanExecute(idConnected).Should().BeTrue();
         vm.MakePrimaryCommand.CanExecute(idDisconnected).Should().BeFalse();
     }
+
+    [Fact]
+    public void Source_selection_remains_visible_after_switch_and_refresh()
+    {
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var first = MakeEntry(Guid.NewGuid(), isPrimary: true) with
+                    { PhysicalDeviceId = "keyboard-a", DevicePath = "interface-02", SourceLabel = "Interface 02" };
+                var second = MakeEntry(Guid.NewGuid()) with
+                    { PhysicalDeviceId = "keyboard-a", DevicePath = "interface-00", SourceLabel = "Interface 00" };
+                var selector = new FakeSelector();
+                selector.AddEntry(first);
+                selector.AddEntry(second);
+                var vm = BuildVm(selector);
+                var keyboard = new System.Windows.Controls.ComboBox { DisplayMemberPath = "DisplayName" };
+                var source = new System.Windows.Controls.ComboBox { DisplayMemberPath = "SourceLabel" };
+                keyboard.SetBinding(System.Windows.Controls.ItemsControl.ItemsSourceProperty,
+                    new System.Windows.Data.Binding("KeyboardGroups") { Source = vm });
+                keyboard.SetBinding(System.Windows.Controls.Primitives.Selector.SelectedItemProperty,
+                    new System.Windows.Data.Binding("SelectedKeyboard") { Source = vm, Mode = System.Windows.Data.BindingMode.TwoWay });
+                source.SetBinding(System.Windows.Controls.ItemsControl.ItemsSourceProperty,
+                    new System.Windows.Data.Binding("SelectedKeyboard.Sources") { Source = vm });
+                source.SetBinding(System.Windows.Controls.Primitives.Selector.SelectedItemProperty,
+                    new System.Windows.Data.Binding("SelectedSource") { Source = vm, Mode = System.Windows.Data.BindingMode.TwoWay });
+                var panel = new System.Windows.Controls.StackPanel();
+                panel.Children.Add(keyboard);
+                panel.Children.Add(source);
+                Layout();
+
+                source.SelectedItem = vm.Devices.Single(item => item.Id == second.Id);
+                Layout();
+                AssertSource();
+                vm.RefreshCommand.Execute(null);
+                Layout();
+                AssertSource();
+                selector.SelectPrimaryCalls.Should().Equal(second.Id);
+
+                void Layout()
+                {
+                    panel.Measure(new System.Windows.Size(500, 200));
+                    panel.Arrange(new System.Windows.Rect(0, 0, 500, 200));
+                    panel.UpdateLayout();
+                }
+                void AssertSource()
+                {
+                    vm.SelectedSource!.Id.Should().Be(second.Id);
+                    source.SelectedItem.Should().BeSameAs(vm.SelectedSource);
+                    source.SelectionBoxItem.Should().BeSameAs(vm.SelectedSource);
+                }
+            }
+            catch (Exception error) { failure = error; }
+            finally { System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown(); }
+        }) { IsBackground = true };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join(TimeSpan.FromSeconds(15)).Should().BeTrue();
+        if (failure is not null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+    }
 }

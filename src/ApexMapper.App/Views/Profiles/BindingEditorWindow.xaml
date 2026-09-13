@@ -1,0 +1,67 @@
+<Window x:Class="ApexMapper.App.Views.Profiles.BindingEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ApexMapper.App.Views.Profiles"
+        Title="Edit bindings" Width="760" Height="620" MinWidth="680" MinHeight="440"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource {x:Type Window}}">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock Text="{Binding ProfileName}" FontSize="24" FontWeight="SemiBold" Margin="0,0,0,20" />
+        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="14">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding Rows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="42" />
+                                </Grid.ColumnDefinitions>
+                                <ComboBox ItemsSource="{Binding TargetChoices}" DisplayMemberPath="Label"
+                                          SelectedValuePath="Value" SelectedValue="{Binding Target, Mode=TwoWay}"
+                                          Margin="0,0,12,0" VerticalAlignment="Top" AutomationProperties.Name="Controller output" />
+                                <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                                    <local:KeyCaptureButton Key="{Binding FirstKey, Mode=TwoWay}" MinHeight="38" Padding="5,8" Style="{StaticResource {x:Type Button}}" />
+                                    <TextBlock Text="{Binding FirstDirection}" Style="{StaticResource Caption}" HorizontalAlignment="Center"
+                                               Visibility="{Binding IsAxis, Converter={StaticResource BoolToVisibility}}" Margin="0,3,0,0" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Margin="0,0,8,0"
+                                            Visibility="{Binding IsAxis, Converter={StaticResource BoolToVisibility}}">
+                                    <local:KeyCaptureButton Key="{Binding SecondKey, Mode=TwoWay}" MinHeight="38" Padding="5,8" Style="{StaticResource {x:Type Button}}" />
+                                    <TextBlock Text="{Binding SecondDirection}" Style="{StaticResource Caption}" HorizontalAlignment="Center" Margin="0,3,0,0" />
+                                </StackPanel>
+                                <Button Grid.Column="3" Content="×" Padding="6,8" MinHeight="38" VerticalAlignment="Top"
+                                        ToolTip="Remove binding" AutomationProperties.Name="Remove binding"
+                                        Command="{Binding DataContext.RemoveCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        CommandParameter="{Binding}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,14,0,0">
+            <Button Content="Add key" Command="{Binding AddKeyCommand}" Margin="0,0,8,0" />
+            <Button Content="Add stick axis" Command="{Binding AddAxisCommand}" />
+        </StackPanel>
+        <Grid Grid.Row="3" Margin="0,20,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="{Binding Error}" Foreground="#9A421A" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,16,0" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Content="Cancel" IsCancel="True" Margin="0,0,8,0" />
+                <Button Content="Save" Click="SaveBindings" Style="{StaticResource PrimaryButton}" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

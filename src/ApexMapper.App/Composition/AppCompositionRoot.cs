@@ -8,6 +8,7 @@ using ApexMapper.Input.Abstractions.Adapters;
 using ApexMapper.Input.Abstractions.Hosting;
 using ApexMapper.Input.Abstractions.Pipeline;
 using ApexMapper.Input.RawInput;
+using ApexMapper.Input.Hid;
 using ApexMapper.Output.Detection;
 using ApexMapper.Output.Preflight;
 using ApexMapper.App.ViewModels;
@@ -50,6 +51,7 @@ public static class AppCompositionRoot
 
     public static void ConfigureServices(IServiceCollection services)
     {
+        KeyId[] mappedKeys = Array.Empty<KeyId>();
         // -----------------------------------------------------------------------
         // Infrastructure
         // -----------------------------------------------------------------------
@@ -119,22 +121,17 @@ public static class AppCompositionRoot
                 saveRegistry:  r  => DeviceRegistry.Save(registryFile, r));
         });
 
-        // Digital-only for now: the shipped Apex adapter's key_map is empty (the
-        // analog HID protocol is exploratory, pending hardware), so opening an
-        // analog probe would poll a stream with zero mapped fields. When the key
-        // map gains entries, pass the opened device + descriptor + its input
-        // report length here and the persisted calibrations flow in via the
-        // factory's registry lookup.
-        services.AddSingleton(sp => InputHostFactory.Create(
+        services.AddSingleton(sp => new ApexProAnalogInput(
+            ApexProDeviceResolver.Resolve,
+            device => sp.GetRequiredService<DeviceSelector>().GetCalibrations(device, "4.9.1")));
+        services.AddSingleton(sp => new InputHost(
             rawInput:       sp.GetRequiredService<IRawInputAdapter>(),
-            hidDevice:      null,
-            adapter:        null,
-            reportLength:   0,
+            hidProbe:       null,
             deviceSelector: sp.GetRequiredService<DeviceSelector>(),
-            loadRegistry:   () => DeviceRegistry.Load(sp.GetRequiredService<IAppPaths>().DeviceRegistryFile),
             ring:           sp.GetRequiredService<SpscRingBuffer<RawKeyEvent>>(),
             store:          sp.GetRequiredService<KeyStateStore>(),
-            log:            new LoggerLogSink(sp.GetRequiredService<ILogger<InputHost>>())));
+            log:            new LoggerLogSink(sp.GetRequiredService<ILogger<InputHost>>()),
+            analogInput:    sp.GetRequiredService<ApexProAnalogInput>()));
 
         // -----------------------------------------------------------------------
         // Mapping engine + session
@@ -143,11 +140,23 @@ public static class AppCompositionRoot
         services.AddSingleton(sp =>
         {
             var host = sp.GetRequiredService<InputHost>();
+            var keyStore = sp.GetRequiredService<KeyStateStore>();
+            var suppression = sp.GetRequiredService<IKeyboardSuppression>();
             var engine = new MappingEngine(
-                sp.GetRequiredService<KeyStateStore>(),
+                keyStore,
                 sp.GetRequiredService<IPadStateSink>(),
                 tickIntervalMs: 1,
-                preTick: () => host.Drain(MaxDrainedEventsPerTick));
+                preTick: () =>
+                {
+                    host.Drain(MaxDrainedEventsPerTick);
+                    suppression.ApplyTo(keyStore);
+                    if (host.AnalogReadinessError is { } error)
+                    {
+                        var session = sp.GetRequiredService<IMappingSession>();
+                        if (session.IsEnabled) session.ForceLocalOff(error);
+                    }
+                },
+                outputAllowed: () => suppression.IsTargetForeground);
 
             // The app starts with mapping OFF; only MappingSession.EnableAsync
             // (a user action behind the fail-closed enable flow) turns it on.
@@ -176,7 +185,23 @@ public static class AppCompositionRoot
                 sp.GetRequiredService<IProfileHotReload>(),
                 sp.GetRequiredService<IForegroundWatcher>(),
                 sp.GetRequiredService<IProfileManualPinStore>(),
-                applyProfile: profile => engine.SetProfile(profile),
+                applyProfile: profile =>
+                {
+                    sp.GetRequiredService<IMappingSession>().ForceLocalOff("Profile changed.");
+                    Volatile.Write(ref mappedKeys, profile is null ? Array.Empty<KeyId>() : profile.SingleBindings
+                        .Select(b => b.Source)
+                        .Concat(profile.AxisBindings.SelectMany(b => new[] { b.NegativeKey, b.PositiveKey }))
+                        .Distinct().ToArray());
+                    var keys = profile is null ? Array.Empty<KeyId>() : profile.SingleBindings
+                        .Where(b => b.Target is BindingTarget.LeftTrigger or BindingTarget.RightTrigger
+                            or BindingTarget.LeftStickX or BindingTarget.LeftStickY
+                            or BindingTarget.RightStickX or BindingTarget.RightStickY)
+                        .Select(b => b.Source)
+                        .Concat(profile.AxisBindings.SelectMany(b => new[] { b.NegativeKey, b.PositiveKey }))
+                        .Where(ApexProSensorMap.Supports).Distinct().ToArray();
+                    sp.GetRequiredService<ApexProAnalogInput>().SetKeys(keys);
+                    engine.SetProfile(profile);
+                },
                 sp.GetRequiredService<ILogger<ProfileActivationService>>(),
                 // A profile switch/reload gates held keys so they release once
                 // before mapping under the new profile.
@@ -194,7 +219,7 @@ public static class AppCompositionRoot
             sp.GetRequiredService<IMappingSession>(),
             sp.GetRequiredService<ILogger<ResumeGuard>>()));
 
-        services.AddSingleton<IMappingSession>(sp => new MappingSession(
+        services.AddSingleton(sp => new MappingSession(
             sp.GetRequiredService<KeyStateStore>(),
             sp.GetRequiredService<MappingEngine>(),
             sp.GetRequiredService<ISupervisorChannel>(),
@@ -204,7 +229,13 @@ public static class AppCompositionRoot
             sp.GetRequiredService<ISupervisorProcessLauncher>(),
             sp.GetRequiredService<IForegroundWatcher>(),
             confirm: (title, message) => sp.GetRequiredService<IDialogService>().Confirm(title, message),
-            sp.GetRequiredService<ILogger<MappingSession>>()));
+            sp.GetRequiredService<ILogger<MappingSession>>(),
+            inputReadiness: () => sp.GetRequiredService<InputHost>().AnalogReadinessError,
+            gameSelection: sp.GetRequiredService<IGameSelection>(),
+            keyboardSuppression: sp.GetRequiredService<IKeyboardSuppression>(),
+            suppressionKeys: () => sp.GetRequiredService<ApexProAnalogInput>().RequiredKeys,
+            mappedKeys: () => Volatile.Read(ref mappedKeys)));
+        services.AddSingleton<IMappingSession>(sp => sp.GetRequiredService<MappingSession>());
 
         // -----------------------------------------------------------------------
         // Services — Phase 4
@@ -220,6 +251,8 @@ public static class AppCompositionRoot
         // when the App ResourceDictionary is not loaded.
 
         services.AddSingleton<IHotkeyService, HotkeyService>();
+        services.AddSingleton<IGameSelection, GameSelection>();
+        services.AddSingleton<IKeyboardSuppression, KeyboardSuppression>();
 
         services.AddSingleton<IWindowEventSource, WindowEventSink>();
         services.AddSingleton<IForegroundProbe, Win32ForegroundProbe>();
@@ -334,6 +367,8 @@ public static class AppCompositionRoot
                 sp.GetRequiredService<IMappingSession>()));
 
         services.AddSingleton<DevicePickerViewModel>();
+        services.AddSingleton<SensorCalibrationViewModel>();
+        services.AddSingleton<GamePickerViewModel>();
 
         services.AddSingleton<MainWindowViewModel>();
     }

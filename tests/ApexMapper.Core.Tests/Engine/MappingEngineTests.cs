@@ -52,6 +52,80 @@ public class MappingEngineTests
         sink.Last.Should().Be(default(VirtualPadState));
     }
 
+    [Theory]
+    [InlineData(KeyProvenance.Analog)]
+    [InlineData(KeyProvenance.Digital)]
+    public void Leaving_game_clears_return_ramps_and_requires_release_of_keys_pressed_outside_it(KeyProvenance source)
+    {
+        var allowed = true;
+        var store = new KeyStateStore();
+        var sink = new CapturingSink();
+        var engine = new MappingEngine(store, sink, outputAllowed: () => allowed);
+        engine.SetProfile(MakeProfile());
+        store.Set(SteerLeft, 0.8f, source);
+        engine.TickOnce(80);
+        Assert.True(sink.Last.LeftStickX < 0);
+        store.Set(SteerLeft, 0, source);
+        engine.TickOnce(1);
+        Assert.True(sink.Last.LeftStickX < 0);
+
+        allowed = false;
+        engine.TickOnce(1);
+        Assert.Equal(default, sink.Last);
+        store.Set(SteerLeft, 0.6f, source);
+        engine.TickOnce(1);
+        allowed = true;
+        engine.TickOnce(1);
+        Assert.Equal(default, sink.Last);
+
+        store.Set(SteerLeft, 0, source);
+        engine.TickOnce(1);
+        var pressed = source == KeyProvenance.Analog ? 0.3f : 1f;
+        store.Set(SteerLeft, pressed, source);
+        engine.TickOnce(80);
+        Assert.Equal(-pressed, sink.Last.LeftStickX);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Disable_discards_analog_return_even_when_reenabled_between_ticks(bool tickWhileDisabled)
+    {
+        var store = new KeyStateStore();
+        var sink = new CapturingSink();
+        var engine = new MappingEngine(store, sink);
+        engine.SetProfile(MakeProfile());
+        store.Set(SteerLeft, 0.8f, KeyProvenance.Analog);
+        engine.TickOnce(1);
+        Assert.Equal(-0.8f, sink.Last.LeftStickX);
+
+        engine.SetEnabled(false);
+        store.Set(SteerLeft, 0, KeyProvenance.Analog);
+        if (tickWhileDisabled) engine.TickOnce(1);
+        engine.SetEnabled(true);
+        engine.TickOnce(1);
+
+        Assert.Equal(0f, sink.Last.LeftStickX);
+        store.Set(SteerLeft, 0.3f, KeyProvenance.Analog);
+        engine.TickOnce(1);
+        Assert.Equal(-0.3f, sink.Last.LeftStickX);
+    }
+
+    [Fact]
+    public void Profile_change_discards_analog_return_history()
+    {
+        var store = new KeyStateStore();
+        var sink = new CapturingSink();
+        var engine = new MappingEngine(store, sink);
+        engine.SetProfile(MakeProfile());
+        store.Set(SteerLeft, 0.8f, KeyProvenance.Analog);
+        engine.TickOnce(1);
+        store.Set(SteerLeft, 0, KeyProvenance.Analog);
+        engine.SetProfile(MakeProfile("replacement"));
+        engine.TickOnce(1);
+        Assert.Equal(0f, sink.Last.LeftStickX);
+    }
+
     [Fact]
     public void Tick_maps_store_state_through_the_active_profile()
     {

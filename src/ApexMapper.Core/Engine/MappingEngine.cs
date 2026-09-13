@@ -39,6 +39,7 @@ public sealed class MappingEngine : IAsyncDisposable
     private readonly KeyStateStore _store;
     private readonly IPadStateSink _sink;
     private readonly Action? _preTick;
+    private readonly Func<bool>? _outputAllowed;
     private readonly int _tickIntervalMs;
     private readonly CancellationTokenSource _cts = new();
 
@@ -46,11 +47,13 @@ public sealed class MappingEngine : IAsyncDisposable
     private TaskCompletionSource? _startedTcs;
     private BindingPipeline? _pipeline;
     private int _enabled = 1;
+    private int _resetAnalogReturns;
     private int _disposed;
 
     // Tick-thread-only state.
     private VirtualPadState _pad;
     private bool _zeroPushedWhileDisabled;
+    private bool _outputWasAllowed = true;
 
     /// <param name="preTick">
     /// Optional hook invoked at the start of every tick — enabled or disabled —
@@ -63,11 +66,13 @@ public sealed class MappingEngine : IAsyncDisposable
     /// still reaches the sink, and the unhandled exception surfaces loudly
     /// rather than being swallowed).
     /// </param>
-    public MappingEngine(KeyStateStore store, IPadStateSink sink, int tickIntervalMs = 1, Action? preTick = null)
+    public MappingEngine(KeyStateStore store, IPadStateSink sink, int tickIntervalMs = 1, Action? preTick = null,
+        Func<bool>? outputAllowed = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _sink = sink ?? throw new ArgumentNullException(nameof(sink));
         _preTick = preTick;
+        _outputAllowed = outputAllowed;
         if (tickIntervalMs <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(tickIntervalMs), "tick interval must be positive.");
@@ -83,7 +88,14 @@ public sealed class MappingEngine : IAsyncDisposable
     /// disabled tick pushes a zero state exactly once, further disabled ticks
     /// push nothing, and enabling resumes normal mapped output.
     /// </summary>
-    public void SetEnabled(bool enabled) => Volatile.Write(ref _enabled, enabled ? 1 : 0);
+    public void SetEnabled(bool enabled)
+    {
+        // A tick must not consume the disable reset and then refill history
+        // before it sees disabled. Re-enable also resets before publishing on.
+        if (!enabled) Volatile.Write(ref _enabled, 0);
+        Interlocked.Exchange(ref _resetAnalogReturns, 1);
+        if (enabled) Volatile.Write(ref _enabled, 1);
+    }
 
     /// <summary>
     /// Atomically replaces the active profile; takes effect on the next tick.
@@ -200,6 +212,10 @@ public sealed class MappingEngine : IAsyncDisposable
     {
         _preTick?.Invoke();
 
+        var pipeline = Volatile.Read(ref _pipeline);
+        if (Interlocked.Exchange(ref _resetAnalogReturns, 0) != 0)
+            pipeline?.ResetAnalogReturns();
+
         if (Volatile.Read(ref _enabled) == 0)
         {
             if (!_zeroPushedWhileDisabled)
@@ -213,7 +229,17 @@ public sealed class MappingEngine : IAsyncDisposable
         }
 
         _zeroPushedWhileDisabled = false;
-        var pipeline = Volatile.Read(ref _pipeline);
+        if (_outputAllowed is not null && !_outputAllowed())
+        {
+            // Keep keys pressed outside the game gated until a measured release.
+            _store.GateHeldKeys();
+            if (_outputWasAllowed) pipeline?.Reset();
+            _outputWasAllowed = false;
+            _pad = default;
+            _sink.Push(in _pad);
+            return;
+        }
+        _outputWasAllowed = true;
         if (pipeline is null)
         {
             _pad = default;

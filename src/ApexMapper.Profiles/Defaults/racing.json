@@ -21,8 +21,8 @@
       "requires_opt_in_for_protected_games": true
     },
     "single_bindings": [
-      { "source": { "scan_code": 17 }, "target": "right_trigger", "curve": null, "press_ramp_ms": 120, "release_ramp_ms": 0 },
-      { "source": { "scan_code": 31 }, "target": "left_trigger",  "curve": null, "press_ramp_ms": 120, "release_ramp_ms": 0 },
+      { "source": { "scan_code": 17 }, "target": "right_trigger", "curve": [[0,0],[0.6,0.51428574],[0.7,0.6],[1,1]], "press_ramp_ms": 120, "release_ramp_ms": 0 },
+      { "source": { "scan_code": 31 }, "target": "left_trigger",  "curve": [[0,0],[0.6,0.51428574],[0.7,0.6],[1,1]], "press_ramp_ms": 120, "release_ramp_ms": 0 },
       { "source": { "scan_code": 42 }, "target": "button_lb",     "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 },
       { "source": { "scan_code": 57 }, "target": "button_a",      "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 },
       { "source": { "scan_code": 19 }, "target": "button_y",      "curve": null, "press_ramp_ms": 0,   "release_ramp_ms": 0 },
@@ -36,9 +36,9 @@
         "negative_key": { "scan_code": 30 },
         "positive_key": { "scan_code": 32 },
         "target": "left_stick_x",
-        "curve": null,
-        "press_ramp_ms": 80,
-        "release_ramp_ms": 80,
+        "curve": [[0,0],[0.6,0.42857143],[0.7,0.5],[1,1]],
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0,
         "socd": "neutral"
       },
       {

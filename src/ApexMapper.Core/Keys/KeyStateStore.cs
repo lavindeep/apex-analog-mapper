@@ -20,6 +20,10 @@ public sealed class KeyStateStore
     private readonly HashSet<KeyId>? _gated;
     private readonly KeyIndex? _index;
     private readonly long[]? _cells;
+    private long _resetGeneration;
+
+    /// <summary>Changes after each gate or reset, including when all keys were already released.</summary>
+    public long ResetGeneration => Volatile.Read(ref _resetGeneration);
 
     public KeyStateStore()
     {
@@ -118,6 +122,7 @@ public sealed class KeyStateStore
         if (_cells is not null)
         {
             Array.Clear(_cells, 0, _cells.Length);
+            Interlocked.Increment(ref _resetGeneration);
             return;
         }
 
@@ -127,6 +132,7 @@ public sealed class KeyStateStore
             dict[k] = KeyState.Rest;
         }
         _gated!.Clear();
+        Interlocked.Increment(ref _resetGeneration);
     }
 
     public IReadOnlyCollection<KeyId> Keys =>
@@ -156,6 +162,7 @@ public sealed class KeyStateStore
                 }
             }
 
+            Interlocked.Increment(ref _resetGeneration);
             return;
         }
 
@@ -171,6 +178,7 @@ public sealed class KeyStateStore
             _gated!.Add(k);
             dict[k] = new KeyState(0f, state.Source);
         }
+        Interlocked.Increment(ref _resetGeneration);
     }
 
     // Packed layout: bits 0..31 = float bits, bits 32..39 = provenance byte,
