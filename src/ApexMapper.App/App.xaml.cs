@@ -151,6 +151,7 @@ public partial class App : Application
         // the error surfaced — never a crash loop, never silent success.
         _ = Task.Run(async () =>
         {
+            var session = (MappingSession)_host.Services.GetRequiredService<IMappingSession>();
             try
             {
                 var inputHost = _host.Services.GetRequiredService<InputHost>();
@@ -158,12 +159,11 @@ public partial class App : Application
 
                 var engine = _host.Services.GetRequiredService<MappingEngine>();
                 await engine.StartAsync(CancellationToken.None).ConfigureAwait(false);
+                await Dispatcher.InvokeAsync(() => session.CompleteInputStartup());
             }
             catch (Exception ex)
             {
-                await Dispatcher.InvokeAsync(() => trayService.ShowBalloon(
-                    "Apex Analog Mapper",
-                    $"Input pipeline failed to start: {ex.Message}"));
+                await Dispatcher.InvokeAsync(() => session.CompleteInputStartup(ex.Message));
             }
         });
 

@@ -16,10 +16,6 @@ namespace ApexMapper.Output.Preflight;
 /// </summary>
 public sealed class ViGEmBusPreflightCheck : IPreflightCheck
 {
-    private const string Remediation =
-        "Install the ViGEmBus driver (1.22.0 or newer) from " +
-        "https://github.com/nefarius/ViGEmBus/releases, then re-run pre-flight.";
-
     private readonly Func<string?> _probe;
 
     /// <param name="probe">
@@ -35,7 +31,7 @@ public sealed class ViGEmBusPreflightCheck : IPreflightCheck
         var failure = _probe();
         return failure is null
             ? null
-            : new PreflightIssue(CheckId, PreflightSeverity.Fail, failure, Remediation);
+            : new PreflightIssue(CheckId, PreflightSeverity.Fail, failure, null);
     }
 
     private static string? DefaultProbe()

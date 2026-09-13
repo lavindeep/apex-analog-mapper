@@ -36,6 +36,7 @@ public sealed class MappingSession : IMappingSession
     private readonly SemaphoreSlim _transition = new(1, 1);
 
     private volatile bool _enabled;
+    private volatile string? _inputStartupBlocker = "Input pipeline is still starting.";
 
     // Bumped by every ForceLocalOff (panic) BEFORE it writes any state. An
     // in-flight EnableAsync snapshots this at entry and re-reads it after it has
@@ -86,6 +87,13 @@ public sealed class MappingSession : IMappingSession
 
     public event EventHandler<MappingSessionStateChangedEventArgs>? StateChanged;
 
+    /// <summary>Called once after input and the mapping loop start, or startup fails.</summary>
+    internal void CompleteInputStartup(string? error = null)
+    {
+        _inputStartupBlocker = error is null ? null : $"Input pipeline failed to start: {error}";
+        RaiseState(false, _inputStartupBlocker ?? "Mapping is disabled.");
+    }
+
     public async Task<bool> EnableAsync(CancellationToken ct)
     {
         // Snapshot the panic generation BEFORE waiting for the transition lock:
@@ -102,6 +110,12 @@ public sealed class MappingSession : IMappingSession
             if (_enabled)
             {
                 return true;
+            }
+
+            if (_inputStartupBlocker is { } inputBlocker)
+            {
+                RaiseState(false, $"Cannot enable: {inputBlocker}");
+                return false;
             }
 
             // 1. Pre-flight: any Fail issue is a blocker — output stays off.

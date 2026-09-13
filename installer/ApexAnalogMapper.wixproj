@@ -23,7 +23,9 @@
          file KeyPaths repair correctly there, and MajorUpgrade/uninstall
          remove the harvested tree — so both checks are inapplicable rather
          than merely inconvenient. -->
-    <SuppressIces>ICE38;ICE64</SuppressIces>
+    <!-- ICE91 warns about per-user paths in per-machine installations;
+         this package supports only per-user installation. -->
+    <SuppressIces>ICE38;ICE64;ICE91</SuppressIces>
   </PropertyGroup>
 
 </Project>

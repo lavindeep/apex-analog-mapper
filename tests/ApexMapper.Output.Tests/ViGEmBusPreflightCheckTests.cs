@@ -21,7 +21,7 @@ public class ViGEmBusPreflightCheckTests
     }
 
     [Fact]
-    public void Probe_failure_yields_a_fail_issue_with_remediation()
+    public void Probe_failure_preserves_the_actionable_failure_message()
     {
         var check = new ViGEmBusPreflightCheck(probe: () => "ViGEmBus driver not found.");
 
@@ -30,8 +30,8 @@ public class ViGEmBusPreflightCheckTests
         issue.Should().NotBeNull();
         issue!.CheckId.Should().Be("vigem-bus");
         issue.Severity.Should().Be(PreflightSeverity.Fail);
-        issue.Message.Should().Contain("ViGEmBus");
-        issue.Remediation.Should().Contain("ViGEmBus");
+        issue.Message.Should().Be("ViGEmBus driver not found.");
+        issue.Remediation.Should().BeNull();
     }
 
     [DriverlessFact]

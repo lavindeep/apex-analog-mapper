@@ -142,7 +142,8 @@ public sealed class MappingSessionTests
         PreflightIssue? preflightResult = null,
         bool confirmAnswer = true,
         Func<string, string, bool>? confirm = null,
-        Microsoft.Extensions.Logging.ILogger<MappingSession>? logger = null)
+        Microsoft.Extensions.Logging.ILogger<MappingSession>? logger = null,
+        bool inputStarted = true)
     {
         var store = new KeyStateStore(new KeyIndex(new[] { Throttle }));
         var engine = new MappingEngine(store, new NullSink());
@@ -170,6 +171,7 @@ public sealed class MappingSessionTests
                 return confirmAnswer;
             }),
             logger ?? NullLogger<MappingSession>.Instance);
+        if (inputStarted) session.CompleteInputStartup();
         session.StateChanged += (_, e) => states.Add(e);
 
         return new Harness(session, store, engine, channel, check, processes, launcher, foreground, prompts, states);
@@ -645,5 +647,24 @@ public sealed class MappingSessionTests
         h.Session.IsEnabled.Should().BeFalse();
         h.Engine.IsEnabled.Should().BeFalse();
         h.Channel.IsConnected.Should().BeFalse();
+    }
+    [Theory]
+    [InlineData(null, "Input pipeline is still starting.")]
+    [InlineData("Registration failed.", "Input pipeline failed to start: Registration failed.")]
+    public async Task Unavailable_input_blocks_enable(string? failure, string expectedMessage)
+    {
+        var h = Build(inputStarted: false);
+        if (failure is not null) h.Session.CompleteInputStartup(failure);
+
+        var enabled = await h.Session.EnableAsync(CancellationToken.None);
+
+        enabled.Should().BeFalse();
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Engine.IsEnabled.Should().BeFalse();
+        h.Preflight.Runs.Should().Be(0);
+        h.Launcher.Calls.Should().Be(0);
+        h.Channel.ConnectCalls.Should().Be(0);
+        h.States.Should().OnlyContain(state => !state.IsEnabled);
+        h.States.Last().Message.Should().Be($"Cannot enable: {expectedMessage}");
     }
 }
