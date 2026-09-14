@@ -1,237 +1,158 @@
 # Apex Analog Mapper
 
-A Windows app that turns physical key depth into Xbox 360 controller input.
-Press lightly for partial throttle or steering, then press farther for more.
+Use key depth to control a virtual Xbox 360 controller on Windows. A light press
+can produce partial throttle or steering. A deeper press produces more input.
 
-**v0.5 alpha** supports the original SteelSeries Apex Pro TKL with USB ID
-`1038:1614` and firmware `4.9.1`. W, A, S and D have been tested on that hardware.
-Other Apex Pro generations and firmware versions are not supported by this alpha.
+This guide covers v0.5 alpha. You need Windows 10 or 11 x64 and the original
+SteelSeries Apex Pro TKL with USB ID `1038:1614` and firmware `4.9.1`.
+Analog input has been tested with W, A, S, and D on that keyboard.
+Other models and firmware versions are not supported.
 
-## Install
+## Install or upgrade Mapper
 
-You need Windows 10 or 11 x64, the supported keyboard, and
-[ViGEmBus 1.22.0](https://github.com/nefarius/ViGEmBus/releases/tag/v1.22.0).
-The driver requires administrator approval and is installed separately.
-ViGEmBus is end-of-life; use its official download.
+Use these steps to install the app:
 
-Download an MSI and its SHA-256 manifest from this repository's
-[Releases](https://github.com/lavindeep/apex-analog-mapper/releases) when published.
-Unreleased alpha builds are distributed for testing before a release is tagged.
-The app is self-contained, so you do not need to install .NET.
+1. Install [ViGEmBus 1.22.0](https://github.com/nefarius/ViGEmBus/releases/tag/v1.22.0)
+   if it is missing. This separate driver installation requires administrator
+   approval. ViGEmBus is no longer maintained, so use the official download.
+2. Download the Mapper MSI and `SHA256SUMS.txt` from the repository's
+   [Releases](https://github.com/lavindeep/apex-analog-mapper/releases), or use the
+   alpha files provided for testing.
+3. Before running the unsigned MSI, compare its SHA-256 hash with the manifest.
+   For this alpha, run the following command in the download folder:
 
-Close Mapper before running the MSI. It replaces an older MSI installation and
-preserves your profiles and calibration. The app installs for your Windows user
-in `%LocalAppData%\Programs\Apex Analog Mapper`.
+   ```powershell
+   Get-FileHash .\apex-analog-mapper-0.5.0-alpha.1.msi -Algorithm SHA256
+   ```
 
-Installers are unsigned. Compare the download's checksum with its accompanying
-manifest before running it:
+4. If Mapper is open, close it.
+5. Run the MSI.
 
-```powershell
-Get-FileHash .\apex-analog-mapper-0.5.0-alpha.1.msi -Algorithm SHA256
-```
+The installer replaces an older MSI installation and keeps your bindings and
+calibration. You do not need to install .NET separately.
 
-## Set up
+## Choose your keyboard and bindings
 
-1. Open Apex Analog Mapper and choose your **Keyboard**. Its Windows input
-   interfaces are grouped into one physical device. If the selected source does
-   not receive keys, choose another **Input source** under **Advanced**.
-2. Select **Racing**. An empty profile directory gets this preset automatically;
-   an upgrade keeps your existing profile.
-3. Use **Edit bindings** to choose controller outputs and record your keys.
-   Click a key button, then press the replacement key. **Add key** adds a
-   single-key binding; **Add stick axis** adds a pair of direction keys. Save.
-4. Open **Calibrate keys**. For each listed key, release it and click
-   **Set released**. Hold it fully down and click **Set fully pressed**. Save
-   after setting both positions for every listed key.
-5. Launch your game. Choose its window in **Game**, using **Refresh** if needed.
-6. Release the mapped keys and click **Start**, then return to the game.
+Set up the keys before you calibrate them:
 
-Mapper starts stopped on every launch. **Stop** and **Ctrl+Alt+F12** turn mapping
-off. Closing the window exits the app. Opening either editor stops mapping;
-close the editor before starting again.
+1. Open Apex Analog Mapper.
+2. Choose your keyboard in **Keyboard**.
+3. Choose **Racing** in **Profile**.
+4. To change the preset, click **Edit bindings**.
+5. Choose a controller output for each binding you want to change.
+6. Click that binding's key button.
+7. Press the replacement key.
+8. Click **Save** when you finish.
 
-Select the running game again after it exits and restarts. Game selection is
-for that process instance and is not saved across Mapper launches.
+To add a binding, use **Add key** for one key or **Add stick axis** for two
+direction keys. Ctrl, Alt, Windows, and F12 are reserved for shortcuts.
+Left Shift is available for the clutch.
 
-## Racing bindings
+The [Racing bindings](docs/reference.md#racing-bindings) match Forza's Default
+Layout 1 and WASD driving controls. Upgrades keep your saved profile, including
+any earlier bindings or timing settings.
 
-The preset matches Forza's Default Layout 1 controller actions and WASD keyboard
-layout. Bindings are editable; controller actions also depend on the layout
-selected inside the game.
+## Calibrate the analog keys
 
-| Action | Keyboard | Controller |
-| --- | --- | --- |
-| Accelerate | W | RT, analog |
-| Brake | S | LT, analog |
-| Steer left / right | A / D | Left stick X, analog |
-| E-brake | Space | A |
-| Rewind | R | Y |
-| Shift up | E | B |
-| Shift down | Q | X |
-| Clutch / AutoDrive cinematic camera | Left Shift | LB |
-| Switch camera | Tab | RB |
-| Toggle convertible | G | Left stick click |
-| Look left / right | Left / Right arrows | Right stick X |
-| Look back / forward | Down / Up arrows | Right stick Y |
+Calibrate each listed key before the first test. Repeat calibration after you
+change analog bindings or if a key reaches full output too early.
 
-Left Shift works together with Q and E for clutch and shifting. Arrow keys on
-this keyboard are mechanical and produce digital camera input.
+1. Click **Calibrate keys**.
+2. Release the first key.
+3. Click **Set released** on that key's row.
+4. Hold the key fully down.
+5. While holding it, click **Set fully pressed** on the same row.
+6. Repeat steps 2 through 5 for every listed key.
+7. Click **Save**.
 
-Ctrl, Alt, Windows and F12 are reserved for shortcuts and cannot be assigned as
-controller bindings. Ctrl/Alt/Windows combinations pass through to Windows.
+The [analog input reference](docs/reference.md#analog-input) describes the saved
+calibration and response curve. GG's actuation setting controls ordinary
+keyboard presses. Mapper reads separate sensor values for analog input.
 
-## Analog response
+## Start a game session
 
-SteelSeries GG's actuation setting controls when a normal keyboard key-down
-fires. Changing it to 3 or 4 mm does not turn that key-down into analog input.
-Mapper reads separate sensor reports and normalizes them using your saved
-released and fully pressed positions.
+Open the game before selecting it in Mapper:
 
-Calibration is specific to the physical keyboard and firmware. The displayed
-percentage is normalized sensor input, not a measurement in millimetres or a
-pressure reading. Recalibrate after changing analog bindings or if a key no
-longer reaches zero or full input reliably.
+1. Choose the game's window in **Game**. If it is missing, click **Refresh**.
+2. Release the mapped keys.
+3. Click **Start**.
+4. Switch to the game.
 
-The Racing curve builds gradually through the first 70% of normalized input,
-then rises more steeply to full output. Steering has no added press or release
-delay. Analog presses follow the sensor; digital bindings can use timed ramps.
-Existing profiles keep their curves and timing when you upgrade.
+Keep Mapper open while you play. Closing its window exits the app.
+The global Stop shortcut is **Ctrl+Alt+F12**.
 
-Curves and timing are stored in the profile JSON. `release_ramp_ms` can soften
-analog return toward zero; `0` disables it. A new press or direction reversal
-responds immediately, and stopping clears the return history. The current editor
-changes bindings, not response curves or ramp values.
+If you switch to another app, Mapper restores keyboard input and returns the
+controller to zero. When you return to the game, release any held keys before
+pressing them again. Opening a binding or calibration editor stops the session.
 
-## Keyboard filtering
+After restarting the game or Mapper, select the game again before starting.
 
-While your selected game is foreground, Mapper blocks mapped keyboard events
-and sends their controller equivalents. This includes clutch, shifting and
-handbrake, so the game does not receive both inputs.
+## Test your controls
 
-Analog input comes from the selected keyboard's sensors. Digital bindings are
-captured by a Windows keyboard hook, which cannot identify the originating
-keyboard. **Mapped digital keys work on every physical keyboard, and mapped
-keystrokes are blocked on every keyboard, while the selected game is foreground.**
-Unmapped keys remain available.
+Test the following in the game:
 
-Switching away restores normal keyboard input and zeros controller output.
-Release any held mapped keys before using them again after returning. Stop,
-game exit, controller disconnection, profile or device changes, and input faults
-also stop mapping or clear held input. Mapper never starts automatically.
+- Press W and S slowly through their travel. Check for partial throttle and brake.
+- Press A and D slowly, then release them. Check steering response and return to centre.
+- Hold Left Shift and press Q or E. Check clutch and shifting together.
+- Press Space to check the handbrake.
+- Check that these presses keep the game's controller prompts on screen.
+- Switch to another app and back. Release the keys before testing another press.
 
-## Troubleshooting
+Mapped keys are blocked on every keyboard while you use the selected game.
+Digital controller bindings also work from every keyboard during that session.
+Analog input comes from the selected keyboard. See
+[keyboard filtering](docs/reference.md#keyboard-filtering) for the full behavior.
 
-| Problem | Check |
-| --- | --- |
-| Start asks for a game | Launch the game, refresh the Game list and select its window. |
-| No virtual controller | Install ViGEmBus, restart Windows if its installer requests it, then reopen Mapper. |
-| No sensor input | Check the exact USB ID and firmware above. Other models and firmware are rejected. |
-| Calibration is missing or incomplete | Set both endpoints for every key listed in Calibrate keys, then save. |
-| A key stays at zero after Start or an app switch | Release it fully, then press it again. Held keys must be released before reuse. |
-| A key reaches full input too early | Recalibrate it, holding it fully down for Set fully pressed. Also check the profile's response curve. |
-| Digital input is missing outside game capture | Try the other Input source under Advanced. Some keyboards expose more than one keyboard interface. |
-| The game still receives keyboard and controller input | Check that Mapper is Running and the selected Game is the actual game window. Only mapped keys are filtered; Ctrl/Alt/Windows shortcuts are passed through. |
-| An upgrade kept old binds or steering timing | Existing profiles are preserved. Edit bindings in the app and inspect the saved profile for curve or ramp changes. |
+## Fix common problems
 
-For a bug report, include the app version, keyboard USB ID, firmware, selected
-input source, game, and the steps that reproduce it. The supervisor log is at
-`%LocalAppData%\ApexAnalogMapper\logs\supervisor.log`. It records controller
-session state and errors, not key presses.
+### Keys do not respond
 
-## Data and removal
+Check the selected keyboard and its USB ID against the supported model above.
+If the keyboard has more than one input source, open **Advanced** and try the
+other **Input source**. Windows can expose several interfaces for one keyboard.
 
-User data lives in `%AppData%\ApexMapper`:
+If Mapper reports missing calibration, set both positions for every key in
+**Calibrate keys**. If a key stops responding after Start or an app switch,
+release the key fully before pressing it again.
 
-| Location | Contents |
-| --- | --- |
-| `profiles\*.json` | Bindings, curves and timing |
-| `device-registry.json` | Device selection and per-key calibration |
-| `profile-pin.json` | Selected profile |
-| `panic-policy.json` | Stop shortcut policy |
+### The game still switches to keyboard input
 
-Direct profile JSON edits reload automatically and can stop mapping. Back up
-this directory before editing files or moving settings to another installation.
-Calibration should be recaptured for a different physical keyboard.
+Check that Mapper shows **Running** and that **Game** names the actual game
+window. Unmapped keys still reach the game as keyboard input. Shortcuts that
+use Ctrl, Alt, or Windows also pass through.
 
-Uninstall through Windows Installed apps. User data survives uninstallation.
-If an older build created a login task, remove that task separately; it is not
-owned by the MSI. There is no automatic updater.
+### The virtual controller is missing
 
-## Alpha limits and safety
+Check that ViGEmBus is installed. If its installer asks for a restart, restart
+Windows before reopening Mapper.
 
-Only the hardware and firmware listed above have analog support. Other sensor
-key positions come from the firmware map and still need physical testing beyond
-WASD. Supported sensor keys require calibration and fresh reports; they do not
-silently fall back to digital ramps. The app does not flash firmware or change
-SteelSeries actuation settings.
+### An upgrade keeps the old steering response
 
-A separate supervisor owns the virtual controller. Loss of the client or its
-heartbeat zeros and disconnects the controller. Stop and device/profile changes
-clear held input before reactivation. The app does not inject code into games
-or install a keyboard filter driver.
+Upgrades preserve your saved profile. To change curves or timing, edit the
+profile JSON described in [profile settings](docs/reference.md#profile-settings).
+The binding editor does not change those values.
 
-Driver and anti-cheat checks run before Start. Anti-cheat detection is an
-advisory check, not proof that a game permits virtual controllers. See
-[SECURITY.md](SECURITY.md) for input handling and vulnerability reporting.
+### A problem remains
 
-## Build and test
+Include the app version, keyboard USB ID, firmware, selected input source, game,
+and reproduction steps in your bug report. The controller log is at
+`%LocalAppData%\ApexAnalogMapper\logs\supervisor.log`.
 
-The full solution needs Windows x64 and the .NET 8 SDK. Normal tests do not
-require ViGEmBus or generate desktop key presses.
+## Back up settings or remove the app
 
-```powershell
-dotnet build ApexAnalogMapper.sln -c Release
-dotnet test ApexAnalogMapper.sln -c Release --no-build
-```
+Before editing profile files or moving settings, copy `%AppData%\ApexMapper` to
+a backup folder. If you use a different physical keyboard, calibrate it again.
+See [stored files](docs/reference.md#stored-files) for each file's contents.
 
-For sequential background checks with native opt-ins rejected:
+To uninstall Mapper, use Windows Installed apps. Uninstallation keeps your user
+data. If an older build created a login task, remove that task separately.
 
-```powershell
-pwsh -File scripts/Test-WindowsBackground.ps1
-```
+## Build from source
 
-The cross-platform subset is available with
-`dotnet test ApexAnalogMapper.CrossPlatform.slnf -c Release`.
+Follow [Build, test, and package Mapper](docs/development.md) for the .NET commands
+and the tests that need a physical Windows desktop.
 
-Native tests are skipped unless explicitly enabled. Run desktop tests only when
-you are not using the machine for another task.
-
-```powershell
-# Injects synthetic A key events on an idle interactive desktop.
-$env:APEX_TEST_DESKTOP_INPUT = '1'
-dotnet test tests/ApexMapper.Input.Tests -c Release
-Remove-Item Env:APEX_TEST_DESKTOP_INPUT
-
-# Requires a Windows machine WITHOUT ViGEmBus.
-$env:APEX_TEST_DRIVERLESS = '1'
-dotnet test tests/ApexMapper.Output.Tests -c Release
-Remove-Item Env:APEX_TEST_DRIVERLESS
-
-# Requires ViGEmBus and no other XInput controllers. Creates and removes a pad.
-$env:APEX_TEST_LIVE_OUTPUT = '1'
-dotnet test tests/ApexMapper.Output.Tests -c Release --filter FullyQualifiedName~ViGEmLiveOutputTests
-Remove-Item Env:APEX_TEST_LIVE_OUTPUT
-```
-
-Synthetic input does not validate physical keyboard mapping. Before a release,
-test partial/full presses and releases, simultaneous clutch and shifting,
-handbrake, app switching, Stop, disconnects and process exit in the actual game.
-
-## Package
-
-Publish the app and supervisor into the same fresh directory, then build the
-MSI with WiX. .NET restores the WiX SDK as part of the installer build.
-
-```powershell
-dotnet publish src/ApexMapper.App -c Release -r win-x64 --self-contained true -o artifacts/staging
-dotnet publish src/ApexMapper.Supervisor -c Release -r win-x64 --self-contained true -o artifacts/staging
-dotnet build installer/ApexAnalogMapper.wixproj -c Release -p:StagingDir="$PWD/artifacts/staging" -p:ProductVersion=0.5.0
-```
-
-The app version is `0.5.0-alpha.1`; the numeric MSI version is `0.5.0`. Subsequent
-MSI upgrades need a higher numeric product version. The tag-driven release
-workflow produces an MSI and SHA-256 manifest. Tagging and publishing follow
-review and physical acceptance.
+See [SECURITY.md](SECURITY.md) for input handling and vulnerability reporting.
 
 ## License
 
