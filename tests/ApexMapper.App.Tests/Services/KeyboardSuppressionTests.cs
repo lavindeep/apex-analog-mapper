@@ -12,6 +12,17 @@ public sealed class KeyboardSuppressionTests
     private static readonly KeyId Up = new(0xE048);
 
     [Fact]
+    public void Cancelled_enable_exits_before_process_lookup_or_hook_installation()
+    {
+        using var service = new KeyboardSuppression();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        Assert.Throws<OperationCanceledException>(() =>
+            service.Enable(-1, new[] { W }, new[] { Shift }, cancellation.Token));
+    }
+
+    [Fact]
     public void Initially_held_key_passes_repeats_and_release_then_new_press_is_suppressed()
     {
         var policy = new KeyboardSuppressionPolicy(new[] { W });
@@ -196,5 +207,110 @@ public sealed class KeyboardSuppressionTests
         Assert.True(policy.ShouldSuppress(Shift, true, false, false));
         policy.ApplyTo(store, false);
         Assert.Equal(0f, store.Get(Shift).Value);
+    }
+
+    [Fact]
+    public void Tick_observed_focus_loss_cannot_replay_capture_without_new_physical_events()
+    {
+        var policy = new KeyboardSuppressionPolicy(new[] { Shift }, new[] { Shift });
+        var store = new KeyStateStore(new KeyIndex(new[] { Shift }));
+        policy.SetActive(true);
+        policy.ShouldSuppress(Shift, true, false, false);
+        policy.ApplyTo(store, true);
+        store.GateHeldKeys(KeyProvenance.Digital);
+
+        policy.ApplyTo(store, false);
+        policy.ApplyTo(store, true);
+
+        Assert.Equal(0f, store.Get(Shift).Value);
+        Assert.True(store.IsGated(Shift));
+        policy.SetActive(true);
+        Assert.False(policy.ShouldSuppress(Shift, true, false, false));
+        policy.ShouldSuppress(Shift, false, false, false);
+        policy.ApplyTo(store, true);
+        Assert.False(store.IsGated(Shift));
+        Assert.True(policy.ShouldSuppress(Shift, true, false, false));
+        policy.ApplyTo(store, true);
+        Assert.Equal(1f, store.Get(Shift).Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Unseen_zero_from_fresh_lease_preserves_held_gate(bool indexed)
+    {
+        var store = indexed ? new KeyStateStore(new KeyIndex(new[] { Shift })) : new KeyStateStore();
+        store.Set(Shift, 1, KeyProvenance.Digital);
+        store.GateHeldKeys(KeyProvenance.Digital);
+        var policy = new KeyboardSuppressionPolicy(new[] { Shift }, new[] { Shift });
+        policy.SetInitiallyHeld(Shift);
+        policy.SetActive(true);
+
+        policy.ApplyTo(store, true);
+
+        Assert.True(store.IsGated(Shift));
+        Assert.Equal(0f, store.Get(Shift).Value);
+    }
+
+    [Fact]
+    public void An_observed_release_is_consumed_once_and_cannot_clear_a_later_gate()
+    {
+        var policy = new KeyboardSuppressionPolicy(new[] { Shift }, new[] { Shift });
+        var store = new KeyStateStore(new KeyIndex(new[] { Shift }));
+        policy.SetActive(true);
+        policy.ShouldSuppress(Shift, true, false, false);
+        policy.ShouldSuppress(Shift, false, false, false);
+        policy.ApplyTo(store, true);
+        store.Set(Shift, 1, KeyProvenance.Digital);
+        store.GateHeldKeys(KeyProvenance.Digital);
+
+        policy.ApplyTo(store, true);
+
+        Assert.True(store.IsGated(Shift));
+        Assert.Equal(0f, store.Get(Shift).Value);
+    }
+
+    [Fact]
+    public void Queued_release_and_repress_cannot_clear_a_newer_store_gate()
+    {
+        var policy = new KeyboardSuppressionPolicy(new[] { Shift }, new[] { Shift });
+        var store = new KeyStateStore(new KeyIndex(new[] { Shift }));
+        policy.SetActive(true);
+        policy.ShouldSuppress(Shift, true, false, false);
+        policy.ApplyTo(store, true);
+        policy.ShouldSuppress(Shift, false, false, false);
+        policy.ShouldSuppress(Shift, true, false, false);
+        store.GateHeldKeys(KeyProvenance.Digital);
+
+        policy.ApplyTo(store, true);
+
+        Assert.True(store.IsGated(Shift));
+        Assert.Equal(0f, store.Get(Shift).Value);
+        Assert.False(policy.ShouldSuppress(Shift, true, false, false));
+        policy.ShouldSuppress(Shift, false, false, false);
+        policy.ApplyTo(store, true);
+        Assert.False(store.IsGated(Shift));
+        Assert.True(policy.ShouldSuppress(Shift, true, false, false));
+        policy.ApplyTo(store, true);
+        Assert.Equal(1f, store.Get(Shift).Value);
+    }
+
+    [Fact]
+    public void Physical_release_after_store_gate_is_consumed_on_next_apply()
+    {
+        var policy = new KeyboardSuppressionPolicy(new[] { Shift }, new[] { Shift });
+        var store = new KeyStateStore(new KeyIndex(new[] { Shift }));
+        policy.SetActive(true);
+        policy.ShouldSuppress(Shift, true, false, false);
+        policy.ApplyTo(store, true);
+        store.GateHeldKeys(KeyProvenance.Digital);
+        policy.ShouldSuppress(Shift, false, false, false);
+
+        policy.ApplyTo(store, true);
+
+        Assert.False(store.IsGated(Shift));
+        Assert.True(policy.ShouldSuppress(Shift, true, false, false));
+        policy.ApplyTo(store, true);
+        Assert.Equal(1f, store.Get(Shift).Value);
     }
 }

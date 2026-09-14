@@ -6,6 +6,7 @@ public interface IKeyboardSuppression
 {
     event Action<string>? Faulted;
     bool IsTargetForeground { get; }
-    IDisposable Enable(int processId, IReadOnlyCollection<KeyId> analogKeys, IReadOnlyCollection<KeyId> digitalKeys);
+    IDisposable Enable(int processId, IReadOnlyCollection<KeyId> analogKeys, IReadOnlyCollection<KeyId> digitalKeys,
+        CancellationToken cancellationToken = default);
     void ApplyTo(KeyStateStore store);
 }

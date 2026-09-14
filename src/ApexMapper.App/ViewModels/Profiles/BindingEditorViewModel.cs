@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using ApexMapper.App.Services;
 using ApexMapper.Core.Curves;
 using ApexMapper.Core.Engine;
 using ApexMapper.Core.Pipeline;
@@ -57,6 +58,9 @@ public sealed class BindingEditorViewModel : ObservableViewModel
             var row = Rows[index];
             if (row.FirstKey is null || (row.IsAxis && row.SecondKey is null))
                 Error = $"Choose {(row.IsAxis ? "both keys" : "a key")} for binding {index + 1}.";
+            else if ((row.FirstKey is { } first && MappingKeyRules.IsReserved(first))
+                || (row.IsAxis && row.SecondKey is { } second && MappingKeyRules.IsReserved(second)))
+                Error = $"Binding {index + 1}: {MappingKeyRules.ReservedKeyError}";
             else if (row.IsAxis && row.FirstKey == row.SecondKey)
                 Error = $"Choose two different keys for binding {index + 1}.";
             else if (!row.TargetChoices.Any(choice => choice.Value == row.Target))

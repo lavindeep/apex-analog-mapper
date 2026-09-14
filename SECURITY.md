@@ -7,20 +7,21 @@ touches, how it behaves, and how to report a vulnerability.
 ## What the app touches
 
 - **Global keyboard input.** On Windows the app reads keyboard events through
-  Raw Input and HID (`src/ApexMapper.Input/`) so it can map keys to a virtual
-  Xbox controller. Keystroke data is processed in memory only. The local log
-  store records session state, drop counts, profile identifiers, and error
-  messages — it never records which keys are pressed.
+  Raw Input, HID sensor reports and a Windows keyboard hook to map keys to a
+  virtual Xbox controller. While the selected game is foreground, the hook
+  captures digital bindings and suppresses mapped keystrokes across all physical
+  keyboards. Keystroke data stays in memory. The supervisor log records session
+  state and errors, never which keys are pressed.
 - **A virtual controller.** Output goes through the ViGEmBus driver (see below).
 
 ## Network posture
 
-Version 0.1 makes no network connections. There is no telemetry and no
+The app makes no network connections. There is no telemetry and no
 auto-update; the app does not phone home.
 
 ## Inter-process communication
 
-The tray application and the supervisor process talk over a named pipe created
+The desktop application and the supervisor process talk over a named pipe created
 with `PipeOptions.CurrentUserOnly` on both the server and the client, so only
 the current user's processes can connect. No network socket is opened.
 
@@ -58,9 +59,9 @@ checksums published on the release page before running a download.
 
 ## Anti-cheat stance
 
-The app **detects and disables**, it never evades. It observes the running
-process list and the foreground executable name; when it sees known anti-cheat
-software it disables auto-enable. It never injects code, never reads another
+The app checks the running process list and foreground executable before Start.
+If it detects an anti-cheat signal or cannot complete the check, it asks for
+confirmation before starting. Mapping never starts automatically. It never injects code, never reads another
 process's memory, and never installs a filter driver. Using this tool with
 online games that run anti-cheat may still violate those games' terms of
 service — that is your responsibility.

@@ -21,6 +21,21 @@ public sealed class MappingSessionSuppressionTests
     private static readonly GameProcess Game = new(42, 1234, "Test game", "game.exe");
 
     [Fact]
+    public async Task Imported_reserved_binding_blocks_start_before_controller_or_filter_side_effects()
+    {
+        using var h = new Harness { MappedKeys = new[] { Throttle, new KeyId(0xE01D) } };
+
+        (await h.Session.EnableAsync(CancellationToken.None)).Should().BeFalse();
+
+        h.Launcher.Calls.Should().Be(0);
+        h.Channel.ConnectCalls.Should().Be(0);
+        h.Suppression.EnableCalls.Should().Be(0);
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Engine.IsEnabled.Should().BeFalse();
+        h.States.Last().Message.Should().Be("Ctrl, Alt, Windows and F12 cannot be mapped. Choose another key.");
+    }
+
+    [Fact]
     public async Task Start_uses_the_selected_process_and_separates_analog_from_digital_bindings()
     {
         using var h = new Harness();
@@ -199,13 +214,17 @@ public sealed class MappingSessionSuppressionTests
         using var cancellation = new CancellationTokenSource();
         using var entered = new ManualResetEventSlim();
         using var release = new ManualResetEventSlim();
+        var filtering = 0;
         h.Suppression.OnEnable = () =>
         {
+            Volatile.Write(ref filtering, 1);
+            using var registration = h.Suppression.StartupCancellation.Register(() => Volatile.Write(ref filtering, 0));
             entered.Set();
             release.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue();
         };
         var start = h.Session.EnableAsync(cancellation.Token);
         entered.Wait(TimeSpan.FromSeconds(3)).Should().BeTrue();
+        Volatile.Read(ref filtering).Should().Be(1);
 
         Task stop = Task.CompletedTask;
         switch (cause)
@@ -220,6 +239,7 @@ public sealed class MappingSessionSuppressionTests
         }
         h.Session.IsEnabled.Should().BeFalse();
         h.Engine.IsEnabled.Should().BeFalse();
+        Volatile.Read(ref filtering).Should().Be(0, "Stop must reach the native filter before Enable returns its lease");
         release.Set();
 
         if (cause == "cancel") await Assert.ThrowsAnyAsync<OperationCanceledException>(() => start);
@@ -230,6 +250,39 @@ public sealed class MappingSessionSuppressionTests
         h.Engine.IsEnabled.Should().BeFalse();
         h.Channel.IsConnected.Should().BeFalse();
         h.States.Should().OnlyContain(state => !state.IsEnabled);
+    }
+
+    [Fact]
+    public async Task Stop_before_native_cancellation_is_published_prevents_filter_startup()
+    {
+        using var h = new Harness();
+        var reads = 0;
+        h.OnReadMappedKeys = () =>
+        {
+            if (++reads == 2) h.Session.ForceLocalOff("Stop before native startup.");
+        };
+
+        (await h.Session.EnableAsync(CancellationToken.None)).Should().BeFalse();
+
+        h.Suppression.EnableCalls.Should().Be(0);
+        h.Session.IsEnabled.Should().BeFalse();
+        h.Channel.IsConnected.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task A_previous_Start_token_cannot_cancel_a_later_session()
+    {
+        using var h = new Harness();
+        using var firstStart = new CancellationTokenSource();
+        (await h.Session.EnableAsync(firstStart.Token)).Should().BeTrue();
+        await h.Session.DisableAsync(CancellationToken.None);
+        (await h.Session.EnableAsync(CancellationToken.None)).Should().BeTrue();
+
+        firstStart.Cancel();
+
+        h.Session.IsEnabled.Should().BeTrue();
+        h.Engine.IsEnabled.Should().BeTrue();
+        h.Suppression.Lease.DisposeCalls.Should().Be(0);
     }
 
     [Theory]
@@ -272,6 +325,10 @@ public sealed class MappingSessionSuppressionTests
         public KeyStateStore Store { get; } = new(new KeyIndex(new[] { Throttle, Steer }));
         public FakeChannel Channel { get; } = new();
         public FakeSuppression Suppression { get; } = new();
+        public Launcher Launcher { get; } = new();
+        public IReadOnlyCollection<KeyId> MappedKeys { get; set; } =
+            new[] { Throttle, Steer, Handbrake, Clutch, ShiftDown, ShiftUp };
+        public Action? OnReadMappedKeys { get; set; }
         public List<MappingSessionStateChangedEventArgs> States { get; } = new();
         public long? ProcessStart { get; set; } = Game.ProcessStartTimeUtcTicks;
         public string? Readiness { get; set; }
@@ -289,9 +346,9 @@ public sealed class MappingSessionSuppressionTests
             Session = new MappingSession(Store, Engine, Channel,
                 new PreflightRunner(Array.Empty<IPreflightCheck>()),
                 new AntiCheatDetector(processes), new SteamDetector(processes, Array.Empty<string>()),
-                new Launcher(), new NoForeground(), (_, _) => true, NullLogger<MappingSession>.Instance,
+                Launcher, new NoForeground(), (_, _) => true, NullLogger<MappingSession>.Instance,
                 () => Readiness, Games, Suppression, () => new[] { Throttle, Steer },
-                () => new[] { Throttle, Steer, Handbrake, Clutch, ShiftDown, ShiftUp });
+                () => { OnReadMappedKeys?.Invoke(); return MappedKeys; });
             Session.CompleteInputStartup();
             Session.StateChanged += (_, state) => States.Add(state);
         }
@@ -340,16 +397,21 @@ public sealed class MappingSessionSuppressionTests
         public IReadOnlyCollection<KeyId> AnalogKeys { get; private set; } = Array.Empty<KeyId>();
         public IReadOnlyCollection<KeyId> DigitalKeys { get; private set; } = Array.Empty<KeyId>();
         public bool IsTargetForeground => true;
-        public TrackingLease Lease { get; } = new();
+        public TrackingLease Lease { get; private set; } = new();
+        public CancellationToken StartupCancellation { get; private set; }
         public Action? OnEnable { get; set; }
         public event Action<string>? Faulted;
         public void Fail(string error) => Faulted?.Invoke(error);
-        public IDisposable Enable(int processId, IReadOnlyCollection<KeyId> analogKeys, IReadOnlyCollection<KeyId> digitalKeys)
+        public IDisposable Enable(int processId, IReadOnlyCollection<KeyId> analogKeys, IReadOnlyCollection<KeyId> digitalKeys,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             EnableCalls++;
             ProcessId = processId;
             AnalogKeys = analogKeys;
             DigitalKeys = digitalKeys;
+            Lease = new TrackingLease();
+            StartupCancellation = cancellationToken;
             OnEnable?.Invoke();
             return Lease;
         }
@@ -364,7 +426,11 @@ public sealed class MappingSessionSuppressionTests
     }
 
     private sealed class NullSink : IPadStateSink { public void Push(in VirtualPadState state) { } }
-    private sealed class Launcher : ISupervisorProcessLauncher { public string? EnsureRunning() => null; }
+    private sealed class Launcher : ISupervisorProcessLauncher
+    {
+        public int Calls { get; private set; }
+        public string? EnsureRunning() { Calls++; return null; }
+    }
     private sealed class NoProcesses : IProcessEnumerator
     {
         public IReadOnlyList<ProcessSnapshot> Enumerate() => Array.Empty<ProcessSnapshot>();

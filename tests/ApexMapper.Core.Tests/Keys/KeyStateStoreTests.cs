@@ -5,6 +5,29 @@ namespace ApexMapper.Core.Tests.Keys;
 
 public class KeyStateStoreTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Clearing_capture_preserves_gate_until_physical_release(bool indexed)
+    {
+        var key = KeyId.FromScanCode(0x2A);
+        var store = indexed ? new KeyStateStore(new KeyIndex(new[] { key })) : new KeyStateStore();
+        store.Set(key, 1f, KeyProvenance.Digital);
+        store.GateHeldKeys();
+
+        store.ClearPreservingGate(key, KeyProvenance.Digital);
+        store.Set(key, 1f, KeyProvenance.Digital);
+        store.IsGated(key).Should().BeTrue();
+        store.Get(key).Value.Should().Be(0f);
+
+        store.Set(key, 0f, KeyProvenance.Digital);
+        store.Set(key, 1f, KeyProvenance.Digital);
+        store.IsGated(key).Should().BeFalse();
+        store.Get(key).Value.Should().Be(1f);
+        store.ClearPreservingGate(key, KeyProvenance.Digital);
+        store.Get(key).Value.Should().Be(0f);
+    }
+
     [Fact]
     public void Get_returns_rest_when_unset()
     {

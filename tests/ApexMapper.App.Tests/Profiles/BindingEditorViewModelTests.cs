@@ -12,6 +12,31 @@ namespace ApexMapper.App.Tests.Profiles;
 public sealed class BindingEditorViewModelTests
 {
     [Theory]
+    [InlineData(0x1D, 0, false)]
+    [InlineData(0xE01D, 1, false)]
+    [InlineData(0x38, 1, true)]
+    [InlineData(0xE038, 0, false)]
+    [InlineData(0xE05B, 1, false)]
+    [InlineData(0xE05C, 1, true)]
+    [InlineData(0x58, 0, false)]
+    public void Reserved_keys_block_save_and_Shift_remains_available(int scanCode, int rowIndex, bool secondKey)
+    {
+        var editor = new BindingEditorViewModel(MakeProfile());
+        var row = editor.Rows[rowIndex];
+        if (secondKey) row.SecondKey = new KeyId((ushort)scanCode);
+        else row.FirstKey = new KeyId((ushort)scanCode);
+
+        editor.TryBuildProfile(out var invalid).Should().BeFalse();
+        invalid.Should().BeNull();
+        editor.Error.Should().Be($"Binding {rowIndex + 1}: Ctrl, Alt, Windows and F12 cannot be mapped. Choose another key.");
+
+        if (secondKey) row.SecondKey = new KeyId(0x36);
+        else row.FirstKey = new KeyId(0x2A);
+        editor.TryBuildProfile(out _).Should().BeTrue();
+        editor.Error.Should().BeNull();
+    }
+
+    [Theory]
     [InlineData(BindingTarget.ButtonA)]
     [InlineData(BindingTarget.LeftStickX)]
     public void Duplicate_outputs_cannot_silently_overwrite_an_existing_binding(BindingTarget target)

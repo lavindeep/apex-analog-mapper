@@ -15,10 +15,12 @@ public sealed class KeyboardSuppression : IKeyboardSuppression, IDisposable
     public event Action<string>? Faulted;
     public bool IsTargetForeground => Volatile.Read(ref _active)?.IsTargetForeground() == true;
 
-    public IDisposable Enable(int processId, IReadOnlyCollection<KeyId> analogKeys, IReadOnlyCollection<KeyId> digitalKeys)
+    public IDisposable Enable(int processId, IReadOnlyCollection<KeyId> analogKeys, IReadOnlyCollection<KeyId> digitalKeys,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(analogKeys);
         ArgumentNullException.ThrowIfNull(digitalKeys);
+        cancellationToken.ThrowIfCancellationRequested();
         Worker worker;
         lock (_gate)
         {
@@ -27,7 +29,7 @@ public sealed class KeyboardSuppression : IKeyboardSuppression, IDisposable
             worker = new Worker(this, processId, analogKeys.ToArray(), digitalKeys.Except(analogKeys).ToArray());
             _active = worker;
         }
-        try { worker.Start(); return worker; }
+        try { worker.Start(cancellationToken); return worker; }
         catch { worker.Dispose(); throw; }
     }
 
@@ -39,7 +41,7 @@ public sealed class KeyboardSuppression : IKeyboardSuppression, IDisposable
         {
             if (_applied is not null)
                 foreach (var key in _applied.DigitalKeys)
-                    if (store.Get(key).Source == KeyProvenance.Digital) store.Set(key, 0, KeyProvenance.Digital);
+                    if (store.Get(key).Source == KeyProvenance.Digital) store.ClearPreservingGate(key, KeyProvenance.Digital);
             _applied = worker;
         }
         if (worker is null) return;
@@ -86,6 +88,7 @@ public sealed class KeyboardSuppression : IKeyboardSuppression, IDisposable
         private nint _hook;
         private int _enabled = 1;
         private volatile string? _failure;
+        private CancellationTokenRegistration _cancellation;
 
         public Worker(KeyboardSuppression owner, int processId, KeyId[] analogKeys, KeyId[] digitalKeys)
         {
@@ -104,10 +107,11 @@ public sealed class KeyboardSuppression : IKeyboardSuppression, IDisposable
             _callback = OnKeyboard;
         }
 
-        public void Start()
+        public void Start(CancellationToken cancellationToken)
         {
+            _cancellation = cancellationToken.Register(Dispose);
             try { new Thread(Run) { IsBackground = true, Name = "KeyboardSuppression" }.Start(); }
-            catch { _process.Dispose(); throw; }
+            catch { _cancellation.Dispose(); _process.Dispose(); throw; }
             _ready.Task.WaitAsync(TimeSpan.FromSeconds(2)).GetAwaiter().GetResult();
         }
 
@@ -119,9 +123,13 @@ public sealed class KeyboardSuppression : IKeyboardSuppression, IDisposable
 
         public void ApplyTo(KeyStateStore store)
         {
-            var generation = _policy.Generation;
-            _policy.ApplyTo(store, IsTargetForeground());
-            if (!IsTargetForeground() || generation != _policy.Generation)
+            var generation = _policy.ApplyTo(store, IsTargetForeground());
+            if (!IsTargetForeground())
+            {
+                _policy.SetActive(false);
+                store.GateHeldKeys(KeyProvenance.Digital);
+            }
+            else if (generation != _policy.Generation)
                 store.GateHeldKeys(KeyProvenance.Digital);
         }
 
@@ -166,6 +174,7 @@ public sealed class KeyboardSuppression : IKeyboardSuppression, IDisposable
                 var unexpected = Interlocked.Exchange(ref _enabled, 0) != 0;
                 if (_hook != 0) Native.UnhookWindowsHookEx(_hook);
                 if (timer != 0) Native.KillTimer(0, timer);
+                _cancellation.Dispose();
                 _process.Dispose();
                 if (unexpected && _ready.Task.IsCompletedSuccessfully)
                     _owner.ReportFault(this, _failure ?? "Keyboard suppression stopped unexpectedly.");

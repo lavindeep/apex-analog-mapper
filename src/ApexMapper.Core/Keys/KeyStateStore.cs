@@ -100,6 +100,31 @@ public sealed class KeyStateStore
         _states![key] = new KeyState(clamped, source);
     }
 
+    /// <summary>Clears captured input without treating it as a physical release.</summary>
+    public void ClearPreservingGate(KeyId key, KeyProvenance source)
+    {
+        if (_index is not null)
+        {
+            if (!_index.TryGetSlot(key, out var slot))
+            {
+                return;
+            }
+
+            ref var cell = ref _cells![slot];
+            while (true)
+            {
+                var current = Volatile.Read(ref cell);
+                var next = Pack(0f, source) | (current & GateBit);
+                if (Interlocked.CompareExchange(ref cell, next, current) == current)
+                {
+                    return;
+                }
+            }
+        }
+
+        _states![key] = new KeyState(0f, source);
+    }
+
     /// <summary>Gates and zeroes every key whose current value is &gt; 0.</summary>
     public void GateHeldKeys() => GateHeldKeysCore(source: null);
 

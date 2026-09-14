@@ -40,6 +40,7 @@ public sealed class MappingSession : IMappingSession, IDisposable
     private readonly Func<IReadOnlyCollection<KeyId>> _suppressionKeys;
     private readonly Func<IReadOnlyCollection<KeyId>> _mappedKeys;
     private IDisposable? _suppressionLease;
+    private CancellationTokenSource? _suppressionStartupCancellation;
     private int _inputEditors;
     private int _starting;
     private int _channelArmed;
@@ -143,6 +144,7 @@ public sealed class MappingSession : IMappingSession, IDisposable
         await _transition.WaitAsync(ct).ConfigureAwait(false);
         var connectionAttempted = false;
         var completed = false;
+        CancellationTokenSource? suppressionStartup = null;
         try
         {
             if (_enabled)
@@ -174,6 +176,12 @@ public sealed class MappingSession : IMappingSession, IDisposable
             if (InputReadiness() is { } readinessError)
             {
                 RaiseState(false, readinessError);
+                return false;
+            }
+
+            if (_keyboardSuppression is not null && _mappedKeys().Any(MappingKeyRules.IsReserved))
+            {
+                RaiseState(false, MappingKeyRules.ReservedKeyError);
                 return false;
             }
 
@@ -248,10 +256,17 @@ public sealed class MappingSession : IMappingSession, IDisposable
             {
                 var analogKeys = _suppressionKeys().ToArray();
                 var digitalKeys = _mappedKeys().Except(analogKeys).ToArray();
+                suppressionStartup = new CancellationTokenSource();
+                var stoppingToken = suppressionStartup.Token;
+                Volatile.Write(ref _suppressionStartupCancellation, suppressionStartup);
+                // Stop may precede publication; otherwise it cancels this token
+                // immediately, including while native Enable has not returned.
+                if (Interlocked.CompareExchange(ref _panicGeneration, 0, 0) != panicGenerationAtEntry)
+                    return false;
                 // Native startup is bounded but must not block the UI's Stop.
                 // Always observe the result, even after cancellation, so its
                 // lease can be released by the generation check below.
-                var lease = await Task.Run(() => _keyboardSuppression.Enable(selectedGame!.ProcessId, analogKeys, digitalKeys))
+                var lease = await Task.Run(() => _keyboardSuppression.Enable(selectedGame!.ProcessId, analogKeys, digitalKeys, stoppingToken))
                     .ConfigureAwait(false);
                 Interlocked.Exchange(ref _suppressionLease, lease)?.Dispose();
             }
@@ -291,6 +306,11 @@ public sealed class MappingSession : IMappingSession, IDisposable
             completed = true;
             return true;
         }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            RaiseState(false, "Start cancelled. Start again.");
+            return false;
+        }
         catch (OperationCanceledException)
         {
             throw;
@@ -306,13 +326,21 @@ public sealed class MappingSession : IMappingSession, IDisposable
         }
         finally
         {
-            if (connectionAttempted && !completed)
+            try
             {
-                StopLocalOutput();
-                await DisconnectAfterFailedStartAsync().ConfigureAwait(false);
+                if (connectionAttempted && !completed)
+                {
+                    StopLocalOutput();
+                    await DisconnectAfterFailedStartAsync().ConfigureAwait(false);
+                }
             }
-            Volatile.Write(ref _starting, 0);
-            _transition.Release();
+            finally
+            {
+                Interlocked.CompareExchange(ref _suppressionStartupCancellation, null, suppressionStartup);
+                suppressionStartup?.Dispose();
+                Volatile.Write(ref _starting, 0);
+                _transition.Release();
+            }
         }
     }
 
@@ -381,6 +409,11 @@ public sealed class MappingSession : IMappingSession, IDisposable
         _engine.SetEnabled(false);
         _store.GateHeldKeys();
         _enabled = false;
+        // The native worker observes this before a pending Enable returns its
+        // lease. Enable owns disposal once its startup work has completed.
+        var startup = Interlocked.Exchange(ref _suppressionStartupCancellation, null);
+        try { startup?.Cancel(); }
+        catch { /* The published lease is still released below. */ }
         // Exchange before disposing gives Stop, faults and startup cancellation
         // one owner. Native disposal disables filtering before the worker retires.
         var lease = Interlocked.Exchange(ref _suppressionLease, null);
