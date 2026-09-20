@@ -174,7 +174,6 @@ internal static class Commands
         {
             while (Stats.TicksToMs(Stopwatch.GetTimestamp() - start) < seconds * 1000)
             {
-                v.Drain();
                 v.ReadGroup(2, reply);
                 var ms = Stats.TicksToMs(Stopwatch.GetTimestamp() - start);
                 t.Add(ms);
@@ -194,11 +193,11 @@ internal static class Commands
             periods.Add(t[i] - t[i - 1]);
         }
         Console.WriteLine(Stats.Summary("sample period", periods));
-        var restRaw = Median(raw.Take(200));
-        var restFlt = Median(flt.Take(200));
-        var noiseRaw = raw.Take(200).Max() - raw.Take(200).Min();
-        var noiseFlt = flt.Take(200).Max() - flt.Take(200).Min();
-        Console.WriteLine($"rest raw={restRaw} (p-p noise {noiseRaw}) filtered={restFlt} (p-p noise {noiseFlt})");
+        // Rest is the floor of the signal (travel reads upward), so take the median of
+        // the lowest 30% rather than the first samples, which may include taps.
+        var restRaw = Floor(raw);
+        var restFlt = Floor(flt);
+        Console.WriteLine($"rest raw={restRaw} filtered={restFlt}");
 
         // Presses: |raw - rest| rises above 100 counts, later falls below 30.
         var riseRaw = new List<double>();
@@ -287,6 +286,14 @@ internal static class Commands
             }
         }
         return double.NaN;
+    }
+
+    private static int Floor(List<int> xs)
+    {
+        var l = xs.ToList();
+        l.Sort();
+        var n = Math.Max(1, l.Count * 3 / 10);
+        return l[n / 2];
     }
 
     private static int Median(IEnumerable<int> xs)
@@ -405,7 +412,6 @@ internal static class Commands
         var restSamples = new List<int>();
         for (var i = 0; i < 100; i++)
         {
-            v.Drain();
             v.ReadGroup(2, reply);
             restSamples.Add(Vendor.Raw(reply, 2));
         }
@@ -415,7 +421,6 @@ internal static class Commands
         var sw = Stopwatch.StartNew();
         while (sw.Elapsed < TimeSpan.FromSeconds(4))
         {
-            v.Drain();
             v.ReadGroup(2, reply);
             var r = Vendor.Raw(reply, 2);
             if (Math.Abs(r - rest) > Math.Abs(full - rest))
@@ -438,6 +443,9 @@ internal static class Commands
         var stop = false;
         var sensorToRead = new List<double>();
         var hookToRead = new List<double>();
+        // The sampler fires at the same 5% depth the sensor anchor uses (13 of 255),
+        // so a readback can never precede its own anchor.
+        const byte samplerLevel = 13;
         var sampler = new Thread(() =>
         {
             using var timer = new HighResTimer(1);
@@ -450,7 +458,7 @@ internal static class Commands
                     continue;
                 }
                 var rt = s.Gamepad.bRightTrigger;
-                if (wasZero && rt > 0)
+                if (wasZero && rt >= samplerLevel)
                 {
                     var now = Stopwatch.GetTimestamp();
                     var c = Volatile.Read(ref crossTicks);
@@ -464,7 +472,7 @@ internal static class Commands
                         hookToRead.Add(Stats.TicksToMs(now - h));
                     }
                 }
-                wasZero = rt == 0;
+                wasZero = rt < samplerLevel / 2;
             }
         }) { IsBackground = true, Priority = ThreadPriority.AboveNormal };
         sampler.Start();
@@ -475,7 +483,6 @@ internal static class Commands
         byte lastRt = 0;
         while (Stats.TicksToMs(Stopwatch.GetTimestamp() - start) < seconds * 1000)
         {
-            v.Drain();
             v.ReadGroup(2, reply);
             var now = Stopwatch.GetTimestamp();
             var depth = Math.Clamp((Vendor.Raw(reply, 2) - rest) / (double)span, 0, 1);
@@ -525,7 +532,6 @@ internal static class Commands
             {
                 foreach (var g in new byte[] { 2, 3 })
                 {
-                    v.Drain();
                     v.ReadGroup(g, reply);
                     for (var s = 0; s < 14; s++)
                     {
@@ -577,7 +583,7 @@ internal static class Commands
         {
             Console.WriteLine($"[{key}] Keep it released. Sampling rest...");
             Thread.Sleep(1000);
-            var rest = Median(Enumerable.Range(0, 100).Select(_ => { v.Drain(); v.ReadGroup(group, reply); return (int)Vendor.Raw(reply, slot); }));
+            var rest = Median(Enumerable.Range(0, 100).Select(_ => { v.ReadGroup(group, reply); return (int)Vendor.Raw(reply, slot); }));
             Console.WriteLine($"[{key}] rest={rest}. Now press {key} SLOWLY all the way down over about 3 seconds, then release.");
             var full = rest;
             var digitalAt = -1;
@@ -586,7 +592,6 @@ internal static class Commands
             var pressed = false;
             while (sw.Elapsed < TimeSpan.FromSeconds(8))
             {
-                v.Drain();
                 v.ReadGroup(group, reply);
                 var r = Vendor.Raw(reply, slot);
                 if (Math.Abs(r - rest) > Math.Abs(full - rest))

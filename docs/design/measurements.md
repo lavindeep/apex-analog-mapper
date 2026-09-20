@@ -87,18 +87,49 @@ the legacy Apex Pro TKL to 0.1 mm actuation and rapid trigger. Consequences are
 recorded in the design (gate clearing for analog keys uses the sensor only; fallback
 is coarse under rapid trigger).
 
-## Rest noise and drift (rest)
+## Rest noise and drift (rest, 2 min hands off, 3936 samples, 0 faults)
 
-The first 10-minute run (19,361 samples, 0 faults) was contaminated: keys were in use
-during it. It still shows the travel direction and range: W rose from 863 to 4095
-(the 12-bit ceiling, so W clips at full press), A to 3491, S to 3552, D to 3630. A
-clean 3-minute run is part of the interactive session.
+| Key | Raw mean | Raw p-p | Raw drift | Filtered mean | Filtered p-p | Filtered drift |
+| --- | --- | --- | --- | --- | --- | --- |
+| W | 877.0 | 14 | -0.1 | 876.5 | 5 | -0.2 |
+| A | 843.4 | 15 | -0.2 | 843.0 | 5 | -0.1 |
+| S | 846.5 | 17 | 0.0 | 846.0 | 5 | -0.2 |
+| D | 847.3 | 14 | -0.1 | 846.8 | 5 | -0.1 |
 
-## Interactive measurements
+Worst peak to peak over all 28 sensors in groups 2 and 3: raw 21, filtered 11. Drift
+over two minutes is under one count. A noise band of 15 counts is right for raw and
+generous for filtered.
 
-Pending the maintainer's keyboard session: `step` (raw versus filtered lag),
-`e2e` (sensor crossing to readback), `travel` (span and digital actuation point),
-`probe --w-held` (fixtures with W down).
+An earlier 10-minute run was contaminated by typing and is discarded, but it agrees
+on range: W rose to 4095, A to 3491, S to 3552, D to 3630.
+
+## Travel (travel)
+
+| Key | Rest | Full press | Span | Direction | Digital key-down fires at |
+| --- | --- | --- | --- | --- | --- |
+| W | 878 | 4095 | 3217 | up | 957 counts, 2% of travel |
+| A | 843 | 3558 | 2715 | up | not measured (hook tracks W only) |
+| S | 847 | 3559 | 2712 | up | |
+| D | 850 | 3623 | 2773 | up | |
+
+W reaches the 12-bit ceiling before or at bottom-out, so its top of travel is
+unmeasurable and the calibration's full-press value for W is 4095. A, S, and D do not
+clip. The maintainer's 0.2 mm actuation setting fires at 2% of W's count span; the
+sensor response is not linear in millimetres near rest.
+
+Held-W fixtures (`fixtures/w-held-*.hex`): W at 4095 in group 2 slot 2; the Enter key
+pressed to confirm the prompt shows in group 3 slot 13 (871 to 987), which confirms
+the map entry for Enter.
+
+## Step response and end-to-end latency
+
+First runs of `step` and `e2e` were invalidated by the spike itself: the timeout-based
+drain made the sample period 15 ms, and the e2e sampler fired at a shallower depth
+than its anchor, so half the readings carried the previous tap's timestamp (p50
+0.72 ms, p99 236 ms, a bimodal artefact). Both commands were fixed (no drain, sampler
+level equal to the anchor level) and rerun; results below.
+
+Pending rerun.
 
 ## Decisions
 
