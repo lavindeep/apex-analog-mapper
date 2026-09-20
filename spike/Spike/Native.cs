@@ -128,13 +128,16 @@ internal static unsafe class Native
     [DllImport("xinput1_4.dll")]
     public static extern uint XInputGetState(uint dwUserIndex, out XINPUT_STATE pState);
 
-    // W on a US layout: virtual key 0x57, scan code 0x11.
-    public static void SendW(bool down)
+    // F13 (virtual key 0x7C, scan code 0x64): no application uses it, so a synthetic
+    // press that is not swallowed lands harmlessly in whatever window has focus.
+    public const uint TestVk = 0x7C;
+
+    public static void SendTestKey(bool down)
     {
         var input = new INPUT
         {
             type = 1,
-            ki = new KEYBDINPUT { wVk = 0x57, wScan = 0x11, dwFlags = down ? 0u : 0x2u },
+            ki = new KEYBDINPUT { wVk = (ushort)TestVk, wScan = 0x64, dwFlags = down ? 0u : 0x2u },
         };
         SendInput(1, &input, sizeof(INPUT));
     }
@@ -211,14 +214,14 @@ internal sealed class KeyHook : IDisposable
         if (code >= 0)
         {
             var k = (Native.KBDLLHOOKSTRUCT*)lParam;
-            if (k->vkCode == 0x57)
+            if (k->vkCode == 0x57 && (int)wParam is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN)
+            {
+                Volatile.Write(ref LastWDownTicks, System.Diagnostics.Stopwatch.GetTimestamp());
+                Interlocked.Increment(ref WDownCount);
+            }
+            if (k->vkCode == Native.TestVk)
             {
                 Interlocked.Increment(ref WSeenCount);
-                if ((int)wParam is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN)
-                {
-                    Volatile.Write(ref LastWDownTicks, System.Diagnostics.Stopwatch.GetTimestamp());
-                    Interlocked.Increment(ref WDownCount);
-                }
                 if (_swallowW)
                 {
                     return 1;

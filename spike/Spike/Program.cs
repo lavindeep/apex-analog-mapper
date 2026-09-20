@@ -32,6 +32,15 @@ try
         case "rest": Commands.Rest(Arg("--minutes", 10)); break;
         case "travel": Commands.Travel(); break;
         case "kill": return Commands.Kill(Environment.ProcessPath!);
+        case "kill5": return Extra.KillRepeat(Environment.ProcessPath!, Arg("--trials", 5));
+        case "containers": Extra.Containers(); break;
+        case "listen": Extra.Listen(Arg("--seconds", 3)); break;
+        case "hookcost": Extra.HookCost(Arg("--presses", 300)); break;
+        case "disconnect": Extra.Disconnect(Arg("--trials", 5)); break;
+        case "readback2": Extra.Readback2(Arg("--seconds", 10)); break;
+        case "tickres": Extra.TickRes(); break;
+        case "pipeline2": Extra.Pipeline2(Arg("--seconds", 10)); break;
+        case "e2e2": Extra.E2E2(Arg("--seconds", 20)); break;
         case "--child": Commands.Child(); break;
         default:
             Console.WriteLine("commands: probe [--w-held] | cycle [--seconds N] [--no-drain] | pipeline | step | tick | readback | e2e | rest [--minutes N] | travel | kill");

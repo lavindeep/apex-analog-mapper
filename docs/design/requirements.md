@@ -50,11 +50,14 @@ after the owning stage closes is a gap.
 | A4 | Command 0xD7 with selector 1..5 parses 14 raw and 14 filtered uint16 LE with zero padding at 57..64 and values at most 4095. | 1 | |
 | A5 | Only 0x90 and 0xD7 can ever be written, enforced in one place with a test, and nothing outside the vendor interface performs HID writes. | 1, 2 | |
 | A6 | 70-slot sensor table with 65 mapped keys, arrows and function row unsupported, per-keyboard overrides from the learn step. | 1 | |
-| A7 | Input queue drained before every write. | 2 | |
-| A8 | 0x90 canary every N cycles; mismatch retires the handle. | 2 | |
+| A7 | Every reply checked against its group signature (absent slots under 50 at rest, recorded at calibration) and for values above 4095; mismatch retires the handle. No input-queue drain. | 1, 2 | |
+| A8 | 0x90 canary every 50 cycles; mismatch retires the handle. | 2 | |
 | A9 | Any fault retires the handle, waits on a signalable backoff, reopens, and re-verifies firmware. | 2 | |
-| A10 | Raw versus filtered chosen from the stage 0 measurement and recorded. | 0, 1 | |
-| A11 | Freshness limit `max(3 x p99 cycle period, 12 ms)` over the last 100 cycles; a cycle over 100 ms is a hard fault. | 1, 2 | |
+| A10 | Depth from the raw bytes, per the stage 0 measurement. | 1 | |
+| A11 | Freshness is a fixed 60 ms; a read timeout or three consecutive cycles of 100 ms or more is a fault; one slow cycle only stales the snapshot. | 1, 2 | |
+| A16 | Calibration detects a clipping key (4095 or a plateau), stores 4095, and tells the user; a key at 4095 for seconds during a session is a plausibility warning. | 1, 5 | |
+| A17 | Calibration is per key; spans are never shared between keys. | 1, 4 | |
+| A18 | The response preview shows counts as well as depth so the near-rest compression is visible; the feel step examines that region. | 5 | |
 | A12 | Status card shows measured p50 and p99 cycle period. | 5 | |
 | A13 | Calibration per container id and firmware: rest, full, noise band, sensor index. | 1, 4 | |
 | A14 | Depth re-normalised above the noise band per the design formula; in-band reads as released. | 1 | |

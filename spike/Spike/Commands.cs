@@ -288,6 +288,8 @@ internal static class Commands
         return double.NaN;
     }
 
+    // The 15th percentile: the middle of the lowest 30%, which is the rest plateau
+    // when travel reads upward and taps are short.
     private static int Floor(List<int> xs)
     {
         var l = xs.ToList();
@@ -640,8 +642,8 @@ internal static class Commands
         var rc = Native.XInputGetState(slot, out var before);
         Console.WriteLine($"before kill: XInputGetState={rc} RT={before.Gamepad.bRightTrigger}");
         var seenBefore = observer.WSeenCount;
-        Native.SendW(true);
-        Native.SendW(false);
+        Native.SendTestKey(true);
+        Native.SendTestKey(false);
         Thread.Sleep(200);
         var passedBefore = observer.WSeenCount - seenBefore;
         Console.WriteLine($"synthetic W events reaching the parent observer while child hook alive: {passedBefore} (expect 0)");
@@ -666,8 +668,8 @@ internal static class Commands
             : $"pad unplugged {unplugMs:F0} ms after TerminateProcess");
         Thread.Sleep(200);
         var seenAfter = observer.WSeenCount;
-        Native.SendW(true);
-        Native.SendW(false);
+        Native.SendTestKey(true);
+        Native.SendTestKey(false);
         Thread.Sleep(200);
         var passedAfter = observer.WSeenCount - seenAfter;
         Console.WriteLine($"synthetic W events reaching the parent observer after kill: {passedAfter} (expect 2)");
