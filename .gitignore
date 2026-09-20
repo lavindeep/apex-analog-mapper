@@ -1,36 +1,23 @@
 ## .NET
 bin/
 obj/
-out/
 *.user
 *.suo
-*.userosscache
-*.sln.docstates
-*.userprefs
 .vs/
 .vscode/
 .idea/
 
-## Build artifacts
+## Build and test output
 TestResults/
 artifacts/
+publish/
+releases/
 *.binlog
-*.nupkg
-*.snupkg
-BenchmarkDotNet.Artifacts/
 
-## Coverage
-coverage/
-*.coverage
-*.coveragexml
-lcov.info
+## Spike measurements (summaries go in docs/design/measurements.md)
+spike/out/
 
 ## OS
 .DS_Store
 Thumbs.db
 desktop.ini
-
-## Editor
-*.swp
-*.swo
-*~

@@ -1,15 +1,15 @@
 <Project>
   <PropertyGroup>
-    <Version>0.1.0</Version>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <WarningsNotAsErrors>NU1701</WarningsNotAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-    <NoWarn>CA1707</NoWarn>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <DeterministicSourcePaths>true</DeterministicSourcePaths>
-    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Deterministic>true</Deterministic>
+    <Version>0.1.0</Version>
+    <Authors>Lavindeep Dhillon</Authors>
+    <Product>Apex Analog Mapper</Product>
   </PropertyGroup>
 </Project>

@@ -1,13 +1,6 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>ApexMapper.Core</RootNamespace>
   </PropertyGroup>
-
-  <ItemGroup>
-    <InternalsVisibleTo Include="ApexMapper.Core.Tests" />
-  </ItemGroup>
-
 </Project>

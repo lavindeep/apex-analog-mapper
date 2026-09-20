@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>ApexMapper.Windows</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="HidSharp" />
+    <PackageReference Include="Nefarius.ViGEm.Client" />
+  </ItemGroup>
+</Project>
