@@ -36,7 +36,7 @@ after the owning stage closes is a gap.
 | K2 | Each slot holds the digital state, the analog depth, and a gate bit, readable together. | 1 | |
 | K3 | Gate set on session start, return from alt-tab, hook install, keyboard reconnect. | 1, 3 | |
 | K4 | Gated key contributes zero and its ramp, selector, and rate state reset. | 1 | |
-| K5 | Gate clears on a hook key-up or an analog reading inside the noise band. | 1 | |
+| K5 | Gate clears on an analog reading inside the noise band for analog-driven keys, and on a hook key-up for digital keys only; a hook key-up never clears an analog-driven key (rapid trigger). | 1 | |
 | K6 | Gate is never set by a sensor fault. | 1 | |
 | K7 | The hook owns the digital value and gate clearing; Raw Input only attributes. | 2 | |
 

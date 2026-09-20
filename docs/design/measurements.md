@@ -79,9 +79,20 @@ it died.
 Decision 4: in-process ViGEm is safe on process death. No watchdog process. The
 in-process watchdog still covers a wedged engine. Kill test threshold: 500 ms.
 
-## Rest noise and drift (rest, 10 min)
+## Keyboard settings
 
-Pending; see below once the run completes.
+The maintainer runs GG actuation at about 0.2 mm on every OmniPoint key with rapid
+trigger enabled. Firmware 4.9.1 is the August 2023 OmniPoint 2.0 update that brought
+the legacy Apex Pro TKL to 0.1 mm actuation and rapid trigger. Consequences are
+recorded in the design (gate clearing for analog keys uses the sensor only; fallback
+is coarse under rapid trigger).
+
+## Rest noise and drift (rest)
+
+The first 10-minute run (19,361 samples, 0 faults) was contaminated: keys were in use
+during it. It still shows the travel direction and range: W rose from 863 to 4095
+(the 12-bit ceiling, so W clips at full press), A to 3491, S to 3552, D to 3630. A
+clean 3-minute run is part of the interactive session.
 
 ## Interactive measurements
 
