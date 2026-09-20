@@ -129,17 +129,64 @@ than its anchor, so half the readings carried the previous tap's timestamp (p50
 0.72 ms, p99 236 ms, a bimodal artefact). Both commands were fixed (no drain, sampler
 level equal to the anchor level) and rerun; results below.
 
-Pending rerun.
+### Step (15 s, 72 fast W taps, 6.00 ms sample period)
+
+| | p50 | p99 | max | mean |
+| --- | --- | --- | --- | --- |
+| Raw 10 to 90 percent rise | 6.0 ms | 19.7 ms | 24.0 ms | 5.1 ms |
+| Filtered 10 to 90 percent rise | 12.0 ms | 19.7 ms | 24.0 ms | 10.6 ms |
+| Filtered lag behind raw at 50 percent | 6.0 ms | 6.0 ms | 6.0 ms | 3.1 ms |
+
+A fast tap rises within one raw sample. The filtered value trails raw by exactly one
+sample (6 ms) on about half the presses and zero on the rest, and its rise takes two
+samples. Filtered noise at rest is 5 counts against raw's 14 to 17 on a span of about
+3000, so the filter buys 0.3 percent of travel in noise for up to 6 ms of lag.
+
+Decision 1: use the raw bytes (offsets 1..28). Noise band default 20 counts, raised
+to 1.5 times the peak-to-peak measured at rest during calibration if that is larger.
+
+### End to end (20 s, 99 W taps seen by the hook)
+
+| Anchor to first XInput readback at 5 percent | n | p50 | p99 | max | mean |
+| --- | --- | --- | --- | --- | --- |
+| Sensor reading crosses 5 percent of span (headline) | 94 | 0.70 ms | 12.7 ms | 162 ms | 2.4 ms |
+| Keyboard's digital key-down (fires at 2 percent, GG actuation 0.2 mm) | 93 | 3.2 ms | 214 ms | 224 ms | 15.6 ms |
+
+Sensor crossing to readback is the software path: sample to submit to XInput, 0.7 ms
+median. Its p99 of 12.7 ms is the poll cycle phase (a press can land just after a
+group 2 read and wait one 12 ms cycle). The single 162 ms value and the p99 of the
+second row are taps where the anchor belonged to a rapid-trigger re-fire or a missed
+press; the medians are the trustworthy numbers.
+
+The second row is the useful comparison: the analog output trails the keyboard's own
+digital report by 3.2 ms median. The analog path is therefore within a few
+milliseconds of the keyboard's native latency, and the reference's feel problem was
+its 65 Hz engine and 10 Hz output, not the sensor path.
 
 ## Decisions
 
-1. Raw versus filtered: pending `step`.
-2. Sensor pacing and freshness: back to back, freshness about 36 ms, hard fault 100 ms.
+1. Raw bytes for depth; noise band 20 counts or 1.5 times the measured rest
+   peak-to-peak, whichever is larger. W clips at 4095 so its full-press value is the
+   ceiling; A, S, D do not clip.
+2. Sensor pacing and freshness: back to back with no floor; a two-group cycle is
+   12.0 ms with p99 12.1 ms; freshness limit `max(3 x p99, 12 ms)` is about 36 ms;
+   100 ms is the hard fault.
 3. Engine timer: high-resolution waitable timer, 1 ms period.
-4. Process death: safe, no watchdog process.
-5. Thresholds: see `HardwareThresholds.cs` when written in stage 3. Readback p99 4 ms;
-   packets per second 400; kill 500 ms; watchdog bound 200 + 50 + 5 + margin, set
-   to 400 ms; timer p99 3 ms.
+4. Process death unplugs the pad in 5 ms; no watchdog process.
+5. Thresholds for `HardwareThresholds.cs`, each with headroom over the measurement:
+
+| Threshold | Measured | Value |
+| --- | --- | --- |
+| Timer period p99 | 1.94 ms | 3 ms |
+| Sensor two-group cycle p99 | 12.09 ms | 15 ms |
+| Readback p99 (submit to XInput) | 1.64 ms | 4 ms |
+| XInput packets per second while changing every tick | 487 | 400 |
+| Loopback engine-to-readback p99 | 0.70 ms sensor-to-readback | 5 ms |
+| Kill: pad gone after TerminateProcess | 5 ms | 500 ms |
+| Watchdog: zero and unplug after the engine stalls | 200 ms staleness + 50 ms timer + 5 ms | 400 ms |
+
+Response representation: exponent, saturation point, deadzone, chosen on editing and
+serialisation grounds rather than fitted to the old curve.
 
 ## Open items
 
