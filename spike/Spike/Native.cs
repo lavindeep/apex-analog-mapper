@@ -183,6 +183,10 @@ internal sealed class KeyHook : IDisposable
     public int WDownCount;
     public int WSeenCount;
 
+    // Down timestamps and counts for W, A, S, D (virtual keys 0x57, 0x41, 0x53, 0x44).
+    public readonly long[] LastDownTicks = new long[256];
+    public readonly int[] DownCounts = new int[256];
+
     public KeyHook(bool swallowW)
     {
         _swallowW = swallowW;
@@ -214,10 +218,16 @@ internal sealed class KeyHook : IDisposable
         if (code >= 0)
         {
             var k = (Native.KBDLLHOOKSTRUCT*)lParam;
-            if (k->vkCode == 0x57 && (int)wParam is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN)
+            if ((int)wParam is Native.WM_KEYDOWN or Native.WM_SYSKEYDOWN && k->vkCode < 256)
             {
-                Volatile.Write(ref LastWDownTicks, System.Diagnostics.Stopwatch.GetTimestamp());
-                Interlocked.Increment(ref WDownCount);
+                var now = System.Diagnostics.Stopwatch.GetTimestamp();
+                Volatile.Write(ref LastDownTicks[k->vkCode], now);
+                Interlocked.Increment(ref DownCounts[k->vkCode]);
+                if (k->vkCode == 0x57)
+                {
+                    Volatile.Write(ref LastWDownTicks, now);
+                    Interlocked.Increment(ref WDownCount);
+                }
             }
             if (k->vkCode == Native.TestVk)
             {

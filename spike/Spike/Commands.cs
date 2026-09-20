@@ -589,7 +589,8 @@ internal static class Commands
             Console.WriteLine($"[{key}] rest={rest}. Now press {key} SLOWLY all the way down over about 3 seconds, then release.");
             var full = rest;
             var digitalAt = -1;
-            var lastDown = hook.WDownCount;
+            var vk = key switch { "W" => 0x57, "A" => 0x41, "S" => 0x53, _ => 0x44 };
+            var lastDown = hook.DownCounts[vk];
             var sw = Stopwatch.StartNew();
             var pressed = false;
             while (sw.Elapsed < TimeSpan.FromSeconds(8))
@@ -604,7 +605,7 @@ internal static class Commands
                 {
                     pressed = true;
                 }
-                if (key == "W" && digitalAt < 0 && hook.WDownCount > lastDown)
+                if (digitalAt < 0 && hook.DownCounts[vk] > lastDown)
                 {
                     digitalAt = r;
                 }
@@ -615,7 +616,7 @@ internal static class Commands
             }
             var span = Math.Abs(full - rest);
             var digitalPct = digitalAt < 0 || span == 0 ? double.NaN : 100.0 * Math.Abs(digitalAt - rest) / span;
-            Console.WriteLine($"[{key}] rest={rest} full={full} span={span} direction={(full > rest ? "up" : "down")} digitalFiresAt={(digitalAt < 0 ? "n/a (hook tracks W only)" : digitalAt + $" ({digitalPct:F0}% of travel)")}");
+            Console.WriteLine($"[{key}] rest={rest} full={full} span={span} direction={(full > rest ? "up" : "down")} digitalFiresAt={(digitalAt < 0 ? "n/a" : digitalAt + $" ({digitalPct:F1}% of span)")}");
         }
     }
 
