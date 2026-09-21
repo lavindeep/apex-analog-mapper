@@ -8,6 +8,9 @@
     <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="ApexMapper.Windows.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="HidSharp" />
     <PackageReference Include="Nefarius.ViGEm.Client" />
   </ItemGroup>
