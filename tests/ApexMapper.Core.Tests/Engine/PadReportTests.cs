@@ -69,5 +69,8 @@ public class PadReportTests
             }
         }
         Assert.Throws<ArgumentException>(() => PadTarget.ButtonA.ButtonBit() + PadTarget.LeftStickX.ButtonBit());
+        var report = PadReport.Neutral;
+        Assert.Throws<ArgumentException>(() => report.SetAxis(PadTarget.ButtonA, 1f));
+        Assert.Throws<ArgumentException>(() => report.SetTrigger(PadTarget.LeftStickX, 1f));
     }
 }

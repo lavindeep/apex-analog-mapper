@@ -50,6 +50,16 @@ public class CompiledProfileTests
     }
 
     [Fact]
+    public void An_invalid_calibration_counts_as_missing()
+    {
+        var calibrations = Fixtures.Calibrations();
+        calibrations[DefaultProfiles.Key.A] = new KeyCalibration(800, 3800, 20, 99);
+        var compiled = CompiledProfile.TryCompile(DefaultProfiles.Forza(), SensorMap.Default, calibrations, out var missing);
+        Assert.Null(compiled);
+        Assert.Equal([DefaultProfiles.Key.A], missing);
+    }
+
+    [Fact]
     public void Invalid_profiles_are_rejected_before_compiling()
     {
         var profile = DefaultProfiles.Forza() with

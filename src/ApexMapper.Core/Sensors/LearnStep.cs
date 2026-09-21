@@ -42,6 +42,10 @@ public sealed class LearnStep
     /// <summary>Feed one full snapshot of raw readings while the key is held.</summary>
     public void Observe(ReadOnlySpan<ushort> raw)
     {
+        if (raw.Length != SensorProtocol.SensorCount)
+        {
+            throw new ArgumentException("A reading must hold all 70 sensors.", nameof(raw));
+        }
         for (var i = 0; i < SensorProtocol.SensorCount; i++)
         {
             var delta = Math.Abs(raw[i] - _baseline[i]);

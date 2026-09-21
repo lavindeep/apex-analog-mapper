@@ -47,11 +47,30 @@ public class CycleStatsTests
         stats.Reset();
         Assert.False(stats.Record(140f));
         Assert.Equal(1, stats.Count);
+        Assert.Equal(140f, stats.P50);
+        Assert.Equal(140f, stats.P99);
     }
 
     [Fact]
-    public void Freshness_is_a_fixed_sixty_milliseconds()
+    public void Partial_window_interpolates_between_samples()
     {
-        Assert.Equal(60f, SensorSnapshot.FreshnessMs);
+        var stats = new CycleStats();
+        stats.Record(30f);
+        stats.Record(10f);
+        stats.Record(20f);
+        Assert.Equal(20f, stats.P50);
+        Assert.Equal(29.8f, stats.P99, 0.001f);
+    }
+
+    [Fact]
+    public void A_non_finite_period_is_ignored()
+    {
+        var stats = new CycleStats();
+        stats.Record(140f);
+        stats.Record(140f);
+        Assert.False(stats.Record(float.NaN));
+        Assert.Equal(2, stats.Count);
+        Assert.Equal(140f, stats.P50);
+        Assert.True(stats.Record(140f));
     }
 }

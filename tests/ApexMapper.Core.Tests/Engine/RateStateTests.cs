@@ -35,6 +35,18 @@ public class RateStateTests
     }
 
     [Fact]
+    public void Non_finite_input_or_rate_resets_instead_of_poisoning()
+    {
+        var state = new RateState();
+        state.Step(1f, 75f, 150f, 100f);
+        Assert.Equal(0f, state.Step(float.NaN, 1f, 150f, 100f));
+        state.Step(1f, 75f, 150f, 100f);
+        Assert.Equal(0f, state.Step(1f, 1f, float.NaN, 100f));
+        state.Step(1f, 75f, 150f, 100f);
+        Assert.Equal(0.5f, state.Step(1f, float.NaN, 150f, 100f), 0.0001f);
+    }
+
+    [Fact]
     public void Zero_return_time_snaps_to_centre()
     {
         var state = new RateState();

@@ -38,7 +38,26 @@ public class GroupSignatureTests
     }
 
     [Fact]
-    public void A_firmware_reply_in_a_sensor_slot_fails_every_signature()
+    public void Every_group_matches_only_itself_at_rest_and_held()
+    {
+        var signatures = Enumerable.Range(1, 5).Select(g => GroupSignature.FromRest(RawOf($"rest-group{g}"))).ToArray();
+        Assert.Equal(new[] { 0x2000, 0x0000, 0x1000, 0x1002, 0x3068 }, signatures.Select(s => (int)s.AbsentMask));
+        for (var i = 0; i < 5; i++)
+        {
+            Assert.True(signatures[i].Matches(RawOf($"rest-group{i + 1}")), $"group {i + 1} rest");
+            Assert.True(signatures[i].Matches(RawOf($"w-held-group{i + 1}")), $"group {i + 1} held");
+            for (var j = 0; j < 5; j++)
+            {
+                if (i != j)
+                {
+                    Assert.False(signatures[i].Matches(RawOf($"rest-group{j + 1}")), $"group {i + 1} accepted group {j + 1}");
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void A_firmware_reply_in_a_sensor_slot_fails_the_range_check()
     {
         var firmware = Convert.FromHexString(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "firmware.hex")).Trim());
         var raw = new ushort[14];

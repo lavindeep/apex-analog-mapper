@@ -8,6 +8,10 @@ namespace ApexMapper.Core.Sensors;
 /// A slow cycle (100 ms or more) is not a fault on its own; the snapshot simply goes
 /// stale and fallback engages. Three slow cycles in a row mean the device is not
 /// answering and the handle is retired.
+///
+/// Written by the sensor thread, read by the UI thread. A percentile read while a
+/// period is being written sees a window one sample in motion, which only blurs the
+/// status number. Percentiles are read from one thread at a time.
 /// </summary>
 public sealed class CycleStats
 {
@@ -26,6 +30,10 @@ public sealed class CycleStats
     /// <summary>Records one period. Allocation-free. Returns true when the fault threshold is reached.</summary>
     public bool Record(float periodMs)
     {
+        if (!float.IsFinite(periodMs))
+        {
+            return false;
+        }
         _periods[_next] = periodMs;
         _next = (_next + 1) % Window;
         if (_count < Window)

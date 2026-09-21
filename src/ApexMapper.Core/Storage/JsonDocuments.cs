@@ -35,7 +35,10 @@ public static class JsonDocuments
         try
         {
             using var document = JsonDocument.Parse(text, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-            if (!document.RootElement.TryGetProperty("version", out var versionElement) || !versionElement.TryGetInt32(out version))
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("version", out var versionElement)
+                || versionElement.ValueKind != JsonValueKind.Number
+                || !versionElement.TryGetInt32(out version))
             {
                 error = "The file has no version number.";
                 return null;

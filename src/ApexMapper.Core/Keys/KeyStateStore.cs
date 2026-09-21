@@ -2,12 +2,16 @@ namespace ApexMapper.Core.Keys;
 
 /// <summary>What the store knows about one key at one instant.</summary>
 /// <param name="Digital">The hook's last observation: key is down.</param>
-/// <param name="Analog">Sensor depth in 0..1, or NaN when the sensor path is unavailable.</param>
+/// <param name="Analog">Sensor depth in 0..1, or NaN when the sensor reading is unavailable.</param>
 /// <param name="Gated">Physical state was unknown at some transition and no release has been seen since.</param>
 /// <param name="AnalogDriven">The active profile drives this key from the sensor.</param>
 public readonly record struct KeySlot(bool Digital, float Analog, bool Gated, bool AnalogDriven)
 {
-    /// <summary>A fresh reading inside the calibration noise band normalises to exactly zero.</summary>
+    /// <summary>
+    /// A fresh reading inside the calibration noise band normalises to exactly zero.
+    /// <see cref="Calibration.Normalizer"/> is the only producer of analog values and
+    /// returns a literal zero inside the band, so exact comparison is right here.
+    /// </summary>
     public bool AnalogAtRest => Analog == 0f;
 }
 
@@ -18,10 +22,12 @@ public readonly record struct KeySlot(bool Digital, float Analog, bool Gated, bo
 ///
 /// The gate bit marks a key whose physical state became unknown (session start,
 /// return from alt-tab, hook install, keyboard reconnect). While gated the key
-/// contributes nothing. Only an observed release clears it: for an analog-driven key a
-/// sensor reading at rest, for any other key the hook's key-up. A hook key-up never
-/// clears an analog-driven key, because with rapid trigger a key-up means the key
-/// rose a fraction of a millimetre, not that it was released.
+/// contributes nothing. Only an observed release clears it. While the sensor reading
+/// for the key is available, only a reading at rest clears it: with rapid trigger a
+/// hook key-up means the key rose a fraction of a millimetre, not that it was
+/// released. While the reading is unavailable (sensor stale, faulted, or not yet
+/// read) the hook is the only evidence there is, and any hook event other than an
+/// auto-repeat clears the gate, exactly as for a key the profile drives digitally.
 ///
 /// Every write is a compare-and-swap loop written out by hand: this runs on the hot
 /// path and must not allocate.
@@ -46,7 +52,10 @@ public sealed class KeyStateStore
 
     public bool IsGated(int slot) => (Volatile.Read(ref _cells[slot]) & GatedBit) != 0;
 
-    /// <summary>Hook thread. A key-up clears the gate of a digital key.</summary>
+    /// <summary>
+    /// Hook thread. A key-up, or a key-down from up, clears the gate unless the sensor
+    /// reading for the key is available; an auto-repeat (down while down) never does.
+    /// </summary>
     public void SetDigital(int slot, bool down)
     {
         ref var cell = ref _cells[slot];
@@ -54,7 +63,8 @@ public sealed class KeyStateStore
         {
             var current = Volatile.Read(ref cell);
             var next = down ? current | DigitalBit : current & ~DigitalBit;
-            if (!down && (next & AnalogDrivenBit) == 0)
+            var repeat = down && (current & DigitalBit) != 0;
+            if (!repeat && !AnalogAvailable(next))
             {
                 next &= ~GatedBit;
             }
@@ -86,7 +96,7 @@ public sealed class KeyStateStore
         }
     }
 
-    /// <summary>Called from the profile at session start, before any gating.</summary>
+    /// <summary>Called by the mapper at construction, before any gating.</summary>
     public void SetAnalogDriven(int slot, bool analogDriven)
     {
         ref var cell = ref _cells[slot];
@@ -97,6 +107,23 @@ public sealed class KeyStateStore
             if (Commit(ref cell, current, next))
             {
                 return;
+            }
+        }
+    }
+
+    /// <summary>Drops every slot's analog-driven flag, so a new mapper starts from a clean set.</summary>
+    public void ClearAnalogDriven()
+    {
+        for (var slot = 0; slot < _cells.Length; slot++)
+        {
+            ref var cell = ref _cells[slot];
+            while (true)
+            {
+                var current = Volatile.Read(ref cell);
+                if (Commit(ref cell, current, current & ~AnalogDrivenBit))
+                {
+                    break;
+                }
             }
         }
     }
@@ -116,8 +143,11 @@ public sealed class KeyStateStore
 
     /// <summary>
     /// Gates every key whose state is unknown: all analog-driven keys (the next at-rest
-    /// reading clears them) and every digital key currently down. A digital key that is
-    /// up is known to be up and stays ungated, otherwise it could never clear.
+    /// reading, or the next hook event while the reading is unavailable, clears them)
+    /// and every digital key currently down. A digital key that is up is known to be
+    /// up and stays ungated, otherwise it could never clear. A key pressed while this
+    /// sweep is running may land after its slot was visited and stay ungated; that is
+    /// a genuine new press and is meant to count.
     /// </summary>
     public void GateUnknown()
     {
@@ -152,6 +182,9 @@ public sealed class KeyStateStore
             }
         }
     }
+
+    private static bool AnalogAvailable(long cell) =>
+        (cell & AnalogDrivenBit) != 0 && (cell & AnalogMask) != UnavailableBits;
 
     private static bool Commit(ref long cell, long current, long next) =>
         next == current || Interlocked.CompareExchange(ref cell, next, current) == current;

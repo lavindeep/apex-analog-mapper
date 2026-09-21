@@ -5,14 +5,17 @@ public enum LoadStatus
     /// <summary>The primary file parsed.</summary>
     Loaded,
 
-    /// <summary>No file exists; use defaults.</summary>
+    /// <summary>No file and no backup exist; use defaults.</summary>
     NotFound,
 
-    /// <summary>The primary file was unreadable; the backup parsed and was restored.</summary>
+    /// <summary>The primary file was unreadable or missing; the backup parsed and was restored.</summary>
     Recovered,
 
     /// <summary>Neither the primary nor the backup parsed; the primary was set aside as .corrupt.</summary>
     Corrupt,
+
+    /// <summary>The primary file could not be read (locked or access denied). Nothing was moved or written.</summary>
+    Unavailable,
 }
 
 public sealed record LoadResult<T>(T? Value, LoadStatus Status, string? Error);
@@ -42,30 +45,50 @@ public static class JsonFile
             writer.Flush();
             stream.Flush(flushToDisk: true);
         }
-        if (File.Exists(path))
+        if (!File.Exists(path))
+        {
+            File.Move(temp, path);
+            return;
+        }
+        try
         {
             File.Replace(temp, path, BackupPath(path), ignoreMetadataErrors: true);
         }
-        else
+        catch (IOException)
         {
-            File.Move(temp, path);
+            // Replace can refuse (volume quirks, an odd backup file). Two steps still
+            // never leave a partial primary; only the backup can lag by a crash.
+            File.Copy(path, BackupPath(path), overwrite: true);
+            File.Move(temp, path, overwrite: true);
         }
     }
 
     /// <summary>
     /// Loads the primary file, or recovers from the backup. <paramref name="parse"/>
-    /// returns null and an error for unreadable text.
+    /// returns null and an error for unreadable text; anything it throws counts as
+    /// unreadable text too, since the file is untrusted input.
     /// </summary>
     public static LoadResult<T> Load<T>(string path, Func<string, (T? Value, string? Error)> parse) where T : class
     {
+        var backup = BackupPath(path);
         if (!File.Exists(path))
         {
+            if (File.Exists(backup) && TryRead(backup, parse).Value is { } fromBackup)
+            {
+                var restoreError = TryRestore(path, backup);
+                return new LoadResult<T>(fromBackup, LoadStatus.Recovered, restoreError);
+            }
             return new LoadResult<T>(null, LoadStatus.NotFound, null);
         }
-        var (value, error) = TryParse(path, parse);
+
+        var (value, error, unreadable) = TryRead(path, parse);
         if (value is not null)
         {
             return new LoadResult<T>(value, LoadStatus.Loaded, null);
+        }
+        if (unreadable)
+        {
+            return new LoadResult<T>(null, LoadStatus.Unavailable, error);
         }
 
         // Keep the unreadable file for the user; never delete it.
@@ -73,33 +96,55 @@ public static class JsonFile
         {
             File.Move(path, CorruptPath(path), overwrite: true);
         }
-        catch (IOException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
         }
 
-        var backup = BackupPath(path);
         if (File.Exists(backup))
         {
-            var (recovered, backupError) = TryParse(backup, parse);
+            var (recovered, backupError, _) = TryRead(backup, parse);
             if (recovered is not null)
             {
-                Save(path, File.ReadAllText(backup));
-                return new LoadResult<T>(recovered, LoadStatus.Recovered, error);
+                var restoreError = TryRestore(path, backup);
+                return new LoadResult<T>(recovered, LoadStatus.Recovered, restoreError is null ? error : $"{error} {restoreError}");
             }
             error = $"{error} The backup is unreadable too: {backupError}";
         }
         return new LoadResult<T>(null, LoadStatus.Corrupt, error);
     }
 
-    private static (T? Value, string? Error) TryParse<T>(string path, Func<string, (T? Value, string? Error)> parse) where T : class
+    private static string? TryRestore(string path, string backup)
     {
         try
         {
-            return parse(File.ReadAllText(path));
+            Save(path, File.ReadAllText(backup));
+            return null;
         }
-        catch (IOException e)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return (null, e.Message);
+            return $"The file could not be rewritten from its backup: {e.Message}";
+        }
+    }
+
+    private static (T? Value, string? Error, bool Unreadable) TryRead<T>(string path, Func<string, (T? Value, string? Error)> parse) where T : class
+    {
+        string text;
+        try
+        {
+            text = File.ReadAllText(path);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return (null, e.Message, true);
+        }
+        try
+        {
+            var (value, error) = parse(text);
+            return (value, error, false);
+        }
+        catch (Exception e)
+        {
+            return (null, "The file could not be read: " + e.Message, false);
         }
     }
 }

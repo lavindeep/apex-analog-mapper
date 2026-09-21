@@ -32,7 +32,8 @@ public sealed record CompiledAxisBinding(
 /// <summary>
 /// A profile resolved against a keyboard's calibration and sensor map, immutable for
 /// the life of a session. Building it is the moment the "every analog key must be
-/// calibrated" rule is enforced.
+/// calibrated" rule is enforced; a calibration that fails validation (a hand-edited
+/// file) counts as missing.
 /// </summary>
 public sealed class CompiledProfile
 {
@@ -69,7 +70,7 @@ public sealed class CompiledProfile
             throw new ArgumentException(error, nameof(profile));
         }
         var analog = profile.AnalogKeys(map).ToHashSet();
-        var missing = analog.Where(k => !calibrations.ContainsKey(k)).ToList();
+        var missing = analog.Where(k => !calibrations.TryGetValue(k, out var cal) || !IsValid(cal)).ToList();
         uncalibrated = missing;
         if (missing.Count > 0)
         {
@@ -90,4 +91,7 @@ public sealed class CompiledProfile
             .ToList();
         return new CompiledProfile(keys, axes);
     }
+
+    private static bool IsValid(KeyCalibration cal) =>
+        KeyCalibration.Validate(cal.Rest, cal.FullPress, cal.NoiseBand, cal.SensorIndex) is null;
 }

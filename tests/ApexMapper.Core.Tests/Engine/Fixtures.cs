@@ -5,7 +5,7 @@ using ApexMapper.Core.Sensors;
 
 namespace ApexMapper.Core.Tests.Engine;
 
-/// <summary>The maintainer's board as measured in stage 0.</summary>
+/// <summary>The maintainer's board as measured in stage 0. Snapshot clocks tick in milliseconds.</summary>
 internal static class Fixtures
 {
     public static readonly KeyCalibration W = KeyCalibration.Create(878, 4095, 20, 16);
@@ -21,14 +21,17 @@ internal static class Fixtures
         [DefaultProfiles.Key.D] = D,
     };
 
-    /// <summary>A fresh snapshot with groups 2 and 3 at rest, optionally overriding raw counts by sensor index.</summary>
-    public static SensorSnapshot Snapshot(long timestampTicks, long freshnessLimitTicks, params (int Index, ushort Raw)[] overrides)
+    /// <summary>A snapshot stamped at the given millisecond with groups 2 and 3 at rest, optionally overriding raw counts by sensor index.</summary>
+    public static SensorSnapshot Snapshot(long timestampMs, params (int Index, ushort Raw)[] overrides) =>
+        Snapshot(timestampMs, [2, 3], overrides);
+
+    public static SensorSnapshot Snapshot(long timestampMs, int[] groups, params (int Index, ushort Raw)[] overrides)
     {
-        var snapshot = new SensorSnapshot();
-        snapshot.Begin(timestampTicks, freshnessLimitTicks, 1);
+        var snapshot = new SensorSnapshot(ticksPerMs: 1);
+        snapshot.Begin(timestampMs);
         var raw = new ushort[14];
         var filtered = new ushort[14];
-        foreach (var group in new[] { 2, 3 })
+        foreach (var group in groups)
         {
             Array.Fill(raw, (ushort)850);
             raw[2] = 878;

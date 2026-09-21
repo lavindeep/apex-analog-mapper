@@ -105,7 +105,13 @@ public class SensorProtocolTests
         Assert.Throws<ArgumentOutOfRangeException>(() => SensorRequest.Group(0));
         Assert.Throws<ArgumentOutOfRangeException>(() => SensorRequest.Group(6));
 
-        var constructors = typeof(SensorRequest).GetConstructors();
-        Assert.Empty(constructors);
+        // A struct always has a default value; it must be refused at the only exit.
+        Assert.False(default(SensorRequest).IsValid);
+        Assert.Throws<InvalidOperationException>(() => default(SensorRequest).WriteTo(report));
+        Assert.Equal(0xD7, report[1]);
+
+        var commands = Enumerable.Range(1, 5).Select(g => SensorRequest.Group(g).Command)
+            .Append(SensorRequest.Firmware().Command).Distinct().Order().ToArray();
+        Assert.Equal(new byte[] { 0x90, 0xD7 }, commands);
     }
 }

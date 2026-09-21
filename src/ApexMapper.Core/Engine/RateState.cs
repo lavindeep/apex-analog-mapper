@@ -17,6 +17,12 @@ public struct RateState
         {
             return Deflection;
         }
+        if (!float.IsFinite(signed) || !float.IsFinite(rateMs) || rateMs <= 0f)
+        {
+            // Nothing sane to integrate; a NaN deflection would never recover.
+            Deflection = 0f;
+            return Deflection;
+        }
         if (signed != 0f)
         {
             Deflection = Math.Clamp(Deflection + signed * dtMs / rateMs, -1f, 1f);

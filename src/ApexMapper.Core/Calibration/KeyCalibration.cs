@@ -19,6 +19,9 @@ public sealed record KeyCalibration(int Rest, int FullPress, int NoiseBand, int 
 
     public bool TravelsUpward => FullPress > Rest;
 
+    /// <summary>The key reaches the sensor's ceiling before bottoming out, so the last part of its travel produces no change.</summary>
+    public bool IsClipping => TravelsUpward ? FullPress >= MaxCount : FullPress <= 0;
+
     public static string? Validate(int rest, int fullPress, int noiseBand, int sensorIndex)
     {
         if (rest is < 0 or > MaxCount || fullPress is < 0 or > MaxCount)

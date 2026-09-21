@@ -21,9 +21,41 @@ public class NormalizerTests
     public void Leaving_the_band_has_no_step()
     {
         var justOutside = Normalizer.Depth(W, 899);
-        Assert.True(justOutside > 0f);
-        Assert.True(justOutside < 0.001f);
+        Assert.Equal(1f / 3197f, justOutside, 0.000001f);
         Assert.False(Normalizer.IsAtRest(W, 899));
+    }
+
+    [Fact]
+    public void Wrong_side_of_rest_and_beyond_full_press_clamp_on_an_ascending_key()
+    {
+        Assert.Equal(0f, Normalizer.Depth(W, 500));
+        Assert.Equal(0f, Normalizer.Depth(W, int.MinValue));
+        var shortKey = KeyCalibration.Create(878, 3500, 20, 0);
+        Assert.Equal(1f, Normalizer.Depth(shortKey, 3501));
+        Assert.Equal(1f, Normalizer.Depth(shortKey, 4095));
+        Assert.Equal(1f, Normalizer.Depth(shortKey, int.MaxValue));
+    }
+
+    [Fact]
+    public void An_unvalidated_calibration_with_no_usable_span_reads_zero()
+    {
+        Assert.Equal(0f, Normalizer.Depth(new KeyCalibration(800, 820, 20, 0), 821));
+        Assert.Equal(0f, Normalizer.Depth(new KeyCalibration(800, 800, 0, 0), 799));
+    }
+
+    [Fact]
+    public void The_test_inverse_agrees_with_the_normaliser()
+    {
+        Assert.Equal(0.5f, Normalizer.Depth(Engine.Fixtures.W, Engine.Fixtures.CountFor(Engine.Fixtures.W, 0.5f)), 0.001f);
+    }
+
+    [Fact]
+    public void A_key_that_reaches_the_ceiling_is_clipping()
+    {
+        Assert.True(W.IsClipping);
+        Assert.False(Engine.Fixtures.A.IsClipping);
+        Assert.True(KeyCalibration.Create(3000, 0, 20, 0).IsClipping);
+        Assert.False(KeyCalibration.Create(3000, 800, 20, 0).IsClipping);
     }
 
     [Fact]
@@ -59,6 +91,7 @@ public class NormalizerTests
         Assert.Null(KeyCalibration.Validate(878, 998, 20, 0));
         Assert.NotNull(KeyCalibration.Validate(878, 4096, 20, 0));
         Assert.NotNull(KeyCalibration.Validate(878, 4095, 20, 70));
+        Assert.NotNull(KeyCalibration.Validate(878, 4095, -1, 0));
         Assert.Throws<ArgumentException>(() => KeyCalibration.Create(878, 900, 20, 0));
     }
 

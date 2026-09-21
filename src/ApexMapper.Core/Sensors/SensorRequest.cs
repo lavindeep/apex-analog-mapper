@@ -35,9 +35,22 @@ public readonly record struct SensorRequest
 
     public bool IsFirmware => Command == FirmwareCommand;
 
-    /// <summary>Fills a 65-byte output report: report id 0, command, selector, zeros.</summary>
+    /// <summary>A firmware query, or a group read for group 1..5. <c>default</c> is neither.</summary>
+    public bool IsValid =>
+        (Command == FirmwareCommand && Selector == 0)
+        || (Command == GroupCommand && Selector is >= 1 and <= GroupCount);
+
+    /// <summary>
+    /// Fills a 65-byte output report: report id 0, command, selector, zeros. Refuses
+    /// anything but the two allowed commands, so a <c>default</c> struct (a struct
+    /// always has one) cannot reach the device.
+    /// </summary>
     public void WriteTo(Span<byte> report)
     {
+        if (!IsValid)
+        {
+            throw new InvalidOperationException($"Command 0x{Command:X2} selector {Selector} is not on the allowlist.");
+        }
         if (report.Length != SensorProtocol.ReportLength)
         {
             throw new ArgumentException("Report buffer must be 65 bytes.", nameof(report));

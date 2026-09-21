@@ -23,7 +23,10 @@ public enum AxisMode
     Rate,
 }
 
-/// <summary>One key driving a button or a trigger.</summary>
+/// <summary>
+/// One key driving a button or a trigger. The response and ramps shape a trigger; a
+/// button is digital and ignores both.
+/// </summary>
 public sealed record KeyBinding(
     ScanCode Key,
     PadTarget Target,
@@ -31,7 +34,7 @@ public sealed record KeyBinding(
     float PressRampMs,
     float ReleaseRampMs)
 {
-    public static string? Validate(ScanCode key, PadTarget target, float pressRampMs, float releaseRampMs)
+    public static string? Validate(ScanCode key, PadTarget target, Response.Response? response, float pressRampMs, float releaseRampMs)
     {
         if (key.IsReserved)
         {
@@ -41,15 +44,20 @@ public sealed record KeyBinding(
         {
             return $"{target} needs two keys; use an axis binding.";
         }
-        return ValidateRamps(pressRampMs, releaseRampMs);
+        return ValidateResponse(response) ?? ValidateRamps(pressRampMs, releaseRampMs);
     }
+
+    internal static string? ValidateResponse(Response.Response? response) =>
+        response is null
+            ? "A binding needs a response curve."
+            : global::ApexMapper.Core.Response.Response.Validate(response.Exponent, response.Saturation, response.Deadzone);
 
     internal static string? ValidateRamps(float pressRampMs, float releaseRampMs) =>
         !float.IsFinite(pressRampMs) || pressRampMs < 0f || !float.IsFinite(releaseRampMs) || releaseRampMs < 0f
             ? "Ramps must be zero or a positive number of milliseconds."
             : null;
 
-    public string? Validate() => Validate(Key, Target, PressRampMs, ReleaseRampMs);
+    public string? Validate() => Validate(Key, Target, Response, PressRampMs, ReleaseRampMs);
 }
 
 /// <summary>Two keys driving one stick axis: negative and positive directions.</summary>
@@ -68,7 +76,7 @@ public sealed record AxisBinding(
     public const float DefaultRateMs = 150f;
     public const float DefaultReturnMs = 100f;
 
-    public static string? Validate(ScanCode negativeKey, ScanCode positiveKey, PadTarget target, float pressRampMs, float releaseRampMs, float rateMs, float returnMs)
+    public static string? Validate(ScanCode negativeKey, ScanCode positiveKey, PadTarget target, Response.Response? response, float pressRampMs, float releaseRampMs, float rateMs, float returnMs)
     {
         if (negativeKey.IsReserved || positiveKey.IsReserved)
         {
@@ -86,8 +94,8 @@ public sealed record AxisBinding(
         {
             return "Rate must be positive and return must be zero or positive, in milliseconds.";
         }
-        return KeyBinding.ValidateRamps(pressRampMs, releaseRampMs);
+        return KeyBinding.ValidateResponse(response) ?? KeyBinding.ValidateRamps(pressRampMs, releaseRampMs);
     }
 
-    public string? Validate() => Validate(NegativeKey, PositiveKey, Target, PressRampMs, ReleaseRampMs, RateMs, ReturnMs);
+    public string? Validate() => Validate(NegativeKey, PositiveKey, Target, Response, PressRampMs, ReleaseRampMs, RateMs, ReturnMs);
 }

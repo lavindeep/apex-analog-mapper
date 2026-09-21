@@ -14,9 +14,14 @@ public struct Ramp
 
     public void Reset() => Value = 0f;
 
+    /// <summary>Moves toward the target. No elapsed time (zero, negative, or NaN dt) holds the value.</summary>
     public void Update(float target, float dtMs, float durationMs)
     {
-        if (durationMs <= 0f || !float.IsFinite(durationMs) || !float.IsFinite(dtMs) || dtMs <= 0f)
+        if (!float.IsFinite(dtMs) || dtMs <= 0f)
+        {
+            return;
+        }
+        if (durationMs <= 0f || !float.IsFinite(durationMs))
         {
             Value = target;
             return;

@@ -10,8 +10,9 @@ public static class Normalizer
     /// </summary>
     public static float Depth(KeyCalibration cal, int raw)
     {
+        raw = Math.Clamp(raw, 0, KeyCalibration.MaxCount);
         var delta = cal.TravelsUpward ? raw - cal.Rest : cal.Rest - raw;
-        if (delta <= cal.NoiseBand)
+        if (delta <= cal.NoiseBand || cal.Span <= cal.NoiseBand)
         {
             return 0f;
         }

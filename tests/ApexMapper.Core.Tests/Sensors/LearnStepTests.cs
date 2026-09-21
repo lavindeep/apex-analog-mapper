@@ -53,6 +53,28 @@ public class LearnStepTests
         Assert.Equal(29, result.SecondIndex);
     }
 
+    [Theory]
+    [InlineData(300, 0, LearnOutcome.Found)]
+    [InlineData(299, 0, LearnOutcome.NothingMoved)]
+    [InlineData(2000, 1000, LearnOutcome.Ambiguous)]
+    [InlineData(2000, 999, LearnOutcome.Found)]
+    public void Thresholds_are_exact_at_their_boundaries(int bestDelta, int secondDelta, LearnOutcome expected)
+    {
+        var learn = new LearnStep(Baseline());
+        var reading = Baseline();
+        reading[16] = (ushort)(850 + bestDelta);
+        reading[29] = (ushort)(850 + secondDelta);
+        learn.Observe(reading);
+        Assert.Equal(expected, learn.Result().Outcome);
+    }
+
+    [Fact]
+    public void A_short_reading_is_refused()
+    {
+        var learn = new LearnStep(Baseline());
+        Assert.Throws<ArgumentException>(() => learn.Observe(new ushort[10]));
+    }
+
     [Fact]
     public void Peak_is_kept_across_observations()
     {
@@ -75,5 +97,10 @@ public class LearnStepTests
         Assert.Null(error);
         Assert.Equal(export with { Replies = [] }, back! with { Replies = [] });
         Assert.Equal(export.Replies, back.Replies);
+
+        Assert.Null(CaptureExport.FromJson("garbage", out error));
+        Assert.NotNull(error);
+        Assert.Null(CaptureExport.FromJson(export.ToJson().Replace("\"version\": 1", "\"version\": 9"), out error));
+        Assert.Contains("newer", error);
     }
 }

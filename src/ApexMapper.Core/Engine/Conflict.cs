@@ -16,6 +16,11 @@ public struct ConflictState
         _last = 0;
     }
 
+    /// <summary>
+    /// A side is active at any value above zero: a rest reading is exactly zero, so
+    /// "active" means the key left its noise band. Both sides rising in the same tick
+    /// favour positive; deterministic and rare at engine tick rates.
+    /// </summary>
     public float Resolve(ConflictRule rule, float negative, float positive)
     {
         var negativeActive = negative > 0f;

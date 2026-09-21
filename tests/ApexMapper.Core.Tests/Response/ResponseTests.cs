@@ -10,6 +10,7 @@ public class ResponseTests
         [Core.Response.Response.Linear],
         [Core.Response.Response.Soft],
         [Core.Response.Response.Aggressive],
+        [Core.Response.Response.Create(2f, 0.8f, 0.15f)],
     ];
 
     [Theory]
@@ -34,8 +35,8 @@ public class ResponseTests
         var soft = Core.Response.Response.Soft.Map(0.5f);
         var aggressive = Core.Response.Response.Aggressive.Map(0.5f);
         Assert.Equal(0.5f, linear);
-        Assert.True(soft < linear);
-        Assert.True(aggressive > linear);
+        Assert.Equal(0.3299f, soft, 0.001f);
+        Assert.Equal(0.6627f, aggressive, 0.001f);
     }
 
     [Fact]
@@ -64,7 +65,11 @@ public class ResponseTests
         Assert.NotNull(Core.Response.Response.Validate(1f, 1.1f, 0f));
         Assert.NotNull(Core.Response.Response.Validate(1f, 0.5f, 0.5f));
         Assert.NotNull(Core.Response.Response.Validate(float.NaN, 1f, 0f));
+        Assert.NotNull(Core.Response.Response.Validate(1f, float.NaN, 0f));
+        Assert.NotNull(Core.Response.Response.Validate(1f, 1f, float.NaN));
+        Assert.NotNull(Core.Response.Response.Validate(1f, 1f, -0.1f));
         Assert.Null(Core.Response.Response.Validate(2f, 0.9f, 0.05f));
+        Assert.Throws<ArgumentException>(() => Core.Response.Response.Create(0.1f, 1f, 0f));
     }
 
     [Fact]

@@ -47,6 +47,20 @@ public class RampTests
         Assert.Equal(0f, ramp.Value);
     }
 
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-3f)]
+    [InlineData(float.NaN)]
+    public void No_elapsed_time_holds_the_value(float dtMs)
+    {
+        var ramp = new Ramp();
+        ramp.Seed(0.7f);
+        ramp.Update(1f, dtMs, 50f);
+        Assert.Equal(0.7f, ramp.Value);
+        ramp.Update(1f, dtMs, 0f);
+        Assert.Equal(0.7f, ramp.Value);
+    }
+
     [Fact]
     public void Seed_then_ramp_starts_from_the_seed()
     {
