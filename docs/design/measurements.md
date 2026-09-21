@@ -3,7 +3,8 @@
 Machine: Windows 11 Home 26200, Apex Pro TKL gen 1 (USB 1038:1614, firmware 4.9.1),
 ViGEmBus 1.21.442, .NET 10.0.401. Spike source in `spike/Spike`; console output of
 every run is in `spike/out/<command>.log` (not committed) and quoted here. Revised
-after the stage 0 review in `reviews/stage-0.md`.
+after the stage 0 review in `reviews/stage-0.md`, then again after keyboard session 2
+on 2026-09-21 (the runs listed under "Session 2" at the end).
 
 Processes running during every keyboard measurement: SteelSeriesEngine, SteelSeriesGG,
 SteelSeriesGGEZ, SteelSeriesMoments, SteelSeriesPrism, all idle in the tray. No game
@@ -21,12 +22,12 @@ the sensor only; fallback is coarse under rapid trigger).
 The 0xFFC0:0x0001 interface is `mi_01`, 65-byte input and output reports. All ten HID
 interfaces of the board share one container id
 (`27373de1-4206-11f1-b9e4-14ac60fcc13e` on this PC), read through cfgmgr32 from the
-interface path, so container id is a sound keyboard identity. Its stability across a
-replug is still to be checked (session 2).
+interface path, so container id is a sound keyboard identity. Session 2 unplugged and
+replugged the board: all ten interfaces came back with the same id.
 
 The 0xFFC1:0x0001 interface on `mi_04` (65-byte input only) produced zero reports in
-four seconds at rest. Whether it streams on key movement is still to be checked
-(session 2). Until then the request and reply model stands.
+four seconds at rest and zero in five seconds of tapping keys (session 2). It does not
+stream on key movement; the request and reply model stands.
 
 Firmware reply to 0x90 is `4.9.1`.
 
@@ -133,7 +134,7 @@ the chain:
 The pass-through cost is the rest of the hook chain, not this process. Both are far
 below the 300 ms `LowLevelHooksTimeout`.
 
-## Rest noise and drift (rest, 2 min hands off, 3936 samples, 0 faults)
+## Rest noise and drift (rest, 2 min hands off, 3936 samples, 0 faults; 10 min in session 2)
 
 | Key | Raw mean | Raw p-p | Raw drift | Filtered mean | Filtered p-p | Filtered drift |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -143,27 +144,54 @@ below the 300 ms `LowLevelHooksTimeout`.
 | D | 847.3 | 14 | -0.1 | 846.8 | 5 | -0.1 |
 
 Worst peak to peak over all 28 sensors in groups 2 and 3: raw 21, filtered 11. Drift
-under one count in two minutes. The planned ten-minute run was contaminated by typing
-and is discarded (it agrees on range: W to 4095, A 3491, S 3552, D 3630). A long
-hands-off run with the board warm is still open (session 2). The default noise band
-is 20 counts rather than the 15 the two-minute data would allow, to leave room for
-the drift not yet measured; calibration raises it further if the measured rest noise
-warrants.
+under one count in two minutes.
+
+Session 2 repeated the run for ten minutes hands off (49,998 samples, 0 faults):
+
+| Key | Raw mean | Raw p-p | Raw drift | Filtered mean | Filtered p-p | Filtered drift |
+| --- | --- | --- | --- | --- | --- | --- |
+| W | 871.0 | 18 | +0.5 | 870.5 | 6 | +0.5 |
+| A | 837.9 | 23 | +0.4 | 837.4 | 7 | +0.4 |
+| S | 840.4 | 25 | +0.4 | 839.9 | 6 | +0.4 |
+| D | 842.4 | 34 | +0.5 | 841.9 | 16 | +0.5 |
+
+Worst peak to peak over all 28 sensors: raw 64, filtered 16. Drift is half a count in
+ten minutes, so rest does not wander, but the raw peak to peak roughly doubles between
+two minutes and ten. Calibration samples rest for seconds and will see the smaller
+figure, so the floor of the noise band is set from the ten-minute data: 40 counts,
+twice D's 34, and still under the 54 to 80 counts at which the keyboard's own digital
+key-down fires (travel table below). Calibration raises the band to 1.5 times the
+measured rest noise when that is larger. The cost is about 0.12 mm of travel at the
+start of every key that reads as released; the feel step looks at that region.
 
 ## Travel (travel)
 
 | Key | Rest | Full press | Span | Direction | Digital key-down fires at |
 | --- | --- | --- | --- | --- | --- |
 | W | 878 | 4095 | 3217 | up | 957 counts, 2.5% of W's span |
-| A | 843 | 3558 | 2715 | up | not measured (session 2) |
+| A | 843 | 3558 | 2715 | up | |
 | S | 847 | 3559 | 2712 | up | |
 | D | 850 | 3623 | 2773 | up | |
+
+Session 2, two days and a replug later:
+
+| Key | Rest | Full press | Span | Direction | Digital key-down fires at |
+| --- | --- | --- | --- | --- | --- |
+| W | 872 | 4095 | 3223 | up | 952 counts, 80 above rest, 2.5% of span |
+| A | 838 | 3568 | 2730 | up | 906 counts, 68 above rest, 2.5% |
+| S | 841 | 3559 | 2718 | up | 901 counts, 60 above rest, 2.2% |
+| D | 842 | 3679 | 2837 | up | 896 counts, 54 above rest, 1.9% |
+
+W clips at 4095 both times, so the clip is a property of that key, not a one-off. Rest
+moved by 5 to 8 counts between sessions and full press by up to 56 (D), within the
+noise band and two percent of span respectively, so a stored calibration stays valid
+across days and a replug.
 
 Consequences carried into the design:
 
 - W reaches the 12-bit ceiling before or at bottom-out. Calibration must detect a
-  clipping key (full press reads 4095, or a plateau across the last samples of a slow
-  press) and tell the user the top of that key's travel produces no change. A key
+  clipping key (full press reads 4095) and tell the user the top of that key's travel
+  produces no change. A key
   sitting at 4095 for a long time is a plausibility warning, not a valid depth.
 - W's span is 18% larger than A, S, and D's, so per-key calibration is mandatory.
 - Counts grow slowly near rest: 0.2 mm of the roughly 4 mm of travel is 2.5% of the
@@ -208,8 +236,19 @@ The first row is submit to readback with the sampler's quantisation on top, the 
 quantity `readback2` measured at 0.017 ms; it says nothing about the sensor path.
 The second row is the informative one: on a 6 ms single-group loop, the analog output
 trailed the keyboard's own digital report by 3.2 ms median. On the shipped two-group
-12 ms cycle the expected figure is about 6 ms median and 15 ms worst case, to be
-confirmed by `e2e2`.
+12 ms cycle the expected figure was about 6 ms median and 15 ms worst case.
+
+`e2e2` (session 2, both groups polled, consume-once anchors, 20 s of W taps, 43
+presses seen by the hook, 0 unpaired readbacks) confirms it:
+
+| Anchor to first XInput readback at 5 percent | n | p50 | p99 | max |
+| --- | --- | --- | --- | --- |
+| Sensor reading crosses 5 percent | 36 | 6.01 ms | 6.18 ms | 6.24 ms |
+| Keyboard's own digital key-down | 35 | 9.87 ms | 15.54 ms | 15.89 ms |
+
+The first row is one exchange, as expected: the anchor read is followed by the other
+group's exchange before the engine ticks. The second row is the keyboard-to-pad figure
+a player feels on the fallback path: 10 ms median, 16 ms worst, on a 12 ms cycle.
 
 The reference's 10 Hz output and its unmeasured but resolution-dependent engine tick
 are sufficient to explain its feel, and this design removes both. Two independent
@@ -219,7 +258,7 @@ calibration had a step at the start of travel, both already in the design's "Why
 
 ## Decisions
 
-1. Raw bytes for depth. Noise band 20 counts, or 1.5 times the measured rest
+1. Raw bytes for depth. Noise band 40 counts, or 1.5 times the measured rest
    peak-to-peak, whichever is larger. A key that clips stores 4095 as full press and
    is flagged as clipping.
 2. Poll back to back, no floor, no drain. Freshness is a fixed 60 ms (about five
@@ -248,12 +287,24 @@ calibration had a step at the start of travel, both already in the design's "Why
 Response representation: exponent, saturation point, deadzone, chosen on editing and
 serialisation grounds.
 
-## Still open (session 2, needs the maintainer)
+## Session 2 (2026-09-21, the maintainer at the keyboard)
 
-- `rest --minutes 10` hands off, ideally after a game has warmed the board.
-- `e2e2 --seconds 20`: two-group cycle, paired anchors.
-- `travel` extended to record the digital fire point for A, S, D as well as W.
-- `cycle --no-drain` with GG open on the OmniPoint actuation page (live per-key
-  depth on screen), and again with a game running in the foreground.
-- `listen --seconds 5` while tapping keys, to close the 0xFFC1 question.
-- `containers` after unplugging and replugging the keyboard, to confirm the id holds.
+All six open runs done, in this order: `rest --minutes 10`, `e2e2 --seconds 20`,
+`travel`, `listen --seconds 5` while tapping, unplug and replug then `containers`,
+`cycle --no-drain --seconds 30` twice. Results are folded into the sections above;
+the cycle runs are here.
+
+`cycle --no-drain` with Forza Horizon 6 in the foreground and being played (hands on
+W, A, S, D), SteelSeriesEngine, GG, GGClient, GGEZ, Moments and Prism all running:
+
+| Exchange p50 | Exchange p99 | Exchange max | Cycle p50 | Cycle p99 | Cycle max | Faults | Stale replies |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 5.998 ms | 6.085 ms | 7.674 ms | 12.000 ms | 12.109 ms | 23.199 ms | 0 | 0 |
+
+Identical to the stage 0 idle runs. A game in front, key presses, and GG's own
+processes do not touch the sensor path. The earlier run of the pair, with GG open on
+the OmniPoint actuation page, was overwritten in the log by the second; its console
+figures are recorded below once read back from the terminal.
+
+Nothing is open from the measurement plan. Decisions 1 to 5 stand, with the noise band
+floor raised to 40 in decision 1.
