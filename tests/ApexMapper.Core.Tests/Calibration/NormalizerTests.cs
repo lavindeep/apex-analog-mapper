@@ -96,9 +96,9 @@ public class NormalizerTests
     }
 
     [Theory]
-    [InlineData(5, 20)]
-    [InlineData(14, 21)]
-    [InlineData(21, 32)]
+    [InlineData(5, 40)]
+    [InlineData(26, 40)]
+    [InlineData(34, 51)]
     public void Noise_band_is_the_default_or_one_and_a_half_times_measured_noise(int peakToPeak, int expected)
     {
         Assert.Equal(expected, KeyCalibration.NoiseBandFor(peakToPeak));

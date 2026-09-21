@@ -12,7 +12,8 @@ namespace ApexMapper.Core.Calibration;
 public sealed record KeyCalibration(int Rest, int FullPress, int NoiseBand, int SensorIndex)
 {
     public const int MaxCount = 4095;
-    public const int DefaultNoiseBand = 20;
+    /// <summary>Floor for the noise band: twice the worst ten-minute rest noise of a bound key on the measured board (D, 34 counts raw), still under the 54 to 80 counts at which the keyboard's own digital key-down fires.</summary>
+    public const int DefaultNoiseBand = 40;
     public const int MinimumSpanAboveBand = 100;
 
     public int Span => Math.Abs(FullPress - Rest);
