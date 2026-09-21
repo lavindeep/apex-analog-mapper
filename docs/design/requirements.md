@@ -11,7 +11,7 @@ after the owning stage closes is a gap.
 | S1 | C# on .NET 10 LTS. | 0 | |
 | S2 | WPF with WPF-UI, following the OS light or dark theme. | 0, 5 | |
 | S3 | Velopack per-user installer, Add or Remove Programs entry, uninstall, delta updates from GitHub Releases, self-contained publish with the size in the README. | 0, 6 | |
-| S4 | Three projects (Core, Windows, App), Core has no Windows APIs. | 0, 1 | |
+| S4 | Three projects (Core, Windows, App), Core has no Windows APIs. | 0, 1 | `src/ApexMapper.Core/ApexMapper.Core.csproj` targets `net10.0` with no package references. |
 | S5 | Hardware tests gated by `APEX_HW_TESTS=1`; soak by `APEX_SOAK=1`. | 2, 3 | |
 | S6 | MIT license file present. | 0 | |
 
@@ -23,7 +23,7 @@ after the owning stage closes is a gap.
 | T2 | Hook thread with its own message loop, above-normal priority, runs the watchdog and the stop hotkey. | 2, 3 | |
 | T3 | Sensor thread polls back to back for the needed groups and publishes timestamped snapshots. | 2 | |
 | T4 | Engine thread on a high-resolution 1 ms timer, submits when the packed report changes, capped at 500 Hz, publishes a tick timestamp. | 3 | |
-| T5 | Hook callback, sensor loop, and engine tick allocate nothing. | 1, 2, 3 | |
+| T5 | Hook callback, sensor loop, and engine tick allocate nothing. | 1, 2, 3 | `Engine/Mapper.cs` (arrays sized at construction, `ref` report, no LINQ in the tick). `MapperTests.Tick_allocates_nothing`, `MapperTests.Tick_allocates_nothing_on_the_fallback_gated_rate_and_every_target_paths`. Stages 2 and 3 own the hook and sensor loop. |
 | T6 | `GCSettings.LatencyMode = SustainedLowLatency` from Start to Stop, restored on every exit path. | 3 | |
 | T7 | Hook callback reads `KBDLLHOOKSTRUCT` by pointer, reads a cached foreground flag, never calls win32k or takes a lock. | 2 | |
 | T8 | Foreground tracker on its own thread with `WINEVENT_OUTOFCONTEXT`. | 2 | |
@@ -32,12 +32,12 @@ after the owning stage closes is a gap.
 
 | ID | Requirement | Stage | Evidence |
 | --- | --- | --- | --- |
-| K1 | One slot per scan code across plain, E0, and E1 pages. | 1 | |
-| K2 | Each slot holds the digital state, the analog depth, and a gate bit, readable together. | 1 | |
-| K3 | Gate set on session start, return from alt-tab, hook install, keyboard reconnect. | 1, 3 | |
-| K4 | Gated key contributes zero and its ramp, selector, and rate state reset. | 1 | |
-| K5 | Gate clears on an analog reading inside the noise band for analog-driven keys, and on a hook key-up for digital keys only; a hook key-up never clears an analog-driven key (rapid trigger). | 1 | |
-| K6 | Gate is never set by a sensor fault. | 1 | |
+| K1 | One slot per scan code across plain, E0, and E1 pages. | 1 | `Keys/ScanCode.cs`. `ScanCodeTests.Extended_keys_get_distinct_slots_from_their_plain_twins`, `ScanCodeTests.Every_valid_code_round_trips_through_its_slot`. |
+| K2 | Each slot holds the digital state, the analog depth, and a gate bit, readable together. | 1 | `Keys/KeyStateStore.cs` (one packed long, one volatile read). `KeyStateStoreTests.Both_values_live_in_one_slot`, `KeyStateStoreTests.Concurrent_writers_on_the_same_slot_lose_no_updates`. |
+| K3 | Gate set on session start, return from alt-tab, hook install, keyboard reconnect. | 1, 3 | `KeyStateStore.GateUnknown`. `KeyStateStoreTests.Gate_unknown_gates_analog_keys_and_held_digital_keys_only`. Stage 3 wires the four events. |
+| K4 | Gated key contributes zero and its ramp and handover state reset; gating either key of an axis resets the axis's rate and conflict state. | 1 | `Engine/Mapper.cs` `Resolve` and the axis loop. `MapperTests.Gate_during_a_ramp_restarts_the_ramp_from_zero`, `MapperTests.Gating_a_rate_axis_zeroes_it_at_once`, `MapperTests.Gating_one_key_of_a_digital_axis_lets_the_other_steer_from_zero`. |
+| K5 | While a key's sensor reading is available only an analog reading inside the noise band clears its gate (a hook key-up never does: rapid trigger). While the reading is unavailable, and for digital keys always, any hook event other than an auto-repeat clears it. | 1 | `KeyStateStore.SetDigital`, `SetAnalog`. `KeyStateStoreTests.Hook_events_never_clear_an_analog_driven_key_while_its_reading_is_available`, `Hook_events_clear_an_analog_driven_key_while_its_reading_is_unavailable`, `Analog_at_rest_clears_an_analog_driven_key_and_a_pressed_reading_does_not`, `Digital_key_up_clears_the_gate_of_a_digital_key_and_a_repeat_does_not`; `MapperTests.Keys_held_at_start_stay_dead_until_released_once`. |
+| K6 | Gate is never set by a sensor fault. | 1 | `Mapper.ApplySnapshot` writes NaN and never gates. `MapperTests.Stale_snapshot_never_sets_the_gate`. |
 | K7 | The hook owns the digital value and gate clearing; Raw Input only attributes. | 2 | |
 
 ## Analog input
@@ -45,33 +45,33 @@ after the owning stage closes is a gap.
 | ID | Requirement | Stage | Evidence |
 | --- | --- | --- | --- |
 | A1 | Vendor interface selected by usage 0xFFC0:0x0001, 65-byte reports, same container id as the selected keyboard, exactly one match or nothing, non-exclusive open. | 2 | |
-| A2 | Request layout `[0, command, selector, 0...]`; reply byte 0 must be 0. | 1 | |
-| A3 | Command 0x90 parses the firmware string at offset 1. | 1 | |
-| A4 | Command 0xD7 with selector 1..5 parses 14 raw and 14 filtered uint16 LE with zero padding at 57..64 and values at most 4095. | 1 | |
-| A5 | Only 0x90 and 0xD7 can ever be written, enforced in one place with a test, and nothing outside the vendor interface performs HID writes. | 1, 2 | |
-| A6 | 70-slot sensor table with 65 mapped keys, arrows and function row unsupported, per-keyboard overrides from the learn step. | 1 | |
-| A7 | Every reply checked against its group signature (absent slots under 50 at rest, recorded at calibration) and for values above 4095; mismatch retires the handle. No input-queue drain. | 1, 2 | |
+| A2 | Request layout `[0, command, selector, 0...]`; reply byte 0 must be 0. | 1 | `Sensors/SensorRequest.cs`, `SensorProtocol` byte 0 checks. `SensorProtocolTests.Only_two_commands_can_be_built`, `Structural_checks_reject_bad_replies`. |
+| A3 | Command 0x90 parses the firmware string at offset 1. | 1 | `SensorProtocol.ParseFirmware`. `SensorProtocolTests.Firmware_fixture_parses_to_4_9_1`, `Firmware_parsing_rejects_non_version_replies`. |
+| A4 | Command 0xD7 with selector 1..5 parses 14 raw and 14 filtered uint16 LE with zero padding at 57..64 and values at most 4095. | 1 | `SensorProtocol.ParseGroup`. `SensorProtocolTests.Rest_fixtures_parse_and_show_which_slots_have_keys`, `Structural_checks_reject_bad_replies`. |
+| A5 | Only 0x90 and 0xD7 can ever be written, enforced in one place with a test, and nothing outside the vendor interface performs HID writes. | 1, 2 | `SensorRequest` private constructor, two factories, `WriteTo` refuses anything else including `default`. `SensorProtocolTests.Only_two_commands_can_be_built`. Stage 2 owns the interface selection. |
+| A6 | 70-slot sensor table with 65 mapped keys, arrows and function row unsupported, per-keyboard overrides from the learn step. | 1 | `Sensors/SensorMap.cs`. `SensorMapTests.Default_table_maps_sixty_five_keys`, `Mechanical_and_ambiguous_keys_are_unsupported`, `Overrides_win_over_the_table_and_can_add_keys`. |
+| A7 | Every reply checked against its group signature (absent slots under 50 at rest, recorded at calibration) and for values above 4095; mismatch retires the handle. No input-queue drain. | 1, 2 | `Sensors/GroupSignature.cs`. `GroupSignatureTests.Every_group_matches_only_itself_at_rest_and_held`, `A_shifted_reply_fails_and_held_keys_do_not`, `A_firmware_reply_in_a_sensor_slot_fails_the_range_check`. Stage 2 applies it per reply and checks the needed groups cross-reject at start. |
 | A8 | 0x90 canary every 50 cycles; mismatch retires the handle. | 2 | |
 | A9 | Any fault retires the handle, waits on a signalable backoff, reopens, and re-verifies firmware. | 2 | |
-| A10 | Depth from the raw bytes, per the stage 0 measurement. | 1 | |
-| A11 | Freshness is a fixed 60 ms; a read timeout or three consecutive cycles of 100 ms or more is a fault; one slow cycle only stales the snapshot. | 1, 2 | |
-| A16 | Calibration detects a clipping key (4095 or a plateau), stores 4095, and tells the user; a key at 4095 for seconds during a session is a plausibility warning. | 1, 5 | |
-| A17 | Calibration is per key; spans are never shared between keys. | 1, 4 | |
+| A10 | Depth from the raw bytes, per the stage 0 measurement. | 1 | `Mapper.ApplySnapshot` reads `Raw`. `MapperTests.Full_profile_tick_maps_depth_and_buttons` (fixtures leave `Filtered` zero). |
+| A11 | Freshness is a fixed 60 ms; a read timeout or three consecutive cycles of 100 ms or more is a fault; one slow cycle only stales the snapshot. | 1, 2 | `SensorSnapshot` derives the limit from `FreshnessMs`; `Sensors/CycleStats.cs`. `SensorSnapshotTests.Freshness_is_sixty_milliseconds_in_the_clock_s_ticks`, `CycleStatsTests.One_slow_cycle_is_not_a_fault_but_three_in_a_row_are`. The read timeout is stage 2. |
+| A16 | Calibration flags a clipping key (full press at the ceiling, `IsClipping`), stores 4095, and tells the user; a key at 4095 for seconds during a session is a plausibility warning. | 1, 5 | `KeyCalibration.IsClipping`. `NormalizerTests.A_key_that_reaches_the_ceiling_is_clipping`. Telling the user and the in-session warning are stage 5. |
+| A17 | Calibration is per key; spans are never shared between keys. | 1, 4 | `Engine/CompiledProfile.cs` carries each key's own calibration. `MapperTests.Spans_are_never_shared_between_keys`. |
 | A18 | The response preview shows counts as well as depth so the near-rest compression is visible; the feel step examines that region. | 5 | |
 | A12 | Status card shows measured p50 and p99 cycle period. | 5 | |
-| A13 | Calibration per container id and firmware: rest, full, noise band, sensor index. | 1, 4 | |
-| A14 | Depth re-normalised above the noise band per the design formula; in-band reads as released. | 1 | |
+| A13 | Calibration per container id and firmware: rest, full, noise band, sensor index. | 1, 4 | `Calibration/KeyCalibration.cs` fields. `NormalizerTests.Calibration_rejects_a_span_too_small_for_the_band`. The container-id and firmware keyed store is stage 4. |
+| A14 | Depth re-normalised above the noise band per the design formula; in-band reads as released. | 1 | `Calibration/Normalizer.cs`. `NormalizerTests.Leaving_the_band_has_no_step`, `Inside_the_band_is_exactly_zero_and_at_rest`, `Wrong_side_of_rest_and_beyond_full_press_clamp_on_an_ascending_key`, `Descending_travel_normalises_the_same_way`. |
 | A15 | Firmware change warns and keeps calibration data. | 4, 5 | |
 
 ## Fallback
 
 | ID | Requirement | Stage | Evidence |
 | --- | --- | --- | --- |
-| F1 | Analog drives a key while the snapshot is fresh, the key is calibrated, and the at-rest latch is set. | 1 | |
-| F2 | Stale or faulted sensor after a valid start falls back to the hook's digital state. | 1, 3 | |
-| F3 | One ramp per key, set to the depth every analog tick, so fallback starts from the last analog value. | 1 | |
-| F4 | Fallback rate is the binding's rate, or 50 ms full scale when the binding's rate is zero. | 1 | |
-| F5 | Analog resumes only after a reading at rest; no reverse ramp. | 1 | |
+| F1 | Analog drives a key while its reading is available: snapshot fresh, group read, key calibrated. | 1 | `Mapper.Resolve` (`analogAvailable`), `Mapper.ApplySnapshot`. `MapperTests.Full_profile_tick_maps_depth_and_buttons`, `A_fresh_snapshot_missing_a_group_falls_back_only_the_keys_in_it`. |
+| F2 | Stale or faulted sensor after a valid start falls back to the hook's digital state. | 1, 3 | `Mapper.ApplySnapshot` writes NaN when stale. `MapperTests.Sensor_fault_mid_press_ramps_to_full_in_fifteen_ms_and_recovery_ramps_back_to_the_live_depth`, `Dead_sensor_at_start_still_drives_analog_keys_from_the_hook`. Stage 3 owns the warning. |
+| F3 | One ramp per key, set to the depth every analog tick, so fallback starts from the last analog value. | 1 | `Mapper.Resolve` seeds the ramp every analog tick. `MapperTests.Sensor_fault_mid_press_ramps_to_full_in_fifteen_ms_and_recovery_ramps_back_to_the_live_depth`. |
+| F4 | Fallback rate is the binding's rate, or 50 ms full scale when the binding's rate is zero. | 1 | `Mapper.RampFor`. Same test (0.7 to 1.0 in 15 ms at 50 ms full scale); `RampTests.Seed_then_ramp_starts_from_the_seed`. |
+| F5 | Recovery from fallback ramps the output from the fallback value to the live depth at the fallback rate; with the key at rest the ramp finishes its descent. Nothing holds the fallback value once the reading is back. | 1 | `Mapper.Resolve` converging state. `MapperTests.Sensor_fault_mid_press_ramps_to_full_in_fifteen_ms_and_recovery_ramps_back_to_the_live_depth` (1.0 to 0.7 over 15 ms), `Release_under_fallback_ramps_down_and_recovery_at_rest_finishes_the_ramp`. |
 | F6 | Fallback warning with the reason shown while active. | 5 | |
 | F7 | Start refused until every analog key in the profile is calibrated; Start points at the calibration card. | 3, 5 | |
 
@@ -84,7 +84,7 @@ after the owning stage closes is a gap.
 | B3 | Key-up swallowed only if its key-down was swallowed. | 2 | |
 | B4 | Keys physically down at hook install are marked passed. | 2 | |
 | B5 | Ctrl, Alt, or Win chords pass through and release held mapped keys. | 2 | |
-| B6 | Ctrl, Alt, Win, F12 cannot be mapped. | 1, 5 | |
+| B6 | Ctrl, Alt, Win, F12 cannot be mapped. | 1, 5 | `ScanCode.IsReserved`; `Binding.Validate`. `ScanCodeTests.Reserved_keys_are_ctrl_alt_win_and_f12`, `ProfileJsonTests.Invalid_content_is_refused`. The editor is stage 5. |
 | B7 | On foreground loss, swallowed-down keys are marked passed; nothing is injected. | 2 | |
 | B8 | Game matched by executable path, re-resolved on each foreground change. | 2 | |
 | B9 | `ApplicationFrameHost` unwrapped to the `CoreWindow` owner. | 2 | |
@@ -97,7 +97,7 @@ after the owning stage closes is a gap.
 | --- | --- | --- | --- |
 | O1 | ViGEm in-process on the engine thread with atomic submit. | 3 | |
 | O2 | Connect sequence: prime with `LeftStickX = 1`, zero, loop until XInput reads all-zero, tolerate `UserIndexNotReported`, 2 s timeout. | 3 | |
-| O3 | Packing: symmetric +/-32767 sticks, 0..255 triggers, non-finite to neutral. | 1 | |
+| O3 | Packing: symmetric +/-32767 sticks, 0..255 triggers, non-finite to neutral. | 1 | `Engine/PadReport.cs`. `PadReportTests.Sticks_pack_symmetrically`, `Triggers_pack_to_a_byte`. |
 | O4 | Zero before disconnect; disconnect idempotent. | 3 | |
 | O5 | Process death unplugs the pad, proven by the kill test, or the contingency applies. | 0, 3 | |
 | O6 | Watchdog on the hook timer: tick older than 200 ms claims pad ownership, zeros, unplugs, unhooks. | 3 | |
@@ -127,26 +127,26 @@ after the owning stage closes is a gap.
 
 | ID | Requirement | Stage | Evidence |
 | --- | --- | --- | --- |
-| P1 | Profile is a name plus bindings; key binding to button or trigger; axis binding of two keys to a stick axis. | 1 | |
-| P2 | Response is exponent, saturation, deadzone, with presets linear, soft, aggressive. | 1 | |
-| P3 | Press and release ramps for digital keys and fallback. | 1 | |
-| P4 | Conflict rule last-input-wins (default) or neutral. | 1 | |
-| P5 | Axis mode position or rate; Forza default chosen in the feel step. | 1, 5 | |
-| P6 | Forza profile ships as default and reset. | 1, 4 | |
-| P7 | JSON with a version integer, atomic write, one `.bak`, `.corrupt` rename. | 1 | |
+| P1 | Profile is a name plus bindings; key binding to button or trigger; axis binding of two keys to a stick axis. | 1 | `Profiles/Profile.cs`, `Bindings/Binding.cs`. `ProfileJsonTests.Forza_round_trips`, `CompiledProfileTests.Forza_profile_is_valid`. |
+| P2 | Response is exponent, saturation, deadzone, with presets linear, soft, aggressive. | 1 | `Response/Response.cs`, validated on load by `Binding.Validate`. `ResponseTests.Presets_are_monotone_from_zero_to_one`, `Presets_differ_at_mid_travel`, `BindingValidationTests.Key_binding_rules`, `ProfileJsonTests.Malformed_documents_are_refused_with_a_message_and_never_throw`. |
+| P3 | Press and release ramps for digital keys and fallback. | 1 | `Bindings/Binding.cs` ramps, `Engine/Ramp.cs`, `Mapper.RampFor`. `RampTests.*`, `MapperTests.Gate_during_a_ramp_restarts_the_ramp_from_zero`; buttons ignore ramps: `MapperTests.Buttons_are_digital_and_ignore_ramp_and_response`. |
+| P4 | Conflict rule last-input-wins (default) or neutral. | 1 | `Engine/Conflict.cs`. `ConflictTests.Last_input_wins_then_hands_over_on_release`, `Neutral_centres_while_both_are_held`. |
+| P5 | Axis mode position or rate; Forza default chosen in the feel step. | 1, 5 | `Engine/RateState.cs`, `Mapper` axis loop. `RateStateTests.*`, `MapperTests.Rate_mode_integrates_steering`. Default chosen in stage 5. |
+| P6 | Forza profile ships as default and reset. | 1, 4 | `Profiles/DefaultProfiles.cs`. `CompiledProfileTests.Forza_profile_is_valid`, `ProfileJsonTests.Forza_round_trips`. Reset is stage 4. |
+| P7 | JSON with a version integer, atomic write, one `.bak`, `.corrupt` rename. | 1 | `Profiles/ProfileJson.cs`, `Storage/JsonDocuments.cs`, `Storage/JsonFile.cs`. `ProfileJsonTests.Newer_version_is_refused_and_older_is_read`, `JsonFileTests.Save_creates_the_file_without_a_bom_and_the_second_save_keeps_a_backup`, `Corrupt_primary_recovers_from_the_backup_and_is_kept_aside`, `Missing_primary_recovers_from_the_backup`, `A_locked_primary_is_unavailable_and_left_alone`. |
 | P8 | Data folder `%AppData%\ApexAnalogMapper`; old folder never touched. | 4 | |
 
 ## Keyboards
 
 | ID | Requirement | Stage | Evidence |
 | --- | --- | --- | --- |
-| H1 | 0x1610 and 0x1614 verified; the listed other product ids get try-it. | 1, 5 | |
+| H1 | 0x1610 and 0x1614 verified; the listed other product ids get try-it. | 1, 5 | `Sensors/KnownKeyboards.cs`. `SensorSnapshotTests.Known_keyboards_table_marks_only_gen_1_as_verified`. Try-it flow is stage 5. |
 | H2 | Try-it sends 0x90 only first; non-version reply stops with export offered. | 5 | |
 | H3 | Consent naming the risk before any 0xD7 on an unverified board. | 5 | |
-| H4 | Replies all zero, all identical, or unchanged on press are rejected. | 1 | |
-| H5 | Learn step finds the sensor index per prompted key and rejects ambiguity. | 1, 5 | |
-| H6 | Unverified banner; export JSON with firmware, product id, report lengths, container id, captures. | 1, 5 | |
-| H7 | Firmware verified list warns rather than rejects. | 1, 5 | |
+| H4 | Replies all zero, all identical, or unchanged on press are rejected. | 1 | `SensorProtocol.IsPlausibleGroup`, `LearnStep.AnythingMoved`. `SensorProtocolTests.Plausibility_rejects_all_zero_and_all_identical_groups`, `LearnStepTests.Nothing_moving_enough_is_reported`. |
+| H5 | Learn step finds the sensor index per prompted key and rejects ambiguity. | 1, 5 | `Sensors/LearnStep.cs`. `LearnStepTests.Finds_the_sensor_that_moved`, `Two_keys_pressed_is_ambiguous`, `Thresholds_are_exact_at_their_boundaries`. Prompting is stage 5. |
+| H6 | Unverified banner; export JSON with firmware, product id, report lengths, container id, captures. | 1, 5 | `Sensors/CaptureExport.cs`. `LearnStepTests.Capture_export_round_trips`. Banner is stage 5. |
+| H7 | Firmware verified list warns rather than rejects. | 1, 5 | `KnownKeyboards.IsVerified` returns a flag rather than refusing. `SensorSnapshotTests.Known_keyboards_table_marks_only_gen_1_as_verified`. The warning is stage 5. |
 
 ## Window
 
@@ -181,4 +181,4 @@ after the owning stage closes is a gap.
 | M5 | Kill test with a hook that swallows injected input in test mode and a real foreground window. | 3 | |
 | M6 | Wedge test blocks inside a submit; watchdog claims ownership and unplugs; the wedged call never touches the driver again. | 3 | |
 | M7 | Soak: working set, handles, keys at zero, GC pause budget, gen 2 count. | 3 | |
-| M8 | Each stage's review findings recorded before fixes, with citations and test output. | all | |
+| M8 | Each stage's review findings recorded before fixes, with citations and test output. | all | `docs/design/reviews/stage-0.md`, `docs/design/reviews/stage-1.md` (stage 1 so far). |
