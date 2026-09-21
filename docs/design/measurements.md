@@ -294,17 +294,19 @@ All six open runs done, in this order: `rest --minutes 10`, `e2e2 --seconds 20`,
 `cycle --no-drain --seconds 30` twice. Results are folded into the sections above;
 the cycle runs are here.
 
-`cycle --no-drain` with Forza Horizon 6 in the foreground and being played (hands on
-W, A, S, D), SteelSeriesEngine, GG, GGClient, GGEZ, Moments and Prism all running:
+`cycle --no-drain`, 30 s each, SteelSeriesEngine, GG, GGClient, GGEZ, Moments and
+Prism all running. First with GG open on the OmniPoint actuation page (live per-key
+depth on screen), then with Forza Horizon 6 in the foreground and being played (hands
+on W, A, S, D):
 
-| Exchange p50 | Exchange p99 | Exchange max | Cycle p50 | Cycle p99 | Cycle max | Faults | Stale replies |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 5.998 ms | 6.085 ms | 7.674 ms | 12.000 ms | 12.109 ms | 23.199 ms | 0 | 0 |
+| Foreground | Exchange p50 | Exchange p99 | Exchange max | Cycle p50 | Cycle p99 | Cycle max | Faults | Stale replies |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| GG actuation page | 5.998 ms | 6.017 ms | 6.058 ms | 12.001 ms | 12.021 ms | 21.826 ms | 0 | 0 |
+| Forza Horizon 6, played | 5.998 ms | 6.085 ms | 7.674 ms | 12.000 ms | 12.109 ms | 23.199 ms | 0 | 0 |
 
-Identical to the stage 0 idle runs. A game in front, key presses, and GG's own
-processes do not touch the sensor path. The earlier run of the pair, with GG open on
-the OmniPoint actuation page, was overwritten in the log by the second; its console
-figures are recorded below once read back from the terminal.
+Identical to the stage 0 idle runs. GG reading the keys for its own display, a game in
+front, and key presses do not touch the sensor path. (The GG run's figures come from
+the console; its log was overwritten by the second run.)
 
 Nothing is open from the measurement plan. Decisions 1 to 5 stand, with the noise band
 floor raised to 40 in decision 1.
