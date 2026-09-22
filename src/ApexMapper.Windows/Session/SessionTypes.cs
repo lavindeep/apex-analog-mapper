@@ -107,8 +107,8 @@ public sealed class SessionServices
     /// <summary>Connected boards; the session pauses when the selected one disappears.</summary>
     public required KeyboardDiscovery Keyboards { get; init; }
 
-    /// <summary>Raw Input's keyboard event count, for hook-loss detection.</summary>
-    public required Func<long> RawInputEvents { get; init; }
+    /// <summary>The app's Raw Input pump: its newest event time, for noticing a lost hook, and whether it still runs.</summary>
+    public required IRawInputActivity RawInput { get; init; }
 
     public required IPowerEvents Power { get; init; }
 
@@ -121,6 +121,9 @@ public sealed class SessionServices
     public Func<ForegroundFlag, IForegroundSource> CreateForeground { get; init; } = flag => new ForegroundTracker(flag);
 
     public Func<Guid, SensorSnapshot, PollerConfig, SensorPoller> CreatePoller { get; init; } = SensorPoller.ForKeyboard;
+
+    /// <summary>How long after the game's process exits the session looks for it again before stopping.</summary>
+    public TimeSpan GameRelaunchGrace { get; init; } = TimeSpan.FromMilliseconds(MappingSession.GameRelaunchGraceMs);
 
     /// <summary>Test mode: the hook treats injected keys as physical ones.</summary>
     public bool SwallowInjected { get; init; }

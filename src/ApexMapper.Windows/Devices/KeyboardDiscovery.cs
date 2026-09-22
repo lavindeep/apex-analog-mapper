@@ -32,11 +32,15 @@ public sealed class KeyboardDiscovery : IDisposable
     public event Action<IReadOnlyList<KeyboardInfo>>? Changed;
 
     /// <summary>
-    /// Raised on the pump thread the moment any keyboard is removed, before the debounced
-    /// <see cref="Changed"/> says which. A running session pauses on it. Must be cheap; a
+    /// Raised on the pump thread the moment a keyboard is removed, with its container id
+    /// when the pump knew it, before the debounced <see cref="Changed"/>. A running session
+    /// pauses on it when the container is its board's or unknown. Must be cheap; a
     /// throwing handler is counted in <see cref="HandlerFaults"/>.
     /// </summary>
-    public event Action? Removing;
+    public event Action<Guid?>? Removing;
+
+    /// <summary>For tests: handlers on <see cref="Changed"/> and <see cref="Removing"/>.</summary>
+    internal int SubscriberCount => (Changed?.GetInvocationList().Length ?? 0) + (Removing?.GetInvocationList().Length ?? 0);
 
     public KeyboardDiscovery(Func<IReadOnlyList<KeyboardInfo>>? enumerate = null)
     {
@@ -136,13 +140,13 @@ public sealed class KeyboardDiscovery : IDisposable
     }
 
     /// <summary>Pump thread. A device change that races Dispose is ignored rather than touching a disposed timer.</summary>
-    internal void OnDeviceChanged(nint device, bool arrived)
+    internal void OnDeviceChanged(nint device, bool arrived, Guid? container = null)
     {
         if (!arrived)
         {
             try
             {
-                Removing?.Invoke();
+                Removing?.Invoke(container);
             }
             catch (Exception)
             {
@@ -158,7 +162,11 @@ public sealed class KeyboardDiscovery : IDisposable
         }
     }
 
-    /// <summary>Thread pool. An unhandled exception here would end the process, so enumeration failures keep the previous list and are reported through <see cref="LastError"/>.</summary>
+    /// <summary>
+    /// Thread pool. An unhandled exception here would end the process, so an enumeration
+    /// failure keeps the previous list, is reported through <see cref="LastError"/>, and
+    /// is retried after the debounce.
+    /// </summary>
     internal void RefreshQuietly()
     {
         IReadOnlyList<KeyboardInfo> list;
@@ -169,6 +177,14 @@ public sealed class KeyboardDiscovery : IDisposable
         catch (Exception e)
         {
             Volatile.Write(ref _lastError, e.Message);
+            // Try again: a session paused on a removal resumes only from a published list.
+            lock (_lifetime)
+            {
+                if (!_disposed)
+                {
+                    _debounce.Change(DebounceMs, Timeout.Infinite);
+                }
+            }
             return;
         }
         Publish(list);

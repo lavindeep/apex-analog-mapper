@@ -171,10 +171,9 @@ public class EngineLoopTests
         Assert.True(SpinWait.SpinUntil(() => rig.Engine.LastTickTicks != 0, 1000));
         var first = rig.Engine.LastTickTicks;
         Assert.True(SpinWait.SpinUntil(() => rig.Engine.LastTickTicks > first, 1000));
-        var clock = Stopwatch.StartNew();
 
+        // Stop joins with the engine's bound and says whether the thread exited within it.
         Assert.True(rig.Engine.Stop());
-        Assert.True(clock.ElapsedMilliseconds < EngineLoop.JoinTimeoutMs, $"Stop took {clock.ElapsedMilliseconds} ms.");
         Assert.False(rig.Engine.IsRunning);
         Assert.Null(rig.Engine.Fault);
     }

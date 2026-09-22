@@ -10,17 +10,18 @@ namespace ApexMapper.Windows.Input;
 /// <c>RIDEV_INPUTSINK</c> (events even when another window is foreground) and
 /// <c>RIDEV_DEVNOTIFY</c> (arrival and removal). Key events go into a single-producer,
 /// single-consumer ring; overflow is counted, never blocks. Device events are raised on
-/// the pump thread, and only for changes after registration: a consumer enumerates
-/// first, then watches. Raw Input only attributes events to a device; the hook owns
-/// the digital state. One pump per process.
+/// the pump thread. Registering reports an arrival for every keyboard already present,
+/// and the pump resolves each arriving keyboard's container id then, so a removal can
+/// say which physical board went even though the device is gone by then. Raw Input only
+/// attributes events to a device; the hook owns the digital state. One pump per process.
 ///
 /// Exceptions never leave the window procedure: a throwing <see cref="DeviceChanged"/>
 /// handler, or anything thrown while reading an event, is counted in
-/// <see cref="HandlerFaults"/>. <see cref="EventCount"/> and <see cref="LastEventTicks"/>
-/// let the session compare this pump against the hook: raw events flowing while the
-/// hook's counter stands still means Windows removed the hook.
+/// <see cref="HandlerFaults"/>. <see cref="LastEventTime"/> lets the session compare this
+/// pump against the hook: an event here newer than any the hook saw means Windows
+/// removed the hook.
 /// </summary>
-public sealed unsafe class RawInputPump : IDisposable
+public sealed unsafe class RawInputPump : IRawInputActivity, IDisposable
 {
     public const int RingSize = 256;
 
@@ -46,13 +47,18 @@ public sealed unsafe class RawInputPump : IDisposable
     private int _malformedInputs;
     private long _eventCount;
     private long _lastEventTicks;
+    private int _lastEventTime;
     private Thread? _thread;
     private uint _threadId;
     private nint _window;
     private Exception? _error;
 
-    /// <summary>A keyboard arrived (true) or was removed (false). Raised on the pump thread; a handler that throws is counted, never propagated.</summary>
-    public event Action<nint, bool>? DeviceChanged;
+    /// <summary>
+    /// A keyboard arrived (true) or was removed (false), with its container id when known:
+    /// resolved on arrival, remembered for the removal. Raised on the pump thread; a
+    /// handler that throws is counted, never propagated.
+    /// </summary>
+    public event Action<nint, bool, Guid?>? DeviceChanged;
 
     public int Overflows => Volatile.Read(ref _overflows);
 
@@ -67,6 +73,9 @@ public sealed unsafe class RawInputPump : IDisposable
 
     /// <summary>Stopwatch timestamp of the last decoded keyboard event, or zero.</summary>
     public long LastEventTicks => Volatile.Read(ref _lastEventTicks);
+
+    /// <summary>The OS time (ms since boot, the WM_INPUT message time) of the last keyboard event, or zero. The hook sees the same events with the same times.</summary>
+    public uint LastEventTime => (uint)Volatile.Read(ref _lastEventTime);
 
     /// <summary>What ended the pump thread early, if anything did; null while it runs or after a clean stop.</summary>
     public Exception? Error => Volatile.Read(ref _error);
@@ -334,12 +343,27 @@ public sealed unsafe class RawInputPump : IDisposable
         }
     }
 
-    internal void OnDeviceChanged(nint device, bool arrived)
+    internal void OnDeviceChanged(nint device, bool arrived) => OnDeviceChanged(device, arrived, Lookup);
+
+    internal void OnDeviceChanged(nint device, bool arrived, Func<nint, Guid?> lookup)
     {
-        Forget(device);
+        Guid? container;
+        if (arrived)
+        {
+            Forget(device);
+            container = ContainerIdOf(device, lookup);
+        }
+        else
+        {
+            lock (_namesLock)
+            {
+                container = _containers.TryGetValue(device, out var known) ? known : null;
+            }
+            Forget(device);
+        }
         try
         {
-            DeviceChanged?.Invoke(device, arrived);
+            DeviceChanged?.Invoke(device, arrived, container);
         }
         catch (Exception)
         {
@@ -359,6 +383,7 @@ public sealed unsafe class RawInputPump : IDisposable
                 Interlocked.Increment(ref _malformedInputs);
                 return;
             }
+            Volatile.Write(ref _lastEventTime, User32.GetMessageTime());
             if (RawInputDecoder.TryDecode(data.keyboard.MakeCode, data.keyboard.Flags, out var code, out var down))
             {
                 Enqueue(new RawKeyEvent(code, down, data.header.hDevice, Stopwatch.GetTimestamp()));

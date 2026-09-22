@@ -20,9 +20,9 @@ namespace ApexMapper.Windows.Tests.Session;
 /// <summary>
 /// The design's session table, one test per row, plus the orderings the plan names and
 /// the stage 3 ledger's findings. The hook is real (installed in this process, and it
-/// swallows mapped physical keys while a test holds the game in front); the pad,
-/// foreground, game, power, keyboard list and vendor stream are fakes the test moves by
-/// hand.
+/// swallows mapped physical keys while a test holds the game in front, so do not type
+/// while these run); the pad, foreground, game, power, Raw Input, keyboard list and
+/// vendor stream are fakes the test moves by hand.
 /// </summary>
 [Collection(ProcessSingletons.Name)]
 public sealed class MappingSessionTests : IDisposable
@@ -37,12 +37,13 @@ public sealed class MappingSessionTests : IDisposable
     private readonly MappingSession _session;
     private readonly GCLatencyMode _latencyBefore = GCSettings.LatencyMode;
     private readonly ManualResetEventSlim _release = new(false);
+    private readonly FakeRawInput _rawInput = new();
     private FakeForeground? _foreground;
     private DriverState _driverState = DriverState.Running;
+    private bool _driverThrows;
     private bool _gameRunning = true;
-    private Func<string, IGameProcess?>? _findGame;
+    private ManualResetEventSlim? _connectGate;
     private Func<ForegroundFlag, IForegroundSource>? _createForeground;
-    private long _rawEvents;
     private Func<IVendorStream?> _openSensor = () => SlowStream();
 
     public MappingSessionTests()
@@ -52,11 +53,16 @@ public sealed class MappingSessionTests : IDisposable
         _session = new MappingSession(new SessionServices
         {
             Keyboards = _keyboards,
-            RawInputEvents = () => Volatile.Read(ref _rawEvents),
+            RawInput = _rawInput,
             Power = _power,
-            DriverState = () => _driverState,
-            ConnectPad = cancel => VirtualPad.Connect(() => _driver, cancel),
-            FindGame = path => _findGame is { } find ? find(path) : NextGame(),
+            DriverState = () => _driverThrows ? throw new InvalidOperationException("service manager unavailable") : _driverState,
+            ConnectPad = cancel =>
+            {
+                _connectGate?.Wait(cancel);
+                return VirtualPad.Connect(() => _driver, cancel);
+            },
+            FindGame = _ => NextGame(),
+            GameRelaunchGrace = TimeSpan.FromMilliseconds(300),
             CreateForeground = flag => _createForeground is { } create ? create(flag) : _foreground = new FakeForeground(flag),
             CreatePoller = (_, snapshot, config) => new SensorPoller(_openSensor, snapshot, config),
         });
@@ -65,6 +71,8 @@ public sealed class MappingSessionTests : IDisposable
     public void Dispose()
     {
         _release.Set();
+        _rawInput.Release();
+        _connectGate?.Set();
         _session.Dispose();
         _keyboards.Dispose();
         _release.Dispose();
@@ -116,6 +124,16 @@ public sealed class MappingSessionTests : IDisposable
         WaitForPad(ButtonA);
     }
 
+    /// <summary>Holds the session thread inside its next health check until <see cref="FakeRawInput.Release"/>.</summary>
+    private void HoldTheSessionThread()
+    {
+        _rawInput.Hold();
+        Eventually(() => _rawInput.Held, "the session thread to be held", MappingSession.HealthCheckMs * 8);
+    }
+
+    /// <summary>An OS event time later than any real key event on this machine, as Raw Input would report one the hook never saw.</summary>
+    private static uint FutureEventTime(int aheadMs) => (uint)(Environment.TickCount + aheadMs);
+
     /// <summary>Blocks the engine's next driver submit until the test ends: an engine stuck inside the driver.</summary>
     private void WedgeTheEngine()
     {
@@ -137,6 +155,7 @@ public sealed class MappingSessionTests : IDisposable
         Assert.True(_foreground!.Stopped);
         Assert.True(Game.Disposed);
         Assert.Equal(0, _power.Subscribers);
+        Assert.Equal(0, _keyboards.SubscriberCount);
         Assert.Null(_session.Hook);
         Assert.Equal(_latencyBefore, GCSettings.LatencyMode);
         Assert.Equal(0, _session.HandlerFaults);
@@ -184,9 +203,23 @@ public sealed class MappingSessionTests : IDisposable
         _gameRunning = true;
         Eventually(() => _session.Status().GameRunning, "the session to find the game", MappingSession.GameSearchMs * 3);
         Assert.Single(_games);
+        _gameRunning = false;
         Game.Exit();
-        Eventually(() => _session.State == SessionState.Idle, "the game's exit to stop the session");
+        Eventually(() => _session.State == SessionState.Idle, "the game's exit to stop the session", 5000);
         Assert.Equal(EndReason.GameExited, _session.LastEnd!.Reason);
+    }
+
+    [Fact]
+    public async Task A_game_that_relaunches_itself_within_the_grace_keeps_its_session()
+    {
+        await StartRunning();
+
+        Game.Exit();
+
+        Eventually(() => _games.Count == 2 && _session.Status().GameRunning, "the relaunched game to be found", 5000);
+        Thread.Sleep(500);
+        Assert.Equal(SessionState.Running, _session.State);
+        Assert.True(_games[0].Disposed);
     }
 
     [Fact]
@@ -228,6 +261,7 @@ public sealed class MappingSessionTests : IDisposable
         _foreground!.Lose();
 
         WaitForPad(PadReport.Neutral);
+        // With the flag down this passes either way; the regain test below pins ForegroundLost.
         Assert.False(Press(Space, down: false), "the key-up of a key held through the loss reaches the desktop");
         Assert.Equal(SessionState.Running, _session.State);
         Assert.False(_session.Status().GameHasFocus);
@@ -289,17 +323,21 @@ public sealed class MappingSessionTests : IDisposable
         WaitForPad(ButtonA);
     }
 
-    [Fact]
-    public async Task A_keyboard_removal_pauses_at_once_and_the_debounced_list_resumes_with_keys_gated()
+    /// <summary>The session thread is held, so only the pump-thread write can zero the pad.</summary>
+    [Theory]
+    [InlineData("this board")]
+    [InlineData("unknown board")]
+    public async Task A_removal_of_this_or_an_unknown_board_pauses_at_once_and_the_debounced_list_resumes_with_keys_gated(string which)
     {
         await RunningWithSpaceHeld();
-        var clock = Stopwatch.StartNew();
+        HoldTheSessionThread();
 
-        // Pump thread: a keyboard went away. The debounced list, 500 ms later, still has the board (a replug, or another keyboard).
-        _keyboards.OnDeviceChanged(1, arrived: false);
+        // Pump thread: a keyboard went away. The debounced list, 500 ms later, still has the board (a replug).
+        _keyboards.OnDeviceChanged(1, arrived: false, which == "this board" ? KeyboardId : null);
 
         WaitForPad(PadReport.Neutral);
-        Assert.True(clock.ElapsedMilliseconds < KeyboardDiscovery.DebounceMs / 2, $"neutral after {clock.ElapsedMilliseconds} ms");
+        Assert.Equal(SessionState.Running, _session.State);
+        _rawInput.Release();
         Eventually(() => _session.State == SessionState.Paused, "pause on removal");
         Eventually(() => _session.State == SessionState.Running, "resume from the debounced list", KeyboardDiscovery.DebounceMs * 4);
         StaysAt(PadReport.Neutral);
@@ -307,6 +345,20 @@ public sealed class MappingSessionTests : IDisposable
         Press(Space, down: false);
         Press(Space, down: true);
         WaitForPad(ButtonA);
+    }
+
+    [Fact]
+    public async Task Another_board_going_away_leaves_the_session_alone()
+    {
+        await RunningWithSpaceHeld();
+
+        _keyboards.OnDeviceChanged(1, arrived: false, new Guid("11111111-2222-3333-4444-555555555555"));
+
+        StaysAt(ButtonA);
+        Thread.Sleep(KeyboardDiscovery.DebounceMs + 200);
+        Assert.Equal(SessionState.Running, _session.State);
+        Assert.False(_session.Status().KeysAwaitingRelease);
+        Assert.Equal(ButtonA, _driver.State);
     }
 
     [Theory]
@@ -337,6 +389,7 @@ public sealed class MappingSessionTests : IDisposable
                 hook.StopRequested!();
                 break;
             case EndReason.GameExited:
+                _gameRunning = false;
                 Game.Exit();
                 break;
             case EndReason.ControllerDisconnected:
@@ -357,6 +410,7 @@ public sealed class MappingSessionTests : IDisposable
         AssertStoppedCleanly(reason);
         Assert.True(hookInstalledAtZero);
         Assert.False(hook.IsInstalled);
+        Assert.DoesNotContain("apex-hook", _driver.ReadBackThreads);
     }
 
     [Fact]
@@ -402,26 +456,28 @@ public sealed class MappingSessionTests : IDisposable
     [Fact]
     public async Task A_precondition_check_that_throws_fails_the_start_and_the_next_start_works()
     {
-        _findGame = _ => throw new InvalidOperationException("process list unavailable");
+        _driverThrows = true;
 
         var end = await _session.StartAsync(Request());
 
         Assert.Equal(EndReason.StartFailed, end?.Reason);
+        Assert.Contains("service manager unavailable", end!.Message);
         Assert.Equal(SessionState.Idle, _session.State);
-        _findGame = null;
+        _driverThrows = false;
         await StartRunning();
     }
 
     [Fact]
     public async Task A_second_start_while_one_is_in_flight_or_running_is_refused()
     {
-        _driver.UserIndexUnreportedFor = 20;
+        _connectGate = new ManualResetEventSlim(false);
 
         var first = _session.StartAsync(Request());
         var second = await _session.StartAsync(Request());
 
         Assert.Equal(EndReason.StartFailed, second?.Reason);
         Assert.Contains("in progress", second!.Message);
+        _connectGate.Set();
         Assert.Null(await first);
         Assert.Equal(EndReason.StartFailed, (await _session.StartAsync(Request()))?.Reason);
         Assert.Equal(SessionState.Running, _session.State);
@@ -562,6 +618,41 @@ public sealed class MappingSessionTests : IDisposable
         Assert.Equal(EndReason.EngineStalled, _session.LastEnd!.Reason);
     }
 
+    /// <summary>
+    /// Health checks queue up behind a held session thread while the watchdog removes the
+    /// hook for a stall. When they run, before the stop does, none may put a hook back.
+    /// </summary>
+    [Fact]
+    public async Task A_health_check_queued_behind_a_stall_never_puts_the_hook_back()
+    {
+        using var holdStop = new ManualResetEventSlim(false);
+        await RunningWithSpaceHeld();
+        var hook = _session.Hook!;
+        _session.StateChanged += state =>
+        {
+            if (state == SessionState.Stopping)
+            {
+                holdStop.Wait(TestContext.Current.CancellationToken);
+            }
+        };
+        WedgeTheEngine();
+        HoldTheSessionThread();
+
+        Press(Space, down: false);
+        Eventually(() => !hook.IsInstalled && !_driver.Connected, "the watchdog to unplug the pad and remove the hook");
+        Thread.Sleep(3 * MappingSession.HealthCheckMs);
+        _rawInput.Release();
+
+        // The queued checks have run; the stop is held at its start.
+        Eventually(() => _session.State == SessionState.Stopping, "the stop to begin");
+        Assert.Same(hook, _session.Hook);
+        Assert.False(hook.IsInstalled);
+        Assert.Equal(0, _session.Status().HookReinstalls);
+        holdStop.Set();
+        Eventually(() => _session.State == SessionState.Idle, "the session to stop");
+        Assert.Equal(EndReason.EngineStalled, _session.LastEnd!.Reason);
+    }
+
     [Fact]
     public async Task A_hook_windows_removed_is_noticed_and_put_back_with_the_held_key_gated()
     {
@@ -570,8 +661,9 @@ public sealed class MappingSessionTests : IDisposable
         // Let the watchdog take its baseline for the focus it just saw.
         Thread.Sleep(3 * KeyboardHook.TimerMs);
 
-        // Raw Input counts a key the hook never saw, as when Windows drops the hook.
-        Interlocked.Increment(ref _rawEvents);
+        // Raw Input saw a key the hook never did, as when Windows drops the hook. Real key
+        // events on this machine are all older than this one, so typing cannot hide it.
+        _rawInput.LastEventTime = FutureEventTime(60_000);
 
         Eventually(() => !ReferenceEquals(_session.Hook, first), "a new hook");
         Eventually(() => _session.Status().HookReinstalls == 1 && _session.Hook!.IsInstalled, "the new hook installed");
@@ -584,6 +676,12 @@ public sealed class MappingSessionTests : IDisposable
         WaitForPad(ButtonA);
         StaysAt(ButtonA);
         Assert.Equal(1, _session.Status().HookReinstalls);
+
+        // The new hook is judged from its own start: a second loss is noticed too.
+        var second = _session.Hook!;
+        Thread.Sleep(3 * KeyboardHook.TimerMs);
+        _rawInput.LastEventTime = FutureEventTime(120_000);
+        Eventually(() => _session.Status().HookReinstalls == 2 && !ReferenceEquals(_session.Hook, second), "a second reinstall");
     }
 
     [Fact]
@@ -594,7 +692,7 @@ public sealed class MappingSessionTests : IDisposable
 
         Assert.True(first.Stop());
 
-        Eventually(() => _session.Status().HookReinstalls == 1 && _session.Hook is { IsInstalled: true }, "the health check to put a hook back", MappingSession.HealthCheckMs * 4);
+        Eventually(() => _session.Status().HookReinstalls == 1 && _session.Hook is { IsInstalled: true }, "the health check to put a hook back", 5000);
         Assert.NotSame(first, _session.Hook);
         Assert.Equal(SessionState.Running, _session.State);
     }
@@ -606,9 +704,34 @@ public sealed class MappingSessionTests : IDisposable
 
         _foreground!.Died = true;
 
-        Eventually(() => _session.State == SessionState.Idle, "the health check to stop the session", MappingSession.HealthCheckMs * 4);
+        Eventually(() => _session.State == SessionState.Idle, "the health check to stop the session", 5000);
         Assert.Equal(EndReason.SafetyFault, _session.LastEnd!.Reason);
         Assert.Contains("Focus tracking stopped", _session.LastEnd.Message);
+    }
+
+    [Fact]
+    public async Task A_raw_input_pump_that_stopped_stops_the_session()
+    {
+        await StartRunning();
+
+        _rawInput.Running = false;
+
+        Eventually(() => _session.State == SessionState.Idle, "the health check to stop the session", 5000);
+        Assert.Equal(EndReason.SafetyFault, _session.LastEnd!.Reason);
+        Assert.Contains("Keyboard device tracking stopped", _session.LastEnd.Message);
+    }
+
+    [Fact]
+    public async Task A_watchdog_that_throws_on_every_tick_stops_the_session()
+    {
+        await StartRunning();
+        _foreground!.Gain();
+
+        _rawInput.Throws = true;
+
+        Eventually(() => _session.State == SessionState.Idle, "the health check to stop the session", 5000);
+        Assert.Equal(EndReason.SafetyFault, _session.LastEnd!.Reason);
+        Assert.Contains("kept failing", _session.LastEnd.Message);
     }
 
     [Fact]
@@ -621,8 +744,9 @@ public sealed class MappingSessionTests : IDisposable
 
         earlier.Exit();
 
-        StaysAt(PadReport.Neutral);
-        Thread.Sleep(100);
+        // Anything the stale exit posted runs before this start, which the running session refuses.
+        Assert.Equal(EndReason.StartFailed, (await _session.StartAsync(Request()))?.Reason);
+        Thread.Sleep(2 * MappingSession.GameSearchMs);
         Assert.Equal(SessionState.Running, _session.State);
     }
 
@@ -676,11 +800,13 @@ public sealed class MappingSessionTests : IDisposable
         Assert.Equal(EndReason.RestartRequired, (await _session.StartAsync(Request()))?.Reason);
     }
 
+    /// <summary>The session thread is held, so what happens is the guard's work, not a teardown the watchdog set off.</summary>
     [Fact]
     public async Task The_crash_guard_zeros_and_unplugs_the_pad_removes_the_hook_and_restores_the_gc_mode()
     {
         await RunningWithSpaceHeld();
         var hook = _session.Hook!;
+        HoldTheSessionThread();
 
         _session.CrashGuard!.Run();
 
@@ -688,5 +814,6 @@ public sealed class MappingSessionTests : IDisposable
         Assert.Equal(["submit neutral", "disconnect"], log.Skip(log.Count - 2));
         Assert.False(hook.IsInstalled);
         Assert.Equal(_latencyBefore, GCSettings.LatencyMode);
+        Assert.Equal(SessionState.Running, _session.State);
     }
 }

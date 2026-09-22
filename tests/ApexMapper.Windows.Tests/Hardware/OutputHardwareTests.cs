@@ -31,8 +31,7 @@ public class OutputHardwareTests
 {
     private const ushort WScan = 0x11;
 
-    private static readonly ScanCode Semicolon = new(0x27);
-    private static readonly ScanCode Apostrophe = new(0x28);
+    private static readonly ScanCode CapsLock = new(0x3A);
 
     private static readonly ushort AllReadableButtons = Enum.GetValues<PadTarget>()
         .Where(t => t.IsButton() && t != PadTarget.Guide)
@@ -206,31 +205,28 @@ public class OutputHardwareTests
 
     /// <summary>
     /// The whole session against the real pad for <see cref="SoakFactAttribute.Minutes"/>.
-    /// The profile is one axis, right stick X from ; and ', so the pad presses no button
-    /// and moves no stick Windows navigates with, and the hook swallows nothing anyone is
-    /// likely to type. The sensor stream sweeps ' through its travel once a second. After a
-    /// minute of warm-up, working set, handles, GC pauses and gen 2 collections must stay
-    /// flat, and the pad must read neutral once the sweep stops.
+    /// The profile is one binding, Caps Lock to the right trigger, so the hook swallows only
+    /// Caps Lock. Any pad movement makes Windows send gamepad navigation keys to apps that
+    /// take them; a trigger sends the fewest. The sensor stream sweeps Caps Lock through
+    /// its travel once a second. After a minute of warm-up, working set, handles, GC pauses
+    /// and gen 2 collections must stay flat, and the pad must read neutral once the sweep
+    /// stops.
     /// </summary>
     [SoakFact]
     public async Task A_long_session_keeps_memory_handles_and_gc_flat_and_ends_with_every_key_at_zero()
     {
-        var calibrations = new Dictionary<ScanCode, KeyCalibration>();
-        foreach (var key in new[] { Semicolon, Apostrophe })
+        SensorMap.Default.TryGetSensorIndex(CapsLock, out var capsIndex);
+        var capsRest = RestRaw(capsIndex);
+        var calibrations = new Dictionary<ScanCode, KeyCalibration>
         {
-            SensorMap.Default.TryGetSensorIndex(key, out var index);
-            var rest = RestRaw(index);
-            calibrations[key] = KeyCalibration.Create(rest, rest + Span, KeyCalibration.DefaultNoiseBand, index);
-        }
+            [CapsLock] = KeyCalibration.Create(capsRest, capsRest + Span, KeyCalibration.DefaultNoiseBand, capsIndex),
+        };
         var profile = CompiledProfile.TryCompile(
-            new Profile("soak", "Soak", Keys: [], Axes:
-            [
-                new(Semicolon, Apostrophe, PadTarget.RightStickX, Response.Linear, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
-            ]),
+            new Profile("soak", "Soak", Keys: [new(CapsLock, PadTarget.RightTrigger, Response.Linear, 0f, 0f)], Axes: []),
             SensorMap.Default,
             calibrations,
             out _)!;
-        var stream = new SweepStream(calibrations[Apostrophe]);
+        var stream = new SweepStream(calibrations[CapsLock]);
         using var rig = new LiveSession(VirtualPad.Connect, () => stream);
         Assert.Null(await rig.Session.StartAsync(new SessionRequest(KeyboardId, GamePath, profile, Fixtures.Signatures(3))));
         rig.Foreground!.Gain();
@@ -291,7 +287,7 @@ public class OutputHardwareTests
             Session = new MappingSession(new SessionServices
             {
                 Keyboards = _keyboards,
-                RawInputEvents = () => 0,
+                RawInput = new FakeRawInput(),
                 Power = new FakePower(),
                 ConnectPad = cancel => _pad = connectPad(cancel),
                 FindGame = _ => new FakeGame(),

@@ -78,11 +78,27 @@ public class RawInputRingTests
     }
 
     [Fact]
+    public void An_arrival_resolves_the_container_and_its_removal_reports_it_after_the_device_is_gone()
+    {
+        using var pump = new RawInputPump();
+        var tkl = new Guid("27373de1-4206-11f1-b9e4-14ac60fcc13e");
+        var seen = new List<(nint Device, bool Arrived, Guid? Container)>();
+        pump.DeviceChanged += (device, arrived, container) => seen.Add((device, arrived, container));
+
+        pump.OnDeviceChanged(5, arrived: true, _ => tkl);
+        pump.OnDeviceChanged(5, arrived: false, _ => throw new InvalidOperationException("a removed device cannot be looked up"));
+        pump.OnDeviceChanged(6, arrived: false, _ => throw new InvalidOperationException("a removed device cannot be looked up"));
+
+        Assert.Equal([(5, true, tkl), (5, false, tkl), (6, false, (Guid?)null)], seen);
+        Assert.False(pump.IsCached(5));
+    }
+
+    [Fact]
     public void A_throwing_device_handler_is_counted_and_never_escapes_the_window_procedure()
     {
         using var pump = new RawInputPump();
         var calls = 0;
-        pump.DeviceChanged += (_, _) =>
+        pump.DeviceChanged += (_, _, _) =>
         {
             calls++;
             throw new InvalidOperationException("handler bug");

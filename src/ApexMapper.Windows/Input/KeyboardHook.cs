@@ -58,6 +58,7 @@ public sealed unsafe class KeyboardHook : IDisposable
     private readonly ScanCode[] _mapped;
     private long _eventCount;
     private long _lastEventTicks;
+    private int _lastEventTime;
     private int _handlerFaults;
     private Thread? _thread;
     private uint _threadId;
@@ -87,6 +88,9 @@ public sealed unsafe class KeyboardHook : IDisposable
 
     /// <summary>Stopwatch timestamp of the last callback, or zero.</summary>
     public long LastEventTicks => Volatile.Read(ref _lastEventTicks);
+
+    /// <summary>The OS time (ms since boot, <c>KBDLLHOOKSTRUCT.time</c>) of the last event the callback saw, or zero. Compared with Raw Input's to notice a lost hook.</summary>
+    public uint LastEventTime => (uint)Volatile.Read(ref _lastEventTime);
 
     /// <summary>Exceptions caught on the hook thread: handlers and the callback path.</summary>
     public int HandlerFaults => Volatile.Read(ref _handlerFaults);
@@ -354,6 +358,7 @@ public sealed unsafe class KeyboardHook : IDisposable
         }
         var start = Stopwatch.GetTimestamp();
         var swallow = false;
+        Volatile.Write(ref self._lastEventTime, (int)((User32.KBDLLHOOKSTRUCT*)lParam)->time);
         try
         {
             swallow = self.Handle((uint)wParam, in *(User32.KBDLLHOOKSTRUCT*)lParam);

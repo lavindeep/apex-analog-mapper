@@ -49,6 +49,9 @@ public sealed class MappingSession : IDisposable
     /// <summary>How often a session started before its game looks for the game's process.</summary>
     public const int GameSearchMs = 1000;
 
+    /// <summary>The default for <see cref="SessionServices.GameRelaunchGrace"/>.</summary>
+    public const int GameRelaunchGraceMs = 5000;
+
     /// <summary>Handler faults on the hook thread within one health check that mean its safety checks are broken.</summary>
     public const int HealthFaultLimit = 3;
 
@@ -162,6 +165,10 @@ public sealed class MappingSession : IDisposable
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var end = SessionEnd.For(reason);
         CancelStart(end);
+        if (Volatile.Read(ref _parts) is { } parts)
+        {
+            Volatile.Write(ref parts.StopRequested, true);
+        }
         var posted = Post(() =>
         {
             try
@@ -262,6 +269,12 @@ public sealed class MappingSession : IDisposable
         if (expected is null)
         {
             CancelStart(end);
+        }
+        // From here on nothing queued ahead of the stop may reinstall a hook or resume.
+        var target = expected ?? Volatile.Read(ref _parts);
+        if (target is not null)
+        {
+            Volatile.Write(ref target.StopRequested, true);
         }
         Post(() => DoStop(expected, end));
     }
@@ -385,9 +398,14 @@ public sealed class MappingSession : IDisposable
         _services.Power.SleepOrWake += parts.OnPower;
         parts.OnKeyboards = _ => Post(() => OnKeyboards(parts, removal: false));
         _services.Keyboards.Changed += parts.OnKeyboards;
-        parts.OnRemoving = () =>
+        parts.OnRemoving = container =>
         {
             // Pump thread: one volatile write now, the state change on the session thread.
+            // Another board's removal is not this session's business; an unknown one might be.
+            if (container is { } removed && removed != request.Keyboard)
+            {
+                return;
+            }
             engine.Paused = true;
             Post(() => OnKeyboards(parts, removal: true));
         };
@@ -397,8 +415,8 @@ public sealed class MappingSession : IDisposable
         var watchdog = new Watchdog(
             () => engine.LastTickTicks,
             () => engine.PadPresent,
-            () => Volatile.Read(ref parts.Hook)?.EventCount ?? 0,
-            _services.RawInputEvents,
+            () => Volatile.Read(ref parts.Hook)?.LastEventTime ?? 0,
+            () => _services.RawInput.LastEventTime,
             () => parts.Flag.IsGameForeground);
         watchdog.Arm(Stopwatch.GetTimestamp());
         Volatile.Write(ref parts.Watchdog, watchdog);
@@ -462,22 +480,43 @@ public sealed class MappingSession : IDisposable
     /// <summary>
     /// Session thread. Once the game's process is found, its exit stops the session.
     /// Called at start and, until then, every <see cref="GameSearchMs"/>, so Start works
-    /// before the game is launched as well as after.
+    /// before the game is launched as well as after. After an exit the search runs again
+    /// for <see cref="SessionServices.GameRelaunchGrace"/>: a game whose launcher starts a second copy
+    /// of itself and exits keeps its session.
     /// </summary>
     private void LookForGame(Parts parts)
     {
-        if (Volatile.Read(ref parts.Game) is not null || !ReferenceEquals(Volatile.Read(ref _parts), parts))
+        if (Volatile.Read(ref parts.Game) is not null || !ReferenceEquals(Volatile.Read(ref _parts), parts) || Volatile.Read(ref parts.StopRequested))
         {
             return;
         }
         var game = _services.FindGame(parts.Request.GamePath);
         if (game is null)
         {
+            if (parts.GameGone is { } gone && gone.Elapsed >= _services.GameRelaunchGrace)
+            {
+                DoStop(parts, SessionEnd.For(EndReason.GameExited));
+            }
             return;
         }
         Volatile.Write(ref parts.Game, game);
+        parts.GameGone = null;
         parts.GameSearch?.Dispose();
-        game.OnExit(() => RequestStop(parts, SessionEnd.For(EndReason.GameExited)));
+        parts.GameSearch = null;
+        game.OnExit(() => Post(() => OnGameExited(parts, game)));
+    }
+
+    /// <summary>Session thread. The watched game ended: look for it again before stopping.</summary>
+    private void OnGameExited(Parts parts, IGameProcess game)
+    {
+        if (!IsCurrent(parts) || !ReferenceEquals(Volatile.Read(ref parts.Game), game))
+        {
+            return;
+        }
+        game.Dispose();
+        Volatile.Write(ref parts.Game, null);
+        parts.GameGone = Stopwatch.StartNew();
+        parts.GameSearch = new Timer(_ => Post(() => LookForGame(parts)), null, GameSearchMs, GameSearchMs);
     }
 
     /// <summary>
@@ -516,7 +555,8 @@ public sealed class MappingSession : IDisposable
     /// <summary>
     /// Session thread, every <see cref="HealthCheckMs"/>. The watchdog lives on the hook
     /// thread's timer, so a hook thread that ended takes it along: that hook is replaced.
-    /// A watchdog that throws on every tick, or a tracker that stopped following focus,
+    /// A watchdog that throws on every tick, a tracker that stopped following focus, or a
+    /// Raw Input pump that stopped (the unplug pause and hook-loss detection need it)
     /// ends the session.
     /// </summary>
     private void CheckHealth(Parts parts)
@@ -541,6 +581,11 @@ public sealed class MappingSession : IDisposable
         if (Volatile.Read(ref parts.Foreground) is { IsRunning: false })
         {
             DoStop(parts, new SessionEnd(EndReason.SafetyFault, SessionEnd.For(EndReason.SafetyFault).Message + " Focus tracking stopped."));
+            return;
+        }
+        if (!_services.RawInput.IsRunning)
+        {
+            DoStop(parts, new SessionEnd(EndReason.SafetyFault, SessionEnd.For(EndReason.SafetyFault).Message + " Keyboard device tracking stopped."));
         }
     }
 
@@ -578,8 +623,11 @@ public sealed class MappingSession : IDisposable
         }
     }
 
+    /// <summary>The running session, not yet asked to stop.</summary>
     private bool IsCurrent(Parts parts) =>
-        ReferenceEquals(Volatile.Read(ref _parts), parts) && State is SessionState.Running or SessionState.Paused;
+        ReferenceEquals(Volatile.Read(ref _parts), parts)
+        && State is SessionState.Running or SessionState.Paused
+        && !Volatile.Read(ref parts.StopRequested);
 
     /// <summary>Session thread. The first stop for a session wins; later ones, and stale ones from an earlier session, do nothing.</summary>
     private void DoStop(Parts? expected, SessionEnd end)
@@ -758,6 +806,8 @@ public sealed class MappingSession : IDisposable
         public readonly SessionRequest Request;
         public IGameProcess? Game;
         public Timer? GameSearch;
+        public Stopwatch? GameGone;
+        public bool StopRequested;
         public readonly KeyStateStore Store = new();
         public readonly ForegroundFlag Flag = new();
         public readonly HookPolicy Policy;
@@ -776,7 +826,7 @@ public sealed class MappingSession : IDisposable
         public Timer? Health;
         public Action? OnPower;
         public Action<IReadOnlyList<KeyboardInfo>>? OnKeyboards;
-        public Action? OnRemoving;
+        public Action<Guid?>? OnRemoving;
         public int HookFaultsSeen;
         public int HookReinstalls;
 

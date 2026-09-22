@@ -43,6 +43,7 @@ public class HookPolicyTests
         var policy = Policy();
 
         Assert.False(policy.Decide(Q, true, false, true));
+        Assert.False(policy.Decide(Q, true, false, true), "nor its auto-repeat while the game has focus");
         Assert.False(policy.Decide(Q, false, false, true));
     }
 

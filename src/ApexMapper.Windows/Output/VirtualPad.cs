@@ -47,6 +47,10 @@ public sealed class VirtualPad : IDisposable
     private const int EngineSubmitting = 1;
     private const int Claimed = 2;
 
+    private const int UnplugNotStarted = 0;
+    private const int UnplugRunning = 1;
+    private const int UnplugThreadFailed = 2;
+
     private readonly IPadDriver _driver;
     private readonly long _minIntervalTicks = (long)(MinSubmitIntervalMs * Stopwatch.Frequency / 1000);
 
@@ -196,13 +200,13 @@ public sealed class VirtualPad : IDisposable
 
     /// <summary>
     /// Claims and starts the zero and disconnect on a worker, returning at once. Safe on
-    /// the hook thread. If no thread can be started, the next <see cref="Unplug"/> does
-    /// the work on its own thread instead.
+    /// the hook thread. If no thread can be started, whichever <see cref="Unplug"/> is
+    /// waiting, or comes next, does the work on its own thread instead.
     /// </summary>
     public void BeginUnplug()
     {
         Claim();
-        if (Interlocked.Exchange(ref _unplugStarted, 1) != 0)
+        if (Interlocked.CompareExchange(ref _unplugStarted, UnplugRunning, UnplugNotStarted) != UnplugNotStarted)
         {
             return;
         }
@@ -212,7 +216,7 @@ public sealed class VirtualPad : IDisposable
         }
         catch (Exception)
         {
-            Volatile.Write(ref _unplugStarted, 0);
+            Volatile.Write(ref _unplugStarted, UnplugThreadFailed);
         }
     }
 
@@ -224,13 +228,24 @@ public sealed class VirtualPad : IDisposable
     public bool Unplug()
     {
         BeginUnplug();
-        if (Interlocked.CompareExchange(ref _unplugStarted, 1, 0) == 0)
+        var clock = Stopwatch.StartNew();
+        while (true)
         {
-            UnplugNow();
+            if (Interlocked.CompareExchange(ref _unplugStarted, UnplugRunning, UnplugThreadFailed) == UnplugThreadFailed)
+            {
+                UnplugNow();
+            }
+            var left = UnplugWaitMs - (int)clock.ElapsedMilliseconds;
+            if (left <= 0)
+            {
+                return _unplugged.IsSet;
+            }
+            if (_unplugged.Wait(Math.Min(left, 50)))
+            {
+                return true;
+            }
         }
-        return _unplugged.Wait(UnplugWaitMs);
     }
-
     private void UnplugNow()
     {
         try

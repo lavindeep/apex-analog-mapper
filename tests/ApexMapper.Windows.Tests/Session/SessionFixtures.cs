@@ -183,3 +183,51 @@ internal sealed class FakePower : IPowerEvents
 
     public void Raise() => SleepOrWake?.Invoke();
 }
+
+/// <summary>
+/// Raw Input as the session sees it. The test sets the newest event time by hand. While
+/// <see cref="Hold"/> is in effect, the health check's liveness read blocks, which holds
+/// the session thread wherever the test needs it held.
+/// </summary>
+internal sealed class FakeRawInput : IRawInputActivity
+{
+    private readonly ManualResetEventSlim _release = new(true);
+    private int _time;
+    private int _running = 1;
+    private int _held;
+
+    public uint LastEventTime
+    {
+        get => Throws ? throw new InvalidOperationException("Raw Input read failed.") : (uint)Volatile.Read(ref _time);
+        set => Volatile.Write(ref _time, (int)value);
+    }
+
+    /// <summary>Reading the event time throws, as a watchdog check failing on every tick would.</summary>
+    public bool Throws { get; set; }
+
+    public bool IsRunning
+    {
+        get
+        {
+            if (!_release.IsSet)
+            {
+                Volatile.Write(ref _held, 1);
+                _release.Wait();
+                Volatile.Write(ref _held, 0);
+            }
+            return Volatile.Read(ref _running) != 0;
+        }
+    }
+
+    public bool Running
+    {
+        set => Volatile.Write(ref _running, value ? 1 : 0);
+    }
+
+    /// <summary>The session thread is inside a held health check.</summary>
+    public bool Held => Volatile.Read(ref _held) != 0;
+
+    public void Hold() => _release.Reset();
+
+    public void Release() => _release.Set();
+}

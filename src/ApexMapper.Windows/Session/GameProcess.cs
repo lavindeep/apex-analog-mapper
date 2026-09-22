@@ -15,13 +15,13 @@ public interface IGameProcess : IDisposable
 /// <summary>
 /// Every running process whose executable path is the selected game's, matched the way
 /// the foreground tracker matches it. The game counts as exited when the last of them
-/// has. A process that cannot be opened for waiting (an elevated game, seen from a
-/// process that is not) is left out; if none can be opened the game is reported as not
-/// running, which is also true for the mapper's purposes: its input is invisible.
+/// has. A process that cannot be opened for waiting is left out, and if none can be the
+/// game counts as not running. An elevated game opens fine from a process that is not
+/// (checked on the maintainer's PC in stage 3).
 /// </summary>
 public sealed class GameProcess : IGameProcess
 {
-    private readonly List<(ManualResetEvent Handle, RegisteredWaitHandle? Wait)> _waits = [];
+    private readonly List<(WaitHandle Handle, RegisteredWaitHandle? Wait)> _waits = [];
     private readonly Lock _lock = new();
     private int _running;
     private Action? _exited;
@@ -58,8 +58,7 @@ public sealed class GameProcess : IGameProcess
             var handle = Kernel32.OpenProcess(Kernel32.SYNCHRONIZE, false, pid);
             if (handle != 0)
             {
-                var wait = new ManualResetEvent(false) { SafeWaitHandle = new SafeWaitHandle(handle, ownsHandle: true) };
-                game._waits.Add((wait, null));
+                game._waits.Add((new ProcessWaitHandle(handle), null));
             }
         }
         if (game._waits.Count == 0)
@@ -119,4 +118,10 @@ public sealed class GameProcess : IGameProcess
             _waits.Clear();
         }
     }
+}
+
+/// <summary>A process handle to wait on; unlike a borrowed <see cref="ManualResetEvent"/>, it creates no event of its own.</summary>
+internal sealed class ProcessWaitHandle : WaitHandle
+{
+    public ProcessWaitHandle(nint processHandle) => SafeWaitHandle = new SafeWaitHandle(processHandle, ownsHandle: true);
 }

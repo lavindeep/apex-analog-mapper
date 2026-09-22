@@ -215,4 +215,8 @@ internal static unsafe partial class User32
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool UnhookWinEvent(nint hWinEventHook);
+
+    /// <summary>The time, in ms since boot, the current message was posted; for WM_INPUT, when the input event happened.</summary>
+    [LibraryImport("user32.dll")]
+    public static partial int GetMessageTime();
 }

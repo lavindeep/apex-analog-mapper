@@ -313,10 +313,13 @@ public class HardwareTests
     }
 
     /// <summary>
-    /// A question for the design, not a pass/fail rule: when a keyboard is unplugged with a
-    /// key held, does Windows deliver that key's key-up? Hold W, pull the Apex's cable
-    /// within 30 s, keep holding W for a second, then plug it back in. Needs
-    /// APEX_UNPLUG_CHECK=1 as well, since it waits for a person.
+    /// Two questions for the design, not pass/fail rules. When a keyboard is unplugged
+    /// with a key held, does Windows deliver that key's key-up? And how long after the
+    /// sensor stops answering does the removal notice arrive? (The snapshot goes stale
+    /// 60 ms after the last reply; a notice later than that lets the fallback ramp a held
+    /// key before the session pauses.) Hold W, pull the Apex's cable within 30 s, keep
+    /// holding W for a second, then plug it back in. Needs APEX_UNPLUG_CHECK=1 as well,
+    /// since it waits for a person.
     /// </summary>
     [HardwareFact]
     public void What_the_hook_sees_when_a_keyboard_is_unplugged_with_a_key_held()
@@ -324,10 +327,12 @@ public class HardwareTests
         Assert.SkipUnless(Environment.GetEnvironmentVariable("APEX_UNPLUG_CHECK") == "1", "Set APEX_UNPLUG_CHECK=1 as well; it waits for someone to pull the cable.");
         var store = new KeyStateStore();
         var w = new ScanCode(WScan);
+        var shared = new SensorSnapshot();
+        using var poller = SensorPoller.ForKeyboard(SelectedKeyboard(), shared, PollerConfig.For([2]));
         using var hook = new KeyboardHook(store, new HookPolicy(), new ForegroundFlag(), []);
         using var pump = new RawInputPump();
         long removedAt = 0;
-        pump.DeviceChanged += (_, arrived) =>
+        pump.DeviceChanged += (_, arrived, _) =>
         {
             if (!arrived)
             {
@@ -336,12 +341,26 @@ public class HardwareTests
         };
         hook.Start();
         pump.Start();
+        poller.Start();
+        Assert.True(SpinWait.SpinUntil(() => poller.State == PollerState.Running, 3000), poller.FaultReason);
 
         Assert.True(SpinWait.SpinUntil(() => store.Read(w.Slot).Digital, 30_000), "W was never held.");
-        Assert.True(SpinWait.SpinUntil(() => Volatile.Read(ref removedAt) != 0, 30_000), "No keyboard was removed while W was held.");
+        long lastReply = 0;
+        Assert.True(SpinWait.SpinUntil(
+            () =>
+            {
+                if (poller.State == PollerState.Running)
+                {
+                    lastReply = shared.TimestampTicks;
+                }
+                return Volatile.Read(ref removedAt) != 0;
+            },
+            30_000), "No keyboard was removed while W was held.");
+        var noticeAfterLastReply = (Volatile.Read(ref removedAt) - lastReply) * 1000d / Stopwatch.Frequency;
         var upAfterRemoval = SpinWait.SpinUntil(() => !store.Read(w.Slot).Digital, 1000);
         var ms = (Stopwatch.GetTimestamp() - Volatile.Read(ref removedAt)) * 1000d / Stopwatch.Frequency;
 
+        TestContext.Current.SendDiagnosticMessage($"unplug: the removal notice came {noticeAfterLastReply:F0} ms after the sensor's last reply");
         TestContext.Current.SendDiagnosticMessage(upAfterRemoval
             ? $"unplug: the hook saw W's key-up {ms:F0} ms after the removal notice"
             : "unplug: no key-up for W within 1 s of the removal notice; W stays down in the store");

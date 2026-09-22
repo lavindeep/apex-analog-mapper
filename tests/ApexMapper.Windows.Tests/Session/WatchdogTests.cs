@@ -10,15 +10,15 @@ public class WatchdogTests
     {
         public long EngineTick;
         public bool PadPresent = true;
-        public long HookEvents;
-        public long RawEvents;
+        public uint HookTime;
+        public uint RawTime;
         public bool GameFocused = true;
     }
 
     private static (Watchdog Watchdog, Readings Readings) Build()
     {
         var r = new Readings();
-        var watchdog = new Watchdog(() => r.EngineTick, () => r.PadPresent, () => r.HookEvents, () => r.RawEvents, () => r.GameFocused, ticksPerMs: 1);
+        var watchdog = new Watchdog(() => r.EngineTick, () => r.PadPresent, () => r.HookTime, () => r.RawTime, () => r.GameFocused, ticksPerMs: 1);
         return (watchdog, r);
     }
 
@@ -92,19 +92,34 @@ public class WatchdogTests
         Assert.Equal(WatchdogVerdict.None, watchdog.Check(150));
     }
 
-    /// <summary>A rig that checks every 50 ms with the engine ticking, adding events to either counter before each check.</summary>
+    /// <summary>
+    /// A rig that checks every 50 ms with the engine ticking. Each step can hand the hook
+    /// and Raw Input a key event stamped with the OS time, as both see the same event.
+    /// </summary>
     private sealed class Clock(Watchdog watchdog, Readings readings)
     {
         private long _now;
+        private uint _osTime = 1_000_000;
 
-        public WatchdogVerdict Next(long raw = 0, long hook = 0)
+        /// <summary>One check. <paramref name="raw"/> and <paramref name="hook"/> each see a new event first.</summary>
+        public WatchdogVerdict Next(bool raw = false, bool hook = false)
         {
             _now += 50;
+            _osTime += 50;
             readings.EngineTick = _now - 1;
-            readings.RawEvents += raw;
-            readings.HookEvents += hook;
+            if (raw)
+            {
+                readings.RawTime = _osTime;
+            }
+            if (hook)
+            {
+                readings.HookTime = _osTime;
+            }
             return watchdog.Check(_now);
         }
+
+        /// <summary>A key event both see, as while the hook lives.</summary>
+        public WatchdogVerdict Key() => Next(raw: true, hook: true);
     }
 
     private static (Clock Clock, Watchdog Watchdog, Readings Readings) Focused()
@@ -120,37 +135,50 @@ public class WatchdogTests
     public void One_key_the_hook_never_saw_is_a_lost_hook_on_the_second_check()
     {
         var (clock, _, _) = Focused();
+        Assert.Equal(WatchdogVerdict.None, clock.Key());
 
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 1));
+        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: true));
         Assert.Equal(WatchdogVerdict.HookLost, clock.Next());
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 1));
+        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: true));
     }
 
     [Fact]
-    public void Skew_in_either_direction_is_not_a_lost_hook()
+    public void Keys_both_see_and_keys_only_the_hook_sees_are_never_a_lost_hook()
     {
         var (clock, _, _) = Focused();
 
-        // Raw Input counted first; the hook's count lands on the next check.
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 1));
-        Assert.Equal(WatchdogVerdict.None, clock.Next(hook: 1));
-        // The hook counted first; Raw Input catches up on the next check.
-        Assert.Equal(WatchdogVerdict.None, clock.Next(hook: 1));
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 1));
-        Assert.Equal(WatchdogVerdict.None, clock.Next());
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 3, hook: 3));
-        Assert.Equal(WatchdogVerdict.None, clock.Next());
+        for (var i = 0; i < 20; i++)
+        {
+            Assert.Equal(WatchdogVerdict.None, i % 3 == 0 ? clock.Next(hook: true) : clock.Key());
+        }
     }
 
     [Fact]
-    public void Events_only_the_hook_sees_become_the_baseline_and_a_later_miss_still_counts()
+    public void One_check_with_raw_input_ahead_is_skew_and_the_count_starts_over()
     {
-        var (clock, _, _) = Focused();
+        var (clock, _, r) = Focused();
 
-        Assert.Equal(WatchdogVerdict.None, clock.Next(hook: 2));
+        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: true));
+        r.HookTime = r.RawTime;
         Assert.Equal(WatchdogVerdict.None, clock.Next());
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 1));
+        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: true));
+        r.HookTime = r.RawTime;
+        Assert.Equal(WatchdogVerdict.None, clock.Next());
+        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: true));
         Assert.Equal(WatchdogVerdict.HookLost, clock.Next());
+    }
+
+    [Fact]
+    public void Events_from_before_the_watchdog_was_armed_never_count()
+    {
+        var (watchdog, r) = Build();
+        r.RawTime = 5000;
+        watchdog.Arm(0);
+        var clock = new Clock(watchdog, r);
+
+        Assert.Equal(WatchdogVerdict.None, clock.Next());
+        Assert.Equal(WatchdogVerdict.None, clock.Next());
+        Assert.Equal(WatchdogVerdict.None, clock.Next());
     }
 
     [Fact]
@@ -161,30 +189,48 @@ public class WatchdogTests
 
         for (var i = 0; i < 10; i++)
         {
-            Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 2));
+            Assert.Equal(WatchdogVerdict.None, clock.Next(raw: true));
         }
 
         r.GameFocused = true;
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 2));
         Assert.Equal(WatchdogVerdict.None, clock.Next());
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 1, hook: 1));
+        Assert.Equal(WatchdogVerdict.None, clock.Next());
+        Assert.Equal(WatchdogVerdict.None, clock.Key());
         Assert.Equal(WatchdogVerdict.None, clock.Next());
     }
 
     [Fact]
-    public void A_reinstalled_hook_counting_from_zero_is_rebased_and_hook_loss_can_fire_again()
+    public void A_reinstall_rebases_at_the_next_check_so_a_key_in_the_gap_is_not_held_against_the_new_hook()
     {
         var (clock, watchdog, r) = Focused();
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 5, hook: 5));
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 1));
+        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: true));
         Assert.Equal(WatchdogVerdict.HookLost, clock.Next());
 
-        r.HookEvents = 0;
         watchdog.HookReinstalled();
+        r.HookTime = 0;
 
+        // A key lands after the reinstall was asked for and before the new hook is in.
+        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: true));
         Assert.Equal(WatchdogVerdict.None, clock.Next());
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 1, hook: 1));
-        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: 1));
+        Assert.Equal(WatchdogVerdict.None, clock.Key());
+        Assert.Equal(WatchdogVerdict.None, clock.Next(raw: true));
         Assert.Equal(WatchdogVerdict.HookLost, clock.Next());
+    }
+
+    [Fact]
+    public void Event_times_that_wrap_past_zero_still_compare_in_order()
+    {
+        var (watchdog, r) = Build();
+        r.RawTime = uint.MaxValue - 10;
+        r.HookTime = uint.MaxValue - 10;
+        watchdog.Arm(0);
+        r.EngineTick = 49;
+        Assert.Equal(WatchdogVerdict.None, watchdog.Check(50));
+
+        r.RawTime = 20;
+        r.EngineTick = 99;
+        Assert.Equal(WatchdogVerdict.None, watchdog.Check(100));
+        r.EngineTick = 149;
+        Assert.Equal(WatchdogVerdict.HookLost, watchdog.Check(150));
     }
 }

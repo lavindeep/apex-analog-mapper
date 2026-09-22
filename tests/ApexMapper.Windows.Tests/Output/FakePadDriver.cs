@@ -12,6 +12,7 @@ internal sealed class FakePadDriver : IPadDriver
 {
     private readonly Lock _lock = new();
     private readonly List<string> _log = [];
+    private readonly HashSet<string?> _readBackThreads = [];
     private PadReport _state;
     private int _submits;
     private int _userIndexQueries;
@@ -99,10 +100,23 @@ internal sealed class FakePadDriver : IPadDriver
         }
     }
 
+    /// <summary>Names of the threads that have read the pad back, to prove where driver calls happen.</summary>
+    public IReadOnlyCollection<string?> ReadBackThreads
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return [.. _readBackThreads];
+            }
+        }
+    }
+
     public bool TryReadBack(int userIndex, out PadReport report, out uint packetNumber)
     {
         lock (_lock)
         {
+            _readBackThreads.Add(Thread.CurrentThread.Name);
             report = ReadBackOverride ?? _state;
             packetNumber = (uint)_submits;
             return Connected && !Gone && userIndex >= 0;

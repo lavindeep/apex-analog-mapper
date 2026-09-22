@@ -9,6 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="ApexMapper.Windows.Tests" />
+    <InternalsVisibleTo Include="ApexMapper.Harness" />
   </ItemGroup>
   <ItemGroup>
     <!-- Compile assets stay in this project: nothing outside it may reach the HID library. -->
