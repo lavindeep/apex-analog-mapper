@@ -48,6 +48,6 @@ violate those games' terms of service. That is your call.
 
 ## Reporting a vulnerability
 
-Report privately rather than opening a public issue: use GitHub's "Report a
-vulnerability" button under the Security tab, or email lavindeepdhillon@gmail.com.
-This is a personal project, so responses are best effort.
+Open a public issue. This is a personal project with no private channel and no
+bounty; I answer issues and pull requests, not email. Describe what the app does that
+it should not, how you found it, and the version you ran. Responses are best effort.

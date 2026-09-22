@@ -7,6 +7,6 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Real replies captured from the maintainer's board in stage 0. -->
-    <Content Include="..\..\docs\design\fixtures\*.hex" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\ApexMapper.Windows.Tests\fixtures\*.hex" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

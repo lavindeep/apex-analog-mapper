@@ -1,0 +1,38 @@
+name: Bug report
+description: Something the app does wrong.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: 0.5.0-alpha.1
+    validations:
+      required: true
+  - type: input
+    id: keyboard
+    attributes:
+      label: Keyboard and firmware
+      description: Model and the firmware version SteelSeries GG shows. Say whether GG was running.
+      placeholder: Apex Pro TKL, firmware 4.16.8, GG running
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Game and launcher
+      description: Which game, how it was launched, and whether it runs as administrator.
+      placeholder: Forza Horizon 6, Steam, not elevated
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Paste the session log if the app produced one. It never records which keys were pressed.
+      render: text

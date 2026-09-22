@@ -14,7 +14,7 @@ publish/
 releases/
 *.binlog
 
-## Spike measurements (summaries go in docs/design/measurements.md)
+## Spike measurements
 spike/out/
 
 ## OS

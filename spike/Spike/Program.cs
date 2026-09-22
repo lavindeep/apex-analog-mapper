@@ -1,7 +1,7 @@
 using System.Globalization;
 using Spike;
 
-// Measurement spike. See docs/design/2026-09-19-plan.md, stage 0c.
+// Measurement spike: the numbers behind the timing constants and the hardware test thresholds.
 // Usage: Spike <command> [--seconds N] [--minutes N] [--no-drain] [--w-held]
 // Console output is also written to spike/out/<command>.log.
 

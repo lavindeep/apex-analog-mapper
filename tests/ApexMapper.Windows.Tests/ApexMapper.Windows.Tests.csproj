@@ -7,7 +7,7 @@
     <ProjectReference Include="..\..\src\ApexMapper.Windows\ApexMapper.Windows.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Real replies captured from the maintainer's board in stage 0, scripted into the fake vendor stream. -->
-    <Content Include="..\..\docs\design\fixtures\*.hex" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Real replies captured from the maintainer's board, scripted into the fake vendor stream. -->
+    <Content Include="fixtures\*.hex" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

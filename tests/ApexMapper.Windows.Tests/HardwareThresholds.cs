@@ -3,9 +3,8 @@ using Xunit;
 namespace ApexMapper.Windows.Tests;
 
 /// <summary>
-/// Limits for the hardware tests, from docs/design/measurements.md decision 5:
-/// measured on the maintainer's PC with stated headroom. Stage 7 confirms they still
-/// agree with the measurements file.
+/// Limits for the hardware tests: measured on the maintainer's PC (Apex Pro TKL gen 1,
+/// ViGEmBus 1.21) with the headroom stated per value.
 /// </summary>
 public static class HardwareThresholds
 {

@@ -5,7 +5,7 @@ namespace ApexMapper.Core.Sensors;
 
 /// <summary>
 /// Pure parsing of the Apex Pro vendor replies. Verified on firmware 4.9.1 with the
-/// captures in docs/design/fixtures.
+/// captures in the Windows test project's fixtures folder.
 ///
 /// Reply layout for a group read (65 bytes): byte 0 is the report id and must be 0;
 /// bytes 1..28 are fourteen raw uint16 little-endian samples; bytes 29..56 are the
