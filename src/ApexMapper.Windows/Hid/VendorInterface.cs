@@ -33,7 +33,7 @@ public sealed class VendorInterface : IDisposable
     private readonly byte[] _reply = new byte[SensorProtocol.ReportLength];
     private int _closed;
 
-    public VendorInterface(IVendorStream stream)
+    internal VendorInterface(IVendorStream stream)
     {
         _stream = stream;
     }

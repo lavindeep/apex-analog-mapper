@@ -166,7 +166,12 @@ public sealed class KeyStateStore
         }
     }
 
-    /// <summary>Session stop: nothing is gated, nothing is analog-driven, no analog value is trusted.</summary>
+    /// <summary>
+    /// Session stop: every cell returns to its initial state. The digital bit goes too:
+    /// the hook is uninstalled at stop, so a key released between sessions would
+    /// otherwise keep a stale down bit that the next <see cref="GateUnknown"/> turns
+    /// into one dead press. The next start re-seeds held keys at hook install.
+    /// </summary>
     public void ClearAll()
     {
         for (var slot = 0; slot < _cells.Length; slot++)
@@ -175,7 +180,7 @@ public sealed class KeyStateStore
             while (true)
             {
                 var current = Volatile.Read(ref cell);
-                if (Commit(ref cell, current, (current & DigitalBit) | UnavailableBits))
+                if (Commit(ref cell, current, UnavailableBits))
                 {
                     break;
                 }

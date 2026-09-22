@@ -115,7 +115,7 @@ public class KeyStateStoreTests
     }
 
     [Fact]
-    public void Clear_all_keeps_digital_state_but_drops_gates_and_analog()
+    public void Clear_all_returns_every_cell_to_its_initial_state()
     {
         var store = new KeyStateStore();
         store.SetAnalogDriven(W, true);
@@ -126,7 +126,7 @@ public class KeyStateStoreTests
         store.ClearAll();
 
         var slot = store.Read(W);
-        Assert.True(slot.Digital);
+        Assert.False(slot.Digital);
         Assert.True(float.IsNaN(slot.Analog));
         Assert.False(slot.Gated);
         Assert.False(slot.AnalogDriven);

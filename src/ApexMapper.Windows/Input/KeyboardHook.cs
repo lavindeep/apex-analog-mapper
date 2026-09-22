@@ -200,7 +200,7 @@ public sealed unsafe class KeyboardHook : IDisposable
         {
             _store.SetDigital(slot, down);
         }
-        if (_policy.IsStopChord(slot, down))
+        if (_policy.IsStopChord(slot, down, injected))
         {
             StopRequested?.Invoke();
             return true;

@@ -8,13 +8,15 @@ namespace ApexMapper.Windows.Timing;
 /// A periodic wait on the high-resolution waitable timer, the only method stage 0
 /// found consistent (p99 under 2 ms at a 1 ms period) regardless of the timer
 /// resolution Windows grants the process. <see cref="WaitNext"/> returns false once
-/// <see cref="Stop"/> has been called, from any thread.
+/// <see cref="Stop"/> has been called, from any thread. Windows reuses handle values
+/// at once, so the owner must join the waiting thread before <see cref="Dispose"/>;
+/// after it, every call is a no-op instead of touching whatever handle got the number.
 /// </summary>
 public sealed unsafe class HighResolutionTimer : IDisposable
 {
-    private readonly nint _timer;
-    private readonly nint _stop;
-    private bool _disposed;
+    private nint _timer;
+    private nint _stop;
+    private int _disposed;
 
     public HighResolutionTimer(int periodMs)
     {
@@ -46,25 +48,43 @@ public sealed unsafe class HighResolutionTimer : IDisposable
 
     public int PeriodMs { get; }
 
-    /// <summary>Blocks until the next period elapses. False when stopped. The stop event is first so it wins when both are signalled.</summary>
+    public bool IsDisposed => Volatile.Read(ref _disposed) != 0;
+
+    /// <summary>Blocks until the next period elapses. False when stopped or disposed. The stop event is first so it wins when both are signalled.</summary>
     public bool WaitNext()
     {
+        if (IsDisposed)
+        {
+            return false;
+        }
         var handles = stackalloc nint[2] { _stop, _timer };
-        return Kernel32.WaitForMultipleObjects(2, handles, false, Kernel32.INFINITE) == Kernel32.WAIT_OBJECT_0 + 1;
+        var result = Kernel32.WaitForMultipleObjects(2, handles, false, Kernel32.INFINITE);
+        if (result == Kernel32.WAIT_FAILED)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "WaitForMultipleObjects failed.");
+        }
+        return result == Kernel32.WAIT_OBJECT_0 + 1;
     }
 
     /// <summary>Releases a waiter at once and makes every later wait return false.</summary>
-    public void Stop() => Kernel32.SetEvent(_stop);
+    public void Stop()
+    {
+        if (!IsDisposed)
+        {
+            Kernel32.SetEvent(_stop);
+        }
+    }
 
     public void Dispose()
     {
-        if (_disposed)
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
             return;
         }
-        _disposed = true;
-        Stop();
-        Kernel32.CloseHandle(_timer);
-        Kernel32.CloseHandle(_stop);
+        Kernel32.SetEvent(_stop);
+        var timer = Interlocked.Exchange(ref _timer, 0);
+        var stop = Interlocked.Exchange(ref _stop, 0);
+        Kernel32.CloseHandle(timer);
+        Kernel32.CloseHandle(stop);
     }
 }

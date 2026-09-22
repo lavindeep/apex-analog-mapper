@@ -11,6 +11,30 @@ public class SensorPollerTests
 
     private static bool WaitUntil(Func<bool> condition, int timeoutMs = 2000) => SpinWait.SpinUntil(condition, timeoutMs);
 
+    /// <summary>
+    /// Hands out the fake once, then a stream whose first read blocks until Stop aborts
+    /// it. The first reopen after a fault is immediate, so without this the re-fault on
+    /// the disposed fake would overwrite the reason under test.
+    /// </summary>
+    private static Func<IVendorStream?> OpenOnce(FakeVendorStream fake)
+    {
+        var opens = 0;
+        return () =>
+        {
+            if (Interlocked.Increment(ref opens) == 1)
+            {
+                return fake;
+            }
+            var blocking = new FakeVendorStream();
+            blocking.OnRead = (_, _, _) =>
+            {
+                blocking.BlockUntilDisposed();
+                return null;
+            };
+            return blocking;
+        };
+    }
+
     [Fact]
     public void Runs_verifies_firmware_and_publishes_fresh_snapshots()
     {
@@ -41,10 +65,11 @@ public class SensorPollerTests
         {
             OnRead = (index, command, selector) => index > 0 && command == SensorRequest.FirmwareCommand ? wrong : FakeVendorStream.DefaultReply(command, selector),
         };
-        using var poller = new SensorPoller(() => fake, new SensorSnapshot(), Racing);
+        using var poller = new SensorPoller(OpenOnce(fake), new SensorSnapshot(), Racing);
 
         poller.Start();
-        Assert.True(WaitUntil(() => poller.State == PollerState.Faulted));
+        Assert.True(WaitUntil(() => poller.FaultCount == 1));
+        poller.Stop();
 
         Assert.Contains("canary", poller.FaultReason);
         Assert.Equal(SensorPoller.CanaryEveryCycles, poller.Cycles);
@@ -58,13 +83,15 @@ public class SensorPollerTests
         {
             OnRead = (index, command, selector) => index >= 5 && selector == 2 ? Fixtures.RestGroup(3) : FakeVendorStream.DefaultReply(command, selector),
         };
-        using var poller = new SensorPoller(() => fake, new SensorSnapshot(), Racing);
+        using var poller = new SensorPoller(OpenOnce(fake), new SensorSnapshot(), Racing);
 
         poller.Start();
-        Assert.True(WaitUntil(() => poller.State == PollerState.Faulted));
+        Assert.True(WaitUntil(() => poller.FaultCount == 1));
+        poller.Stop();
 
         Assert.Contains("signature", poller.FaultReason);
         Assert.Equal(1, poller.FaultCount);
+        Assert.True(fake.IsDisposed);
     }
 
     [Fact]
@@ -74,12 +101,15 @@ public class SensorPollerTests
         {
             OnRead = (index, command, selector) => index == 4 ? Fixtures.Firmware : FakeVendorStream.DefaultReply(command, selector),
         };
-        using var poller = new SensorPoller(() => fake, new SensorSnapshot(), Racing);
+        using var poller = new SensorPoller(OpenOnce(fake), new SensorSnapshot(), Racing);
 
         poller.Start();
-        Assert.True(WaitUntil(() => poller.State == PollerState.Faulted));
+        Assert.True(WaitUntil(() => poller.FaultCount == 1));
+        poller.Stop();
 
         Assert.Contains("12-bit", poller.FaultReason);
+        Assert.Equal(1, poller.FaultCount);
+        Assert.True(fake.IsDisposed);
     }
 
     [Fact]
@@ -166,16 +196,17 @@ public class SensorPollerTests
             }
             return FakeVendorStream.DefaultReply(command, selector);
         };
-        using var poller = new SensorPoller(() => fake, new SensorSnapshot(), Racing);
+        using var poller = new SensorPoller(OpenOnce(fake), new SensorSnapshot(), Racing);
 
         poller.Start();
-        Assert.True(WaitUntil(() => poller.State == PollerState.Faulted, 3000));
+        Assert.True(WaitUntil(() => poller.FaultCount == 1, 3000));
+        poller.Stop();
 
         Assert.Contains("consecutive", poller.FaultReason);
     }
 
     [Fact]
-    public void A_read_timeout_is_a_fault_and_the_device_is_reopened_after_the_backoff()
+    public void A_read_timeout_is_a_fault_and_the_device_is_reopened_at_once()
     {
         var opens = 0;
         var fake = new FakeVendorStream
@@ -192,12 +223,15 @@ public class SensorPollerTests
             Racing);
 
         poller.Start();
-        Assert.True(WaitUntil(() => poller.State == PollerState.Faulted));
+        Assert.True(WaitUntil(() => poller.FaultCount == 1));
         Assert.Contains("150 ms", poller.FaultReason);
-        Assert.True(WaitUntil(() => poller.State == PollerState.Running && poller.Cycles > 10, SensorPoller.BackoffMs + 2000));
+        var clock = Stopwatch.StartNew();
+        Assert.True(WaitUntil(() => poller.State == PollerState.Running && poller.Cycles > 10));
+        clock.Stop();
 
         Assert.Equal(2, opens);
         Assert.Equal(1, poller.FaultCount);
+        Assert.True(clock.ElapsedMilliseconds < SensorPoller.BackoffMs / 2, $"Reopen took {clock.ElapsedMilliseconds} ms.");
     }
 
     [Fact]
@@ -247,13 +281,13 @@ public class SensorPollerTests
         var device = new VendorInterface(fake);
         var poller = new SensorPoller(() => fake, new SensorSnapshot(), Racing);
         Assert.Null(poller.VerifyFirmware(device));
-        Assert.Null(poller.Cycle(device, Stopwatch.GetTimestamp()));
+        Assert.Null(poller.Cycle(device));
 
         string? fault = null;
         var before = GC.GetAllocatedBytesForCurrentThread();
         for (var i = 0; i < 200 && fault is null; i++)
         {
-            fault = poller.Cycle(device, Stopwatch.GetTimestamp());
+            fault = poller.Cycle(device);
         }
         var after = GC.GetAllocatedBytesForCurrentThread();
 

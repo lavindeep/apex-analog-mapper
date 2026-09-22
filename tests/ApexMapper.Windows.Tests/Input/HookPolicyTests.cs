@@ -77,8 +77,10 @@ public class HookPolicyTests
 
         Assert.True(policy.Decide(W, true, false, true));
         Assert.True(policy.Decide(W, true, false, true));
-        Assert.True(policy.Decide(W, true, false, false));
-        Assert.Equal(3, policy.SwallowedCount);
+        Assert.False(policy.Decide(W, true, false, false));
+        Assert.False(policy.IsSwallowedDown(W));
+        Assert.False(policy.Decide(W, false, false, true));
+        Assert.Equal(2, policy.SwallowedCount);
 
         Assert.False(policy.Decide(S, true, false, false));
         Assert.False(policy.Decide(S, true, false, true));
@@ -157,13 +159,15 @@ public class HookPolicyTests
     {
         var policy = Policy();
 
-        Assert.False(policy.IsStopChord(F12, true));
+        Assert.False(policy.IsStopChord(F12, true, false));
         policy.Decide(LeftCtrl, true, false, true);
-        Assert.False(policy.IsStopChord(F12, true));
+        Assert.False(policy.IsStopChord(F12, true, false));
         policy.Decide(LeftAlt, true, false, true);
-        Assert.True(policy.IsStopChord(F12, true));
-        Assert.False(policy.IsStopChord(F12, false));
-        Assert.False(policy.IsStopChord(W, true));
+        Assert.True(policy.IsStopChord(F12, true, false));
+        Assert.False(policy.IsStopChord(F12, true, false));
+        Assert.True(policy.Decide(F12, false, false, true));
+        Assert.True(policy.IsStopChord(F12, true, false));
+        Assert.False(policy.IsStopChord(W, true, false));
     }
 
     [Fact]

@@ -69,6 +69,14 @@ public sealed class SensorSnapshot
         Array.Clear(_groupRead);
     }
 
+    /// <summary>
+    /// Poller side, on the working snapshot: the time the last group landed. Freshness
+    /// counts from here, so a snapshot's age at the engine is at most one cycle plus a
+    /// canary rather than two cycles, which is what lets five groups (30 ms) fit the
+    /// 60 ms limit.
+    /// </summary>
+    public void Stamp(long timestampTicks) => TimestampTicks = timestampTicks;
+
     /// <summary>Poller side, on the working snapshot: store one parsed group.</summary>
     public void SetGroup(int group, ReadOnlySpan<ushort> raw, ReadOnlySpan<ushort> filtered)
     {

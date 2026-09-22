@@ -11,7 +11,8 @@
     <InternalsVisibleTo Include="ApexMapper.Windows.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="HidSharp" />
+    <!-- Compile assets stay in this project: nothing outside it may reach the HID library. -->
+    <PackageReference Include="HidSharp" PrivateAssets="compile" />
     <PackageReference Include="Nefarius.ViGEm.Client" />
   </ItemGroup>
 </Project>

@@ -55,17 +55,19 @@ public sealed class CycleStats
 
     public float P99 => Percentile(0.99f);
 
+    /// <summary>Reads the count once: a Reset on the poller thread mid-call must not turn the rank negative.</summary>
     private float Percentile(float p)
     {
-        if (_count == 0)
+        var count = Volatile.Read(ref _count);
+        if (count == 0)
         {
             return float.NaN;
         }
-        Array.Copy(_periods, _sorted, _count);
-        Array.Sort(_sorted, 0, _count);
-        var rank = p * (_count - 1);
+        Array.Copy(_periods, _sorted, count);
+        Array.Sort(_sorted, 0, count);
+        var rank = p * (count - 1);
         var lo = (int)MathF.Floor(rank);
-        var hi = Math.Min(lo + 1, _count - 1);
+        var hi = Math.Min(lo + 1, count - 1);
         return _sorted[lo] + (_sorted[hi] - _sorted[lo]) * (rank - lo);
     }
 }
