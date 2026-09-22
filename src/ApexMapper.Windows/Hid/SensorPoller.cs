@@ -103,6 +103,9 @@ public sealed class SensorPoller : IDisposable
     public const int CanaryEveryCycles = 50;
     public const int CanaryEveryCyclesWhenBlind = 5;
     public const int BackoffMs = 1000;
+
+    /// <summary>How long <see cref="Stop"/> waits for the sensor thread before giving up on it.</summary>
+    public const int JoinTimeoutMs = 2000;
     public const string WaitingReason = "No vendor interface found for the selected keyboard.";
     private const int SignatureFaultsBeforeCalibrationHint = 3;
 
@@ -184,8 +187,11 @@ public sealed class SensorPoller : IDisposable
     /// <summary>Swaps the groups and signatures. A cycle in flight is discarded, not published.</summary>
     public void Reconfigure(PollerConfig config) => Volatile.Write(ref _config, config);
 
-    /// <summary>Signals the thread, aborts a blocked read, and joins.</summary>
-    public void Stop()
+    /// <summary>
+    /// Signals the thread, aborts a blocked read, and joins, bounded by
+    /// <see cref="JoinTimeoutMs"/>. Returns whether the thread has exited.
+    /// </summary>
+    public bool Stop()
     {
         Volatile.Write(ref _stop, 1);
         _wake.Set();
@@ -193,13 +199,15 @@ public sealed class SensorPoller : IDisposable
         {
             _device?.Abort();
         }
-        _thread?.Join();
+        return _thread?.Join(JoinTimeoutMs) ?? true;
     }
 
     public void Dispose()
     {
-        Stop();
-        _wake.Dispose();
+        if (Stop())
+        {
+            _wake.Dispose();
+        }
     }
 
     private bool Stopping => Volatile.Read(ref _stop) != 0;

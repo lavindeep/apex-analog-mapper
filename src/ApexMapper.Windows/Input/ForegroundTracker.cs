@@ -19,7 +19,7 @@ namespace ApexMapper.Windows.Input;
 /// <see cref="Changed"/> handler is counted in <see cref="HandlerFaults"/>, never
 /// propagated.
 /// </summary>
-public sealed unsafe class ForegroundTracker : IDisposable
+public sealed unsafe class ForegroundTracker : IForegroundSource
 {
     public const int ReevaluateMs = 250;
 

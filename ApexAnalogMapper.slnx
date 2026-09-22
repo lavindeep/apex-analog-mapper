@@ -7,6 +7,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/ApexMapper.App.Tests/ApexMapper.App.Tests.csproj" />
     <Project Path="tests/ApexMapper.Core.Tests/ApexMapper.Core.Tests.csproj" />
+    <Project Path="tests/ApexMapper.Harness/ApexMapper.Harness.csproj" />
     <Project Path="tests/ApexMapper.Windows.Tests/ApexMapper.Windows.Tests.csproj" />
   </Folder>
 </Solution>

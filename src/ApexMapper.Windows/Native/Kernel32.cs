@@ -12,6 +12,7 @@ internal static unsafe partial class Kernel32
     public const uint WAIT_TIMEOUT = 258;
     public const uint WAIT_FAILED = 0xFFFFFFFF;
     public const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+    public const uint SYNCHRONIZE = 0x00100000;
     public const int ERROR_ACCESS_DENIED = 5;
 
     [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
