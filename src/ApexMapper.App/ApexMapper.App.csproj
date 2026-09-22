@@ -12,6 +12,9 @@
     <ProjectReference Include="..\ApexMapper.Windows\ApexMapper.Windows.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="ApexMapper.App.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="WPF-UI" />
     <PackageReference Include="Velopack" />
   </ItemGroup>
