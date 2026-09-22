@@ -118,19 +118,23 @@ public class KeyboardDiscoveryTests
     }
 
     [Fact]
-    public void A_failing_background_refresh_keeps_the_previous_list_and_reports_why()
+    public void A_failing_background_refresh_keeps_the_previous_list_reports_why_and_tries_again()
     {
         var fail = false;
-        using var discovery = new KeyboardDiscovery(() => fail ? throw new IOException("bus reset") : [new KeyboardInfo(Tkl, 0x1614, "Apex Pro TKL", true, true)]);
+        using var discovery = new KeyboardDiscovery(() => Volatile.Read(ref fail) ? throw new IOException("bus reset") : [new KeyboardInfo(Tkl, 0x1614, "Apex Pro TKL", true, true)]);
         discovery.Refresh();
-        fail = true;
+        using var published = new ManualResetEventSlim();
+        discovery.Changed += _ => published.Set();
+        Volatile.Write(ref fail, true);
 
         discovery.RefreshQuietly();
 
         Assert.Single(discovery.Current);
         Assert.Equal("bus reset", discovery.LastError);
-        fail = false;
-        discovery.RefreshQuietly();
+
+        // Nobody asks again: the retry after the debounce publishes, which is what resumes a paused session.
+        Volatile.Write(ref fail, false);
+        Assert.True(published.Wait(KeyboardDiscovery.DebounceMs * 4, TestContext.Current.CancellationToken));
         Assert.Null(discovery.LastError);
     }
 
