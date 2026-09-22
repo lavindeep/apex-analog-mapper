@@ -85,6 +85,7 @@ public class SensorSnapshotTests
     {
         Assert.True(KnownKeyboards.IsVerified(0x1614, "4.9.1"));
         Assert.True(KnownKeyboards.IsVerified(0x1610, "4.9.1"));
+        Assert.True(KnownKeyboards.IsVerified(0x1614, "4.16.8"));
         Assert.False(KnownKeyboards.IsVerified(0x1614, "5.0.0"));
         Assert.False(KnownKeyboards.IsVerified(0x1642, "4.9.1"));
         Assert.True(KnownKeyboards.IsApexPro(0x1642));

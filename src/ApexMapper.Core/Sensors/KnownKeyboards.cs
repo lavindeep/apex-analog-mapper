@@ -21,7 +21,7 @@ public static class KnownKeyboards
     ];
 
     /// <summary>Firmware strings the sensor protocol has been verified against.</summary>
-    public static readonly IReadOnlySet<string> VerifiedFirmware = new HashSet<string>(StringComparer.Ordinal) { "4.9.1" };
+    public static readonly IReadOnlySet<string> VerifiedFirmware = new HashSet<string>(StringComparer.Ordinal) { "4.9.1", "4.16.8" };
 
     public static Model? Find(ushort productId) => Models.FirstOrDefault(m => m.ProductId == productId);
 
