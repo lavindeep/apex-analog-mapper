@@ -74,6 +74,25 @@ public class KeyboardHookTests
         Assert.False(store.IsGated(W));
     }
 
+    /// <summary>
+    /// Held when the hook went in, with the game in front, left as <c>MarkKeysAlreadyDown</c>
+    /// leaves it: passed, gated, not recorded down. Its repeats are swallowed and must
+    /// not ungate it, because the game already has the press.
+    /// </summary>
+    [Fact]
+    public void A_key_held_at_install_stays_gated_through_its_swallowed_repeats()
+    {
+        var (hook, store, policy, _) = Build();
+        policy.MarkDown(W);
+        store.Gate(W);
+
+        Assert.True(hook.Handle(User32.WM_KEYDOWN, Event(W)));
+        Assert.True(store.Read(W).Digital);
+        Assert.True(store.IsGated(W));
+        Assert.False(hook.Handle(User32.WM_KEYUP, Event(W)));
+        Assert.False(store.IsGated(W));
+    }
+
     [Fact]
     public void An_injected_event_updates_the_store_outside_test_mode_but_is_not_swallowed()
     {

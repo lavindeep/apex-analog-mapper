@@ -76,6 +76,9 @@ public sealed class HookPolicy
 
     public bool IsSwallowedDown(int slot) => Volatile.Read(ref _state[slot]) == SwallowedDown;
 
+    /// <summary>The key's down reached the desktop or the game, including a key held at install.</summary>
+    public bool IsPassedDown(int slot) => Volatile.Read(ref _state[slot]) == PassedDown;
+
     /// <summary>The key was physically down when the hook installed: its release must reach the desktop.</summary>
     public void MarkDown(int slot) => Volatile.Write(ref _state[slot], PassedDown);
 

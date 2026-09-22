@@ -360,6 +360,25 @@ public sealed class MappingSession : IDisposable
     private void StartParts(Parts parts, CancellationToken cancel)
     {
         var request = parts.Request;
+
+        // Keyboards first, so an unplug while the rest starts is not missed. The engine is
+        // created paused and goes live only once start has checked the board.
+        parts.OnKeyboards = _ => Post(() => OnKeyboards(parts, removal: false));
+        _services.Keyboards.Changed += parts.OnKeyboards;
+        parts.OnRemoving = container =>
+        {
+            // Pump thread: volatile writes now, the state change on the session thread.
+            // Another board's removal is not this session's business; an unknown one might be.
+            if (container is { } removed && removed != request.Keyboard)
+            {
+                return;
+            }
+            Volatile.Write(ref parts.KeyboardRemoved, true);
+            Volatile.Read(ref parts.Engine)?.Paused = true;
+            Post(() => OnKeyboards(parts, removal: true));
+        };
+        _services.Keyboards.Removing += parts.OnRemoving;
+
         parts.PreviousLatency = GCSettings.LatencyMode;
         GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
         parts.LatencySet = true;
@@ -383,7 +402,7 @@ public sealed class MappingSession : IDisposable
         InstallHook(parts);
         parts.Store.GateUnknown();
 
-        var engine = new EngineLoop(parts.Mapper, parts.Snapshot, parts.Pad!, parts.Flag);
+        var engine = new EngineLoop(parts.Mapper, parts.Snapshot, parts.Pad!, parts.Flag) { Paused = true };
         engine.Faulted += reason => RequestStop(parts, new SessionEnd(EndReason.EngineFault, reason));
         Volatile.Write(ref parts.Engine, engine);
         engine.Start();
@@ -396,20 +415,6 @@ public sealed class MappingSession : IDisposable
         }
         parts.OnPower = () => RequestStop(parts, SessionEnd.For(EndReason.SleepOrWake));
         _services.Power.SleepOrWake += parts.OnPower;
-        parts.OnKeyboards = _ => Post(() => OnKeyboards(parts, removal: false));
-        _services.Keyboards.Changed += parts.OnKeyboards;
-        parts.OnRemoving = container =>
-        {
-            // Pump thread: one volatile write now, the state change on the session thread.
-            // Another board's removal is not this session's business; an unknown one might be.
-            if (container is { } removed && removed != request.Keyboard)
-            {
-                return;
-            }
-            engine.Paused = true;
-            Post(() => OnKeyboards(parts, removal: true));
-        };
-        _services.Keyboards.Removing += parts.OnRemoving;
         cancel.ThrowIfCancellationRequested();
 
         var watchdog = new Watchdog(
@@ -422,9 +427,11 @@ public sealed class MappingSession : IDisposable
         Volatile.Write(ref parts.Watchdog, watchdog);
         parts.Health = new Timer(_ => Post(() => CheckHealth(parts)), null, HealthCheckMs, HealthCheckMs);
 
-        var present = KeyboardPresent(request.Keyboard);
-        engine.Paused = !present;
-        SetState(present ? SessionState.Running : SessionState.Paused);
+        // Live only if the board is listed and no removal came in while starting. The
+        // debounced list can still show a board that just went away. A removal racing this
+        // line also posted OnKeyboards, which runs next and pauses.
+        engine.Paused = Volatile.Read(ref parts.KeyboardRemoved) || !KeyboardPresent(request.Keyboard);
+        SetState(engine.Paused ? SessionState.Paused : SessionState.Running);
     }
 
     private void InstallHook(Parts parts)
@@ -522,8 +529,8 @@ public sealed class MappingSession : IDisposable
     /// <summary>
     /// Session thread. A removal (already paused on the pump thread) pauses the session;
     /// the debounced list resumes it when the selected keyboard is there, gating what is
-    /// unknown first, or keeps it paused when it is not. A removal of another keyboard
-    /// costs a pause of about the debounce and a gate on the held keys.
+    /// unknown first, or keeps it paused when it is not. A removal whose board the pump
+    /// could not name costs a pause of about the debounce and a gate on the held keys.
     /// </summary>
     private void OnKeyboards(Parts parts, bool removal)
     {
@@ -827,6 +834,9 @@ public sealed class MappingSession : IDisposable
         public Action? OnPower;
         public Action<IReadOnlyList<KeyboardInfo>>? OnKeyboards;
         public Action<Guid?>? OnRemoving;
+
+        /// <summary>The board went away at some point since start began. Read once, at the end of start.</summary>
+        public bool KeyboardRemoved;
         public int HookFaultsSeen;
         public int HookReinstalls;
 

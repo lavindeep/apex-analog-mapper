@@ -219,7 +219,10 @@ public sealed unsafe class KeyboardHook : IDisposable
             return true;
         }
         var swallow = _policy.Decide(slot, down, injected, _foreground.IsGameForeground);
-        if (down && !swallow && _policy.IsMapped(slot))
+        // A mapped down that passed, or a swallowed repeat of one whose down passed (a key
+        // held at install included): the game or the desktop has the press, so the engine
+        // must not drive it until it is released.
+        if (down && _policy.IsMapped(slot) && (!swallow || _policy.IsPassedDown(slot)))
         {
             _store.SetDownGated(slot);
         }

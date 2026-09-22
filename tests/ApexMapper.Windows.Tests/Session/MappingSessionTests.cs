@@ -347,6 +347,45 @@ public sealed class MappingSessionTests : IDisposable
         WaitForPad(ButtonA);
     }
 
+    /// <summary>
+    /// The board goes away while the pad connects. The debounced list still has it when
+    /// start finishes, and start must not take the list's word over the removal.
+    /// </summary>
+    [Fact]
+    public async Task A_removal_during_start_brings_the_session_up_paused()
+    {
+        var states = new List<SessionState>();
+        _session.StateChanged += state =>
+        {
+            lock (states)
+            {
+                states.Add(state);
+            }
+        };
+        _connectGate = new ManualResetEventSlim(false);
+        var start = _session.StartAsync(Request());
+        Eventually(() => _keyboards.SubscriberCount > 0, "the session to follow the keyboards before the pad connects");
+
+        _boards.Clear();
+        _keyboards.OnDeviceChanged(1, arrived: false, KeyboardId);
+        _connectGate.Set();
+
+        Assert.Null(await start);
+        Eventually(() => _keyboards.Current.Count == 0, "the debounced list", KeyboardDiscovery.DebounceMs * 4);
+        _foreground!.Gain();
+        Press(Space, down: true);
+        StaysAt(PadReport.Neutral);
+        lock (states)
+        {
+            Assert.Equal([SessionState.Starting, SessionState.Paused], states);
+        }
+
+        Press(Space, down: false);
+        _boards.Add(Board);
+        _keyboards.Refresh();
+        Eventually(() => _session.State == SessionState.Running, "resume on replug");
+    }
+
     [Fact]
     public async Task Another_board_going_away_leaves_the_session_alone()
     {
