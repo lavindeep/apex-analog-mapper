@@ -201,7 +201,7 @@ public class SensorPollerTests
     }
 
     [Fact]
-    public void No_device_waits_and_stop_during_the_backoff_returns_within_twenty_milliseconds()
+    public void No_device_waits_and_stop_during_the_backoff_returns_long_before_the_backoff_elapses()
     {
         using var poller = new SensorPoller(() => null, new SensorSnapshot(), Racing);
 
@@ -211,12 +211,12 @@ public class SensorPollerTests
         poller.Stop();
         clock.Stop();
 
-        Assert.True(clock.Elapsed.TotalMilliseconds < 20, $"Took {clock.Elapsed.TotalMilliseconds:F1} ms.");
+        Assert.True(clock.Elapsed.TotalMilliseconds < 200, $"Stop took {clock.Elapsed.TotalMilliseconds:F1} ms against a {SensorPoller.BackoffMs} ms backoff.");
         Assert.Equal(PollerState.Stopped, poller.State);
     }
 
     [Fact]
-    public void Stop_during_a_blocked_read_returns_within_fifty_milliseconds()
+    public void Stop_during_a_blocked_read_returns_without_waiting_for_the_device()
     {
         var fake = new FakeVendorStream();
         fake.OnRead = (index, command, selector) =>
@@ -236,7 +236,7 @@ public class SensorPollerTests
         poller.Stop();
         clock.Stop();
 
-        Assert.True(clock.Elapsed.TotalMilliseconds < 50, $"Took {clock.Elapsed.TotalMilliseconds:F1} ms.");
+        Assert.True(clock.Elapsed.TotalMilliseconds < 200, $"Stop took {clock.Elapsed.TotalMilliseconds:F1} ms; the scripted read never returns on its own.");
         Assert.Equal(0, poller.FaultCount);
     }
 

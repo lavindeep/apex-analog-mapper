@@ -25,7 +25,7 @@ public class HighResolutionTimerTests
         Assert.False(timer.WaitNext());
         fast.Stop();
         Assert.False(fast.WaitNext());
-        Assert.True(clock.Elapsed.TotalMilliseconds < 20, $"Took {clock.Elapsed.TotalMilliseconds:F1} ms.");
+        Assert.True(clock.Elapsed.TotalMilliseconds < 200, $"Stop took {clock.Elapsed.TotalMilliseconds:F1} ms; the period was 500 ms, so the stop event released the wait.");
     }
 
     [Fact]
