@@ -43,6 +43,20 @@ public class KeyStateStoreTests
     }
 
     [Fact]
+    public void A_passed_through_down_is_recorded_down_and_gated_and_its_up_clears_both()
+    {
+        var store = new KeyStateStore();
+
+        store.SetDownGated(Space);
+
+        Assert.True(store.Read(Space).Digital);
+        Assert.True(store.IsGated(Space));
+        store.SetDigital(Space, false);
+        Assert.False(store.Read(Space).Digital);
+        Assert.False(store.IsGated(Space));
+    }
+
+    [Fact]
     public void Hook_events_never_clear_an_analog_driven_key_while_its_reading_is_available()
     {
         var store = new KeyStateStore();
