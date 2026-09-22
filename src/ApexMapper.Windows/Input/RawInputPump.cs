@@ -38,6 +38,7 @@ public sealed unsafe class RawInputPump : IDisposable
     private readonly ManualResetEventSlim _ready = new(false);
     private readonly Lock _namesLock = new();
     private readonly Dictionary<nint, Guid> _containers = new();
+    private int _cacheGeneration;
     private int _head;
     private int _tail;
     private int _overflows;
@@ -119,6 +120,7 @@ public sealed unsafe class RawInputPump : IDisposable
         lock (_namesLock)
         {
             _containers.Clear();
+            _cacheGeneration++;
         }
         return exited;
     }
@@ -150,27 +152,41 @@ public sealed unsafe class RawInputPump : IDisposable
     /// Successful lookups are cached until the handle is reported removed or re-added,
     /// since Windows reuses handle values across a replug; failures are not cached, so a
     /// lookup that races an arrival is retried. The lookup itself runs outside the lock:
-    /// it calls cfgmgr32, which the pump thread also calls. Not for the hot path.
+    /// it calls cfgmgr32, which the pump thread also calls. A device change during the
+    /// lookup bumps the cache generation, and a result from the old generation is
+    /// returned but not cached. Not for the hot path.
     /// </summary>
-    public Guid? ContainerIdOf(nint device)
+    public Guid? ContainerIdOf(nint device) => ContainerIdOf(device, Lookup);
+
+    internal Guid? ContainerIdOf(nint device, Func<nint, Guid?> lookup)
     {
+        int generation;
         lock (_namesLock)
         {
             if (_containers.TryGetValue(device, out var cached))
             {
                 return cached;
             }
+            generation = _cacheGeneration;
         }
-        var name = DeviceName(device);
-        var container = name is null ? null : CfgMgr32.ContainerIdOf(name);
+        var container = lookup(device);
         if (container is { } found)
         {
             lock (_namesLock)
             {
-                _containers[device] = found;
+                if (generation == _cacheGeneration)
+                {
+                    _containers[device] = found;
+                }
             }
         }
         return container;
+    }
+
+    private static Guid? Lookup(nint device)
+    {
+        var name = DeviceName(device);
+        return name is null ? null : CfgMgr32.ContainerIdOf(name);
     }
 
     private void Forget(nint device)
@@ -178,6 +194,7 @@ public sealed unsafe class RawInputPump : IDisposable
         lock (_namesLock)
         {
             _containers.Remove(device);
+            _cacheGeneration++;
         }
     }
 

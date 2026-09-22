@@ -56,6 +56,27 @@ public class RawInputRingTests
         Assert.False(pump.IsCached(0x1234));
     }
 
+    /// <summary>A removal that lands while the lookup is in flight means the handle may already belong to another board; the answer is returned but not kept.</summary>
+    [Fact]
+    public void A_device_change_during_the_lookup_keeps_the_stale_answer_out_of_the_cache()
+    {
+        using var pump = new RawInputPump();
+        var tkl = new Guid("27373de1-4206-11f1-b9e4-14ac60fcc13e");
+        var other = new Guid("11111111-2222-3333-4444-555555555555");
+
+        var stale = pump.ContainerIdOf(0x1234, device =>
+        {
+            pump.OnDeviceChanged(device, arrived: false);
+            return tkl;
+        });
+        Assert.Equal(tkl, stale);
+        Assert.False(pump.IsCached(0x1234));
+
+        Assert.Equal(other, pump.ContainerIdOf(0x1234, _ => other));
+        Assert.True(pump.IsCached(0x1234));
+        Assert.Equal(other, pump.ContainerIdOf(0x1234, _ => throw new InvalidOperationException("cached, no lookup")));
+    }
+
     [Fact]
     public void A_throwing_device_handler_is_counted_and_never_escapes_the_window_procedure()
     {
