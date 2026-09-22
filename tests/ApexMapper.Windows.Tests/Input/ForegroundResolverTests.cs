@@ -5,35 +5,13 @@ namespace ApexMapper.Windows.Tests.Input;
 
 public class ForegroundResolverTests
 {
-    private const string Forza = @"C:\Games\ForzaHorizon6\ForzaHorizon6.exe";
-    private const string FrameHost = @"C:\Windows\System32\ApplicationFrameHost.exe";
-
-    /// <summary>A window tree: window to process id, process id to image path and elevation, frame host to CoreWindow child.</summary>
-    private sealed class FakeWindows : IWindowSystem
-    {
-        public Dictionary<nint, uint> Owners { get; } = new();
-
-        public Dictionary<uint, string> Paths { get; } = new();
-
-        public Dictionary<uint, bool?> Elevation { get; } = new();
-
-        public Dictionary<nint, nint> CoreWindows { get; } = new();
-
-        public uint ProcessIdOf(nint window) => Owners.GetValueOrDefault(window);
-
-        public string? ImagePathOf(uint processId) => Paths.GetValueOrDefault(processId);
-
-        public nint CoreWindowChildOf(nint window) => CoreWindows.GetValueOrDefault(window);
-
-        public bool? IsElevated(uint processId) => Elevation.TryGetValue(processId, out var value) ? value : false;
-    }
+    private const string Forza = FakeWindows.Forza;
+    private const string FrameHost = FakeWindows.FrameHost;
 
     [Fact]
     public void A_plain_game_window_matches_by_executable_path_regardless_of_case()
     {
-        var windows = new FakeWindows();
-        windows.Owners[100] = 4242;
-        windows.Paths[4242] = Forza;
+        var windows = FakeWindows.WithGameAndDesktop();
 
         var info = ForegroundResolver.Resolve(windows, 100, Forza.ToUpperInvariant());
 
@@ -46,9 +24,7 @@ public class ForegroundResolverTests
     [Fact]
     public void The_match_survives_a_restart_with_a_new_process_id()
     {
-        var windows = new FakeWindows();
-        windows.Owners[100] = 4242;
-        windows.Paths[4242] = Forza;
+        var windows = FakeWindows.WithGameAndDesktop();
         windows.Owners[200] = 9999;
         windows.Paths[9999] = Forza;
 
@@ -89,44 +65,53 @@ public class ForegroundResolverTests
     }
 
     [Fact]
-    public void An_elevated_game_is_reported_and_does_not_have_focus_for_the_hook()
+    public void An_elevated_game_is_invisible_only_while_this_process_is_not_elevated()
     {
-        var windows = new FakeWindows();
-        windows.Owners[100] = 4242;
-        windows.Paths[4242] = Forza;
+        var windows = FakeWindows.WithGameAndDesktop();
         windows.Elevation[4242] = true;
 
-        var info = ForegroundResolver.Resolve(windows, 100, Forza);
+        var fromUser = ForegroundResolver.Resolve(windows, 100, Forza);
+        windows.OwnElevation = true;
+        var fromAdmin = ForegroundResolver.Resolve(windows, 100, Forza);
 
-        Assert.True(info.IsGame);
-        Assert.True(info.Elevated);
-        Assert.False(info.GameHasFocus);
+        Assert.True(fromUser.IsGame);
+        Assert.Equal(Elevation.Elevated, fromUser.Elevation);
+        Assert.False(fromUser.GameHasFocus);
+        Assert.Equal(Elevation.Visible, fromAdmin.Elevation);
+        Assert.True(fromAdmin.GameHasFocus);
     }
 
     [Fact]
-    public void An_unreadable_token_counts_as_elevated()
+    public void An_unreadable_own_token_counts_as_not_elevated()
     {
-        var windows = new FakeWindows();
-        windows.Owners[100] = 4242;
-        windows.Paths[4242] = Forza;
+        var windows = FakeWindows.WithGameAndDesktop();
+        windows.Elevation[4242] = true;
+        windows.OwnElevation = null;
+
+        Assert.Equal(Elevation.Elevated, ForegroundResolver.Resolve(windows, 100, Forza).Elevation);
+    }
+
+    [Fact]
+    public void An_unreadable_game_token_is_its_own_state_and_does_not_give_focus()
+    {
+        var windows = FakeWindows.WithGameAndDesktop();
         windows.Elevation[4242] = null;
 
-        Assert.True(ForegroundResolver.Resolve(windows, 100, Forza).Elevated);
+        var info = ForegroundResolver.Resolve(windows, 100, Forza);
+
+        Assert.Equal(Elevation.Unknown, info.Elevation);
+        Assert.False(info.GameHasFocus);
     }
 
     [Fact]
     public void Another_window_no_game_or_no_window_is_not_the_game()
     {
-        var windows = new FakeWindows();
-        windows.Owners[100] = 4242;
-        windows.Paths[4242] = Forza;
-        windows.Owners[300] = 7;
-        windows.Paths[7] = @"C:\Windows\explorer.exe";
+        var windows = FakeWindows.WithGameAndDesktop();
         windows.Elevation[7] = true;
 
         var other = ForegroundResolver.Resolve(windows, 300, Forza);
         Assert.False(other.IsGame);
-        Assert.False(other.Elevated);
+        Assert.Equal(Elevation.Visible, other.Elevation);
         Assert.False(ForegroundResolver.Resolve(windows, 100, null).IsGame);
         Assert.Equal(ForegroundInfo.None, ForegroundResolver.Resolve(windows, 0, Forza));
         Assert.False(ForegroundResolver.Resolve(windows, 999, Forza).IsGame);

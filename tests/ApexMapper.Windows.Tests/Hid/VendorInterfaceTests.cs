@@ -52,8 +52,13 @@ public class VendorInterfaceTests
         Assert.Equal(ExchangeStatus.Timeout, device.Exchange(SensorRequest.Group(2), _reply));
     }
 
-    /// <summary>The bound is generous for a two-core CI runner; the hardware run measures the real figure.</summary>
-    [Fact]
+    /// <summary>
+    /// The read runs on a dedicated thread (not the pool, which a stalled runner can
+    /// starve) and the test proves it started before aborting. The 200 ms bound is the
+    /// CI gate; the mechanism is that Abort disposes the stream, which is what wakes the
+    /// read. The hardware run measures the figure.
+    /// </summary>
+    [Fact(Timeout = 5000)]
     public async Task Abort_unblocks_a_pending_read_at_once()
     {
         var fake = new FakeVendorStream();
@@ -62,15 +67,18 @@ public class VendorInterfaceTests
             fake.BlockUntilDisposed();
             return null;
         };
-        var device = new VendorInterface(fake);
-        var reading = Task.Run(() => device.Exchange(SensorRequest.Group(2), new byte[SensorProtocol.ReportLength]));
-        SpinWait.SpinUntil(() => fake.Reads == 1, 1000);
+        using var device = new VendorInterface(fake);
+        var finished = new TaskCompletionSource<ExchangeStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reader = new Thread(() => finished.SetResult(device.Exchange(SensorRequest.Group(2), new byte[SensorProtocol.ReportLength]))) { IsBackground = true };
+        reader.Start();
+        Assert.True(SpinWait.SpinUntil(() => fake.Reads == 1, 2000), "The read never started.");
 
         var clock = Stopwatch.StartNew();
         device.Abort();
-        var status = await reading.WaitAsync(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        var status = await finished.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
         clock.Stop();
 
+        Assert.True(fake.IsDisposed);
         Assert.Equal(ExchangeStatus.Closed, status);
         Assert.True(clock.Elapsed.TotalMilliseconds < 200, $"Took {clock.Elapsed.TotalMilliseconds:F1} ms.");
         Assert.True(device.IsClosed);
@@ -80,7 +88,7 @@ public class VendorInterfaceTests
     public void After_abort_every_exchange_is_closed_without_touching_the_stream()
     {
         var fake = new FakeVendorStream();
-        var device = new VendorInterface(fake);
+        using var device = new VendorInterface(fake);
         device.Abort();
 
         Assert.Equal(ExchangeStatus.Closed, device.Exchange(SensorRequest.Firmware(), _reply));

@@ -76,6 +76,27 @@ public class SensorPollerTests
         Assert.True(fake.IsDisposed);
     }
 
+    /// <summary>The canary compares the padding too: a reply that shares the version text but carries bytes after the terminator is not the reply read at open.</summary>
+    [Fact]
+    public void A_canary_with_the_right_version_and_dirty_padding_retires_the_handle()
+    {
+        var dirty = Fixtures.Firmware;
+        dirty[^1] = 0x5A;
+        var fake = new FakeVendorStream
+        {
+            OnRead = (index, command, selector) => index > 0 && command == SensorRequest.FirmwareCommand ? dirty : FakeVendorStream.DefaultReply(command, selector),
+        };
+        using var poller = new SensorPoller(OpenOnce(fake), new SensorSnapshot(), Racing);
+
+        poller.Start();
+        Assert.True(WaitUntil(() => poller.FaultCount == 1));
+        poller.Stop();
+
+        Assert.Contains("canary", poller.FaultReason);
+        Assert.Equal(1, poller.FaultCount);
+        Assert.True(fake.IsDisposed);
+    }
+
     [Fact]
     public void A_shifted_reply_fails_its_signature_and_retires_the_handle()
     {
@@ -159,6 +180,12 @@ public class SensorPollerTests
         Assert.Equal(1, poller.Cycles);
     }
 
+    /// <summary>
+    /// Staleness is asserted from the published timestamps, not from the test thread's
+    /// clock: the gap between the stamp before the slow read and the first stamp after
+    /// it exceeds the freshness limit, so there was an instant when the snapshot was
+    /// stale, however the test thread was scheduled.
+    /// </summary>
     [Fact]
     public void One_slow_cycle_leaves_the_snapshot_stale_without_a_fault()
     {
@@ -175,10 +202,13 @@ public class SensorPollerTests
         using var poller = new SensorPoller(() => fake, shared, Racing);
 
         poller.Start();
-        Assert.True(WaitUntil(() => fake.Reads == 22));
-        Assert.True(WaitUntil(() => !shared.IsFresh(Stopwatch.GetTimestamp()), 200));
+        Assert.True(WaitUntil(() => fake.Reads == 22), "The slow read (index 21) never started.");
+        var before = shared.TimestampTicks;
+        Assert.True(WaitUntil(() => shared.TimestampTicks != before));
+        var after = shared.TimestampTicks;
         Assert.True(WaitUntil(() => poller.Cycles >= 100));
 
+        Assert.True(after - before > shared.FreshnessLimitTicks, $"The slow cycle advanced the stamp by {(after - before) * 1000d / Stopwatch.Frequency:F1} ms.");
         Assert.Equal(PollerState.Running, poller.State);
         Assert.Equal(0, poller.FaultCount);
         Assert.True(shared.IsFresh(Stopwatch.GetTimestamp()));
@@ -234,23 +264,33 @@ public class SensorPollerTests
         Assert.True(clock.ElapsedMilliseconds < SensorPoller.BackoffMs / 2, $"Reopen took {clock.ElapsedMilliseconds} ms.");
     }
 
-    [Fact]
-    public void No_device_waits_and_stop_during_the_backoff_returns_long_before_the_backoff_elapses()
+    /// <summary>The 200 ms bounds are the CI gate for a two-core runner; the mechanism (Waiting entered, the wake taken) is what the assertions prove. The hardware run measures the figure.</summary>
+    [Fact(Timeout = 5000)]
+    public async Task No_device_waits_and_stop_during_the_backoff_returns_long_before_the_backoff_elapses()
     {
-        using var poller = new SensorPoller(() => null, new SensorSnapshot(), Racing);
+        var opens = 0;
+        using var poller = new SensorPoller(() =>
+        {
+            opens++;
+            return null;
+        }, new SensorSnapshot(), Racing);
 
         poller.Start();
         Assert.True(WaitUntil(() => poller.State == PollerState.Waiting));
+        Assert.Equal(1, opens);
         var clock = Stopwatch.StartNew();
-        poller.Stop();
+        await Task.Run(poller.Stop, TestContext.Current.CancellationToken);
         clock.Stop();
 
         Assert.True(clock.Elapsed.TotalMilliseconds < 200, $"Stop took {clock.Elapsed.TotalMilliseconds:F1} ms against a {SensorPoller.BackoffMs} ms backoff.");
         Assert.Equal(PollerState.Stopped, poller.State);
+        Assert.Equal(1, opens);
+        Assert.Equal(SensorPoller.WaitingReason, poller.FaultReason);
     }
 
-    [Fact]
-    public void Stop_during_a_blocked_read_returns_without_waiting_for_the_device()
+    /// <summary>The scripted read never returns on its own: Stop must abort it, which disposes the fake before the join returns.</summary>
+    [Fact(Timeout = 5000)]
+    public async Task Stop_during_a_blocked_read_returns_without_waiting_for_the_device()
     {
         var fake = new FakeVendorStream();
         fake.OnRead = (index, command, selector) =>
@@ -266,11 +306,14 @@ public class SensorPollerTests
 
         poller.Start();
         Assert.True(WaitUntil(() => fake.Reads == 4));
+        Assert.False(fake.IsDisposed);
         var clock = Stopwatch.StartNew();
-        poller.Stop();
+        await Task.Run(poller.Stop, TestContext.Current.CancellationToken);
         clock.Stop();
 
-        Assert.True(clock.Elapsed.TotalMilliseconds < 200, $"Stop took {clock.Elapsed.TotalMilliseconds:F1} ms; the scripted read never returns on its own.");
+        Assert.True(fake.IsDisposed);
+        Assert.True(clock.Elapsed.TotalMilliseconds < 200, $"Stop took {clock.Elapsed.TotalMilliseconds:F1} ms.");
+        Assert.Equal(PollerState.Stopped, poller.State);
         Assert.Equal(0, poller.FaultCount);
     }
 
@@ -278,8 +321,8 @@ public class SensorPollerTests
     public void Cycles_allocate_nothing()
     {
         var fake = new FakeVendorStream();
-        var device = new VendorInterface(fake);
-        var poller = new SensorPoller(() => fake, new SensorSnapshot(), Racing);
+        using var device = new VendorInterface(fake);
+        using var poller = new SensorPoller(() => fake, new SensorSnapshot(), Racing);
         Assert.Null(poller.VerifyFirmware(device));
         Assert.Null(poller.Cycle(device));
 
@@ -294,6 +337,20 @@ public class SensorPollerTests
         Assert.Null(fault);
         Assert.Equal(0, after - before);
         Assert.Equal(201, poller.Cycles);
+    }
+
+    [Fact]
+    public void The_canary_runs_every_five_cycles_when_the_polled_groups_cannot_be_told_apart()
+    {
+        var distinct = Fixtures.Signatures(2, 3);
+        var same = new Dictionary<int, GroupSignature> { [2] = distinct[2], [3] = distinct[2] };
+        var partial = new Dictionary<int, GroupSignature> { [2] = distinct[2] };
+
+        Assert.Equal(SensorPoller.CanaryEveryCycles, PollerConfig.For([2, 3], distinct).CanaryEveryCycles);
+        Assert.Equal(SensorPoller.CanaryEveryCyclesWhenBlind, PollerConfig.For([2, 3], same).CanaryEveryCycles);
+        Assert.Equal(SensorPoller.CanaryEveryCyclesWhenBlind, PollerConfig.For([2, 3], partial).CanaryEveryCycles);
+        Assert.Equal(SensorPoller.CanaryEveryCyclesWhenBlind, PollerConfig.For([2, 3]).CanaryEveryCycles);
+        Assert.Equal(SensorPoller.CanaryEveryCycles, PollerConfig.For([2], partial).CanaryEveryCycles);
     }
 
     [Fact]

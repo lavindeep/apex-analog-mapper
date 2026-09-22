@@ -11,9 +11,11 @@ public class HookPolicyTests
     private const int S = 0x1F;
     private const int Q = 0x10;
     private const int LeftCtrl = 0x1D;
+    private const int RightCtrl = 256 + 0x1D;
     private const int LeftAlt = 0x38;
     private const int RightAlt = 256 + 0x38;
     private const int LeftWin = 256 + 0x5B;
+    private const int RightWin = 256 + 0x5C;
     private const int F12 = 0x58;
 
     private static HookPolicy Policy()
@@ -118,8 +120,11 @@ public class HookPolicyTests
 
     [Theory]
     [InlineData(LeftCtrl)]
+    [InlineData(RightCtrl)]
+    [InlineData(LeftAlt)]
     [InlineData(RightAlt)]
     [InlineData(LeftWin)]
+    [InlineData(RightWin)]
     public void Every_reserved_modifier_counts(int modifier)
     {
         var policy = Policy();
@@ -168,6 +173,92 @@ public class HookPolicyTests
         Assert.True(policy.Decide(F12, false, false, true));
         Assert.True(policy.IsStopChord(F12, true, false));
         Assert.False(policy.IsStopChord(W, true, false));
+    }
+
+    [Theory]
+    [InlineData(LeftAlt, -1)]
+    [InlineData(LeftCtrl, -1)]
+    [InlineData(LeftWin, F12)]
+    [InlineData(LeftWin, LeftAlt)]
+    [InlineData(LeftCtrl, RightAlt)]
+    public void Only_ctrl_with_left_alt_makes_f12_the_stop_chord(int first, int second)
+    {
+        var policy = Policy();
+        policy.Decide(first, true, false, true);
+        if (second >= 0)
+        {
+            policy.Decide(second, true, false, true);
+        }
+
+        Assert.False(policy.IsStopChord(F12, true, false));
+        Assert.False(policy.Decide(F12, true, false, true));
+    }
+
+    [Fact]
+    public void An_injected_f12_is_not_the_stop_chord_outside_test_mode()
+    {
+        var policy = Policy();
+        policy.Decide(LeftCtrl, true, false, true);
+        policy.Decide(LeftAlt, true, false, true);
+
+        Assert.False(policy.IsStopChord(F12, true, true));
+        policy.SwallowInjected = true;
+        Assert.True(policy.IsStopChord(F12, true, true));
+    }
+
+    [Fact]
+    public void Synced_modifiers_replace_the_observed_ones()
+    {
+        var policy = Policy();
+        policy.Decide(LeftCtrl, true, false, true);
+
+        policy.SyncModifiers(HookPolicy.LeftAltBit | HookPolicy.RightWinBit);
+
+        Assert.False(policy.CtrlDown);
+        Assert.True(policy.AltDown);
+        Assert.True(policy.WinDown);
+        policy.SyncModifiers(0);
+        Assert.Equal(0, policy.Modifiers);
+        Assert.True(policy.Decide(W, true, false, true));
+    }
+
+    /// <summary>Decide on one thread against ForegroundLost on another: no exception, no torn state, every key-up matched.</summary>
+    [Fact]
+    public void Decide_and_foreground_loss_race_without_corrupting_the_slot_state()
+    {
+        var policy = Policy();
+        using var stop = new CancellationTokenSource(300);
+        var loser = new Thread(() =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                policy.ForegroundLost();
+            }
+        });
+        loser.Start();
+
+        var swallowedDowns = 0;
+        var swallowedUps = 0;
+        var presses = 0;
+        while (!stop.IsCancellationRequested)
+        {
+            if (policy.Decide(W, true, false, true))
+            {
+                swallowedDowns++;
+            }
+            if (policy.Decide(W, false, false, true))
+            {
+                swallowedUps++;
+            }
+            presses++;
+        }
+        loser.Join();
+
+        Assert.True(presses > 100);
+        Assert.Equal(swallowedDowns + swallowedUps, policy.SwallowedCount);
+        Assert.True(swallowedUps <= swallowedDowns);
+        Assert.False(policy.IsSwallowedDown(W));
+        Assert.True(policy.Decide(W, true, false, true));
     }
 
     [Fact]

@@ -25,6 +25,7 @@ public sealed class KeyboardDiscovery : IDisposable
     private RawInputPump? _pump;
     private IReadOnlyList<KeyboardInfo> _current = [];
     private string? _lastError;
+    private int _handlerFaults;
     private bool _disposed;
 
     /// <summary>Raised on a thread-pool thread with the new list after a device change.</summary>
@@ -41,7 +42,15 @@ public sealed class KeyboardDiscovery : IDisposable
     /// <summary>Why the last background refresh kept the previous list; null after a good one.</summary>
     public string? LastError => Volatile.Read(ref _lastError);
 
-    /// <summary>Folds interfaces into one entry per container id, SteelSeries only.</summary>
+    /// <summary>Exceptions thrown by <see cref="Changed"/> subscribers; they are not enumeration failures and never reach <see cref="LastError"/>.</summary>
+    public int HandlerFaults => Volatile.Read(ref _handlerFaults);
+
+    /// <summary>
+    /// Folds interfaces into one entry per container id. The vendor filter is not here:
+    /// enumeration asks Windows for SteelSeries devices only, and the vendor interface
+    /// opens only for a known product id. A board is labelled from its known product id
+    /// when any of its interfaces carries one, whatever order they enumerate in.
+    /// </summary>
     public static IReadOnlyList<KeyboardInfo> Select(IEnumerable<HidInterfaceInfo> interfaces)
     {
         var boards = new Dictionary<Guid, KeyboardInfo>();
@@ -49,17 +58,21 @@ public sealed class KeyboardDiscovery : IDisposable
         {
             var model = KnownKeyboards.Find(item.ProductId);
             var name = model?.Name ?? (item.ProductName.Length > 0 ? item.ProductName : $"SteelSeries 0x{item.ProductId:X4}");
-            if (boards.TryGetValue(item.ContainerId, out var existing))
+            if (!boards.TryGetValue(item.ContainerId, out var existing))
+            {
+                boards[item.ContainerId] = new KeyboardInfo(item.ContainerId, item.ProductId, name, model is not null, item.IsVendorInterface);
+            }
+            else if (!existing.Known && model is not null)
+            {
+                boards[item.ContainerId] = new KeyboardInfo(item.ContainerId, item.ProductId, name, true, existing.HasVendorInterface || item.IsVendorInterface);
+            }
+            else
             {
                 boards[item.ContainerId] = existing with
                 {
                     HasVendorInterface = existing.HasVendorInterface || item.IsVendorInterface,
                     Name = existing.Name.StartsWith("SteelSeries 0x", StringComparison.Ordinal) ? name : existing.Name,
                 };
-            }
-            else
-            {
-                boards[item.ContainerId] = new KeyboardInfo(item.ContainerId, item.ProductId, name, model is not null, item.IsVendorInterface);
             }
         }
         return boards.Values.OrderBy(b => b.Name, StringComparer.Ordinal).ThenBy(b => b.ContainerId).ToArray();
@@ -68,21 +81,34 @@ public sealed class KeyboardDiscovery : IDisposable
     /// <summary>Asks Windows now.</summary>
     public static IReadOnlyList<KeyboardInfo> Enumerate() => Select(HidVendorDevices.SteelSeriesInterfaces());
 
-    /// <summary>Enumerates once and follows the pump's device events from then on.</summary>
+    /// <summary>Enumerates once and follows the pump's device events from then on. Calling it again moves the subscription.</summary>
     public void Watch(RawInputPump pump)
     {
-        _pump = pump;
-        pump.DeviceChanged += OnDeviceChanged;
+        lock (_lifetime)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _pump?.DeviceChanged -= OnDeviceChanged;
+            _pump = pump;
+            pump.DeviceChanged += OnDeviceChanged;
+        }
         Refresh();
     }
 
-    /// <summary>Enumerates now, on the calling thread. Throws if enumeration does.</summary>
-    public void Refresh()
+    /// <summary>Enumerates now, on the calling thread. Throws if enumeration does; a throwing subscriber is counted instead.</summary>
+    public void Refresh() => Publish(_enumerate());
+
+    private void Publish(IReadOnlyList<KeyboardInfo> list)
     {
-        var list = _enumerate();
         Volatile.Write(ref _current, list);
         Volatile.Write(ref _lastError, null);
-        Changed?.Invoke(list);
+        try
+        {
+            Changed?.Invoke(list);
+        }
+        catch (Exception)
+        {
+            Interlocked.Increment(ref _handlerFaults);
+        }
     }
 
     public void Dispose()
@@ -117,13 +143,16 @@ public sealed class KeyboardDiscovery : IDisposable
     /// <summary>Thread pool. An unhandled exception here would end the process, so enumeration failures keep the previous list and are reported through <see cref="LastError"/>.</summary>
     internal void RefreshQuietly()
     {
+        IReadOnlyList<KeyboardInfo> list;
         try
         {
-            Refresh();
+            list = _enumerate();
         }
         catch (Exception e)
         {
             Volatile.Write(ref _lastError, e.Message);
+            return;
         }
+        Publish(list);
     }
 }

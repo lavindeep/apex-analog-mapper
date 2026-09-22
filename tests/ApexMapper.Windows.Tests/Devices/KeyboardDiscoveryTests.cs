@@ -1,5 +1,6 @@
 using ApexMapper.Windows.Devices;
 using ApexMapper.Windows.Hid;
+using ApexMapper.Windows.Input;
 using Xunit;
 
 namespace ApexMapper.Windows.Tests.Devices;
@@ -31,6 +32,65 @@ public class KeyboardDiscoveryTests
         Assert.Equal("SteelSeries Rival 3", mouse.Name);
         Assert.False(mouse.Known);
         Assert.False(mouse.HasVendorInterface);
+    }
+
+    [Fact]
+    public void A_known_product_id_labels_the_board_whichever_interface_enumerates_first()
+    {
+        var interfaces = new[]
+        {
+            new HidInterfaceInfo("a", 0x1999, Tkl, string.Empty, true),
+            new HidInterfaceInfo("b", 0x1614, Tkl, "SteelSeries Apex Pro TKL", false),
+        };
+
+        var board = Assert.Single(KeyboardDiscovery.Select(interfaces));
+
+        Assert.True(board.Known);
+        Assert.Equal(0x1614, board.ProductId);
+        Assert.Equal("Apex Pro TKL", board.Name);
+        Assert.True(board.HasVendorInterface);
+    }
+
+    [Fact]
+    public void A_throwing_subscriber_is_counted_and_is_not_an_enumeration_failure()
+    {
+        using var discovery = new KeyboardDiscovery(() => []);
+        discovery.Changed += _ => throw new InvalidOperationException("subscriber bug");
+
+        discovery.Refresh();
+        discovery.RefreshQuietly();
+
+        Assert.Equal(2, discovery.HandlerFaults);
+        Assert.Null(discovery.LastError);
+    }
+
+    [Fact]
+    public async Task Watching_debounces_a_burst_into_one_refresh_and_a_second_watch_moves_the_subscription()
+    {
+        var calls = 0;
+        using var discovery = new KeyboardDiscovery(() =>
+        {
+            Interlocked.Increment(ref calls);
+            return [];
+        });
+        var changed = 0;
+        discovery.Changed += _ => Interlocked.Increment(ref changed);
+        using var first = new RawInputPump();
+        using var second = new RawInputPump();
+
+        discovery.Watch(first);
+        discovery.Watch(second);
+        Assert.Equal(2, changed);
+        second.OnDeviceChanged(1, arrived: true);
+        second.OnDeviceChanged(1, arrived: false);
+        second.OnDeviceChanged(2, arrived: true);
+        Assert.True(await Task.Run(() => SpinWait.SpinUntil(() => Volatile.Read(ref changed) == 3, KeyboardDiscovery.DebounceMs * 4), TestContext.Current.CancellationToken));
+        first.OnDeviceChanged(3, arrived: true);
+        await Task.Delay(KeyboardDiscovery.DebounceMs * 2, TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, changed);
+        Assert.Equal(3, calls);
+        Assert.Equal(0, first.HandlerFaults + second.HandlerFaults);
     }
 
     [Fact]

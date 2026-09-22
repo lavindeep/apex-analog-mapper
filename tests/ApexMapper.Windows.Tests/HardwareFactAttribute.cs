@@ -11,9 +11,8 @@ public sealed class HardwareFactAttribute : FactAttribute
     public HardwareFactAttribute([CallerFilePath] string? sourceFilePath = null, [CallerLineNumber] int sourceLineNumber = -1)
         : base(sourceFilePath, sourceLineNumber)
     {
-        if (!Enabled)
-        {
-            Skip = "Set APEX_HW_TESTS=1 to run hardware tests.";
-        }
+        Skip = "Set APEX_HW_TESTS=1 to run hardware tests.";
+        SkipType = typeof(HardwareFactAttribute);
+        SkipUnless = nameof(Enabled);
     }
 }

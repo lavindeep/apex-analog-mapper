@@ -17,8 +17,8 @@ public class StructSizeTests
         Assert.Equal(40, Marshal.SizeOf<User32.RAWINPUTKEYBOARD>());
         Assert.Equal(48, Marshal.SizeOf<User32.MSG>());
         Assert.Equal(80, Marshal.SizeOf<User32.WNDCLASSEXW>());
-        Assert.Equal(40, Marshal.SizeOf<User32.INPUT>());
-        Assert.Equal(24, Marshal.SizeOf<User32.KEYBDINPUT>());
+        Assert.Equal(40, Marshal.SizeOf<Injector.INPUT>());
+        Assert.Equal(24, Marshal.SizeOf<Injector.KEYBDINPUT>());
     }
 
     [Fact]

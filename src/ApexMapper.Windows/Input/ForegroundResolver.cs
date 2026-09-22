@@ -17,24 +17,42 @@ public interface IWindowSystem
 
     /// <summary>Whether the process runs elevated; null when its token cannot be read.</summary>
     bool? IsElevated(uint processId);
+
+    /// <summary>Whether this process runs elevated; null when its own token cannot be read.</summary>
+    bool? IsCurrentProcessElevated();
+}
+
+/// <summary>Whether a low-level hook in this process can see the game's input.</summary>
+public enum Elevation
+{
+    /// <summary>The game is not elevated, or we are too.</summary>
+    Visible,
+
+    /// <summary>The game is elevated and we are not: its input never reaches our hook. Run the mapper as administrator.</summary>
+    Elevated,
+
+    /// <summary>The game's token could not be read, so nothing is known; treated as invisible.</summary>
+    Unknown,
 }
 
 /// <summary>What the foreground window resolved to.</summary>
 /// <param name="Unwrapped">The window belonged to ApplicationFrameHost and the CoreWindow owner was used instead.</param>
-/// <param name="Elevated">The game runs elevated (or its token is unreadable, which means the same for a hook): its input is invisible to us.</param>
-public sealed record ForegroundInfo(nint Window, uint ProcessId, string? ImagePath, bool IsGame, bool Elevated, bool Unwrapped)
+/// <param name="Elevation">Only meaningful when <paramref name="IsGame"/>; <see cref="Elevation.Visible"/> otherwise.</param>
+public sealed record ForegroundInfo(nint Window, uint ProcessId, string? ImagePath, bool IsGame, Elevation Elevation, bool Unwrapped)
 {
-    public static readonly ForegroundInfo None = new(0, 0, null, false, false, false);
+    public static readonly ForegroundInfo None = new(0, 0, null, false, Elevation.Visible, false);
 
     /// <summary>Foreground and visible: the flag the hook reads.</summary>
-    public bool GameHasFocus => IsGame && !Elevated;
+    public bool GameHasFocus => IsGame && Elevation == Elevation.Visible;
 }
 
 /// <summary>
 /// Pure resolution of a foreground window to "is it the selected game". Matches by
 /// executable path, so a restarted game with a new process id keeps matching. Game
 /// Pass and Store builds of Forza run under ApplicationFrameHost; the CoreWindow
-/// child's owner is the game.
+/// child's owner is the game. Elevation is relative: an elevated game is invisible to
+/// a hook only when this process is not elevated too, which is what running the mapper
+/// as administrator fixes.
 /// </summary>
 public static class ForegroundResolver
 {
@@ -61,8 +79,17 @@ public static class ForegroundResolver
             }
         }
         var isGame = gamePath is not null && path is not null && string.Equals(path, gamePath, StringComparison.OrdinalIgnoreCase);
-        var elevated = isGame && (windows.IsElevated(pid) ?? true);
-        return new ForegroundInfo(window, pid, path, isGame, elevated, unwrapped);
+        var elevation = Elevation.Visible;
+        if (isGame)
+        {
+            elevation = windows.IsElevated(pid) switch
+            {
+                null => Elevation.Unknown,
+                true when windows.IsCurrentProcessElevated() != true => Elevation.Elevated,
+                _ => Elevation.Visible,
+            };
+        }
+        return new ForegroundInfo(window, pid, path, isGame, elevation, unwrapped);
     }
 }
 
@@ -70,6 +97,9 @@ public static class ForegroundResolver
 public sealed unsafe class Win32WindowSystem : IWindowSystem
 {
     public static readonly Win32WindowSystem Instance = new();
+
+    private bool? _ownElevation;
+    private bool _ownElevationKnown;
 
     public uint ProcessIdOf(nint window)
     {
@@ -98,6 +128,17 @@ public sealed unsafe class Win32WindowSystem : IWindowSystem
     }
 
     public nint CoreWindowChildOf(nint window) => User32.FindWindowExW(window, 0, "Windows.UI.Core.CoreWindow", null);
+
+    /// <summary>Read once: a process cannot change its elevation.</summary>
+    public bool? IsCurrentProcessElevated()
+    {
+        if (!Volatile.Read(ref _ownElevationKnown))
+        {
+            _ownElevation = IsElevated((uint)Environment.ProcessId);
+            Volatile.Write(ref _ownElevationKnown, true);
+        }
+        return _ownElevation;
+    }
 
     public bool? IsElevated(uint processId)
     {

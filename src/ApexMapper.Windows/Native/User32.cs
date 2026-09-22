@@ -190,6 +190,13 @@ internal static unsafe partial class User32
 
     public const uint MAPVK_VSC_TO_VK_EX = 3;
 
+    public const int VK_LWIN = 0x5B;
+    public const int VK_RWIN = 0x5C;
+    public const int VK_LCONTROL = 0xA2;
+    public const int VK_RCONTROL = 0xA3;
+    public const int VK_LMENU = 0xA4;
+    public const int VK_RMENU = 0xA5;
+
     [LibraryImport("user32.dll")]
     public static partial uint MapVirtualKeyW(uint uCode, uint uMapType);
 
@@ -208,46 +215,4 @@ internal static unsafe partial class User32
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool UnhookWinEvent(nint hWinEventHook);
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct KEYBDINPUT
-    {
-        public ushort wVk;
-        public ushort wScan;
-        public uint dwFlags;
-        public uint time;
-        public nuint dwExtraInfo;
-    }
-
-    /// <summary>INPUT with the keyboard member; the union is padded to the mouse member's size.</summary>
-    [StructLayout(LayoutKind.Explicit, Size = 40)]
-    public struct INPUT
-    {
-        [FieldOffset(0)] public uint type;
-        [FieldOffset(8)] public KEYBDINPUT ki;
-    }
-
-    public const uint INPUT_KEYBOARD = 1;
-    public const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
-    public const uint KEYEVENTF_KEYUP = 0x0002;
-    public const uint KEYEVENTF_SCANCODE = 0x0008;
-
-    [LibraryImport("user32.dll", SetLastError = true)]
-    public static partial uint SendInput(uint cInputs, INPUT* pInputs, int cbSize);
-
-    /// <summary>Injects one key event by scan code. Test helper for the hardware tests and the spike path.</summary>
-    public static bool SendScanCode(ushort scanCode, bool down)
-    {
-        var extended = (scanCode & 0xFF00) == 0xE000;
-        var input = new INPUT
-        {
-            type = INPUT_KEYBOARD,
-            ki = new KEYBDINPUT
-            {
-                wScan = (ushort)(scanCode & 0xFF),
-                dwFlags = KEYEVENTF_SCANCODE | (extended ? KEYEVENTF_EXTENDEDKEY : 0) | (down ? 0 : KEYEVENTF_KEYUP),
-            },
-        };
-        return SendInput(1, &input, sizeof(INPUT)) == 1;
-    }
 }

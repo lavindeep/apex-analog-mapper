@@ -10,12 +10,26 @@ namespace ApexMapper.Windows.Input;
 /// <c>RIDEV_INPUTSINK</c> (events even when another window is foreground) and
 /// <c>RIDEV_DEVNOTIFY</c> (arrival and removal). Key events go into a single-producer,
 /// single-consumer ring; overflow is counted, never blocks. Device events are raised on
-/// the pump thread. Raw Input only attributes events to a device; the hook owns the
-/// digital state. One pump per process.
+/// the pump thread, and only for changes after registration: a consumer enumerates
+/// first, then watches. Raw Input only attributes events to a device; the hook owns
+/// the digital state. One pump per process.
+///
+/// Exceptions never leave the window procedure: a throwing <see cref="DeviceChanged"/>
+/// handler, or anything thrown while reading an event, is counted in
+/// <see cref="HandlerFaults"/>. <see cref="EventCount"/> and <see cref="LastEventTicks"/>
+/// let the session compare this pump against the hook: raw events flowing while the
+/// hook's counter stands still means Windows removed the hook.
 /// </summary>
 public sealed unsafe class RawInputPump : IDisposable
 {
     public const int RingSize = 256;
+
+    /// <summary>How long <see cref="Stop"/> waits for the pump thread before giving up on it.</summary>
+    public const int JoinTimeoutMs = 2000;
+
+    /// <summary>Events from every window plus device notifications; the two flags the design depends on.</summary>
+    public const uint RegistrationFlags = User32.RIDEV_INPUTSINK | User32.RIDEV_DEVNOTIFY;
+
     private const string ClassName = "ApexAnalogMapper.RawInput";
 
     private static RawInputPump? s_current;
@@ -28,20 +42,35 @@ public sealed unsafe class RawInputPump : IDisposable
     private int _tail;
     private int _overflows;
     private int _handlerFaults;
+    private int _malformedInputs;
+    private long _eventCount;
+    private long _lastEventTicks;
     private Thread? _thread;
     private uint _threadId;
     private nint _window;
-    private Exception? _startError;
+    private Exception? _error;
 
     /// <summary>A keyboard arrived (true) or was removed (false). Raised on the pump thread; a handler that throws is counted, never propagated.</summary>
     public event Action<nint, bool>? DeviceChanged;
 
     public int Overflows => Volatile.Read(ref _overflows);
 
-    /// <summary>Exceptions thrown by <see cref="DeviceChanged"/> handlers; an exception must never leave the window procedure.</summary>
+    /// <summary>Exceptions caught on the pump thread: <see cref="DeviceChanged"/> handlers and the input path.</summary>
     public int HandlerFaults => Volatile.Read(ref _handlerFaults);
 
-    public bool IsRunning => _thread is { IsAlive: true } && _window != 0;
+    /// <summary>WM_INPUT messages whose data could not be read or was not a keyboard event of the expected size.</summary>
+    public int MalformedInputs => Volatile.Read(ref _malformedInputs);
+
+    /// <summary>Decoded keyboard events since start, enqueued or overflowed.</summary>
+    public long EventCount => Volatile.Read(ref _eventCount);
+
+    /// <summary>Stopwatch timestamp of the last decoded keyboard event, or zero.</summary>
+    public long LastEventTicks => Volatile.Read(ref _lastEventTicks);
+
+    /// <summary>What ended the pump thread early, if anything did; null while it runs or after a clean stop.</summary>
+    public Exception? Error => Volatile.Read(ref _error);
+
+    public bool IsRunning => _thread is { IsAlive: true } && Volatile.Read(ref _window) != 0;
 
     /// <summary>Starts the thread and blocks until the window and registration exist. Throws when Windows refuses.</summary>
     public void Start()
@@ -57,29 +86,49 @@ public sealed unsafe class RawInputPump : IDisposable
         _thread = new Thread(Run) { IsBackground = true, Name = "apex-rawinput" };
         _thread.Start();
         _ready.Wait();
-        if (_startError is not null)
+        if (_error is not null)
         {
             _thread.Join();
-            Interlocked.Exchange(ref s_current, null);
-            throw _startError;
+            throw _error;
         }
     }
 
-    /// <summary>Posts quit and joins.</summary>
-    public void Stop()
+    /// <summary>
+    /// Posts quit; the window is destroyed on the pump thread. From any other thread
+    /// this joins, bounded by <see cref="JoinTimeoutMs"/>, and returns whether the
+    /// thread has exited. From the pump thread itself (a <see cref="DeviceChanged"/>
+    /// handler) it returns false at once and the thread exits after the current message.
+    /// The container cache is cleared, since handle values do not survive a stop.
+    /// </summary>
+    public bool Stop()
     {
-        if (_thread is null)
+        var thread = _thread;
+        if (thread is null || !thread.IsAlive)
         {
-            return;
+            return true;
         }
-        User32.PostThreadMessageW(_threadId, User32.WM_QUIT, 0, 0);
-        _thread.Join();
+        for (var attempt = 0; attempt < 20 && !User32.PostThreadMessageW(_threadId, User32.WM_QUIT, 0, 0); attempt++)
+        {
+            Thread.Sleep(5);
+        }
+        if (thread.ManagedThreadId == Environment.CurrentManagedThreadId)
+        {
+            return false;
+        }
+        var exited = thread.Join(JoinTimeoutMs);
+        lock (_namesLock)
+        {
+            _containers.Clear();
+        }
+        return exited;
     }
 
     public void Dispose()
     {
-        Stop();
-        _ready.Dispose();
+        if (Stop())
+        {
+            _ready.Dispose();
+        }
     }
 
     /// <summary>Consumer side. Allocation-free.</summary>
@@ -91,7 +140,7 @@ public sealed unsafe class RawInputPump : IDisposable
             item = default;
             return false;
         }
-        item = _ring[tail % RingSize];
+        item = _ring[tail & (RingSize - 1)];
         Volatile.Write(ref _tail, tail + 1);
         return true;
     }
@@ -100,7 +149,8 @@ public sealed unsafe class RawInputPump : IDisposable
     /// The container id of a Raw Input device handle, or null when Windows cannot say.
     /// Successful lookups are cached until the handle is reported removed or re-added,
     /// since Windows reuses handle values across a replug; failures are not cached, so a
-    /// lookup that races an arrival is retried. Not for the hot path.
+    /// lookup that races an arrival is retried. The lookup itself runs outside the lock:
+    /// it calls cfgmgr32, which the pump thread also calls. Not for the hot path.
     /// </summary>
     public Guid? ContainerIdOf(nint device)
     {
@@ -110,14 +160,17 @@ public sealed unsafe class RawInputPump : IDisposable
             {
                 return cached;
             }
-            var name = DeviceName(device);
-            var container = name is null ? null : CfgMgr32.ContainerIdOf(name);
-            if (container is { } found)
+        }
+        var name = DeviceName(device);
+        var container = name is null ? null : CfgMgr32.ContainerIdOf(name);
+        if (container is { } found)
+        {
+            lock (_namesLock)
             {
                 _containers[device] = found;
             }
-            return container;
         }
+        return container;
     }
 
     private void Forget(nint device)
@@ -159,13 +212,15 @@ public sealed unsafe class RawInputPump : IDisposable
 
     internal void Enqueue(in RawKeyEvent item)
     {
+        Volatile.Write(ref _lastEventTicks, item.Ticks);
+        Volatile.Write(ref _eventCount, _eventCount + 1);
         var head = _head;
         if (head - Volatile.Read(ref _tail) >= RingSize)
         {
             Interlocked.Increment(ref _overflows);
             return;
         }
-        _ring[head % RingSize] = item;
+        _ring[head & (RingSize - 1)] = item;
         Volatile.Write(ref _head, head + 1);
     }
 
@@ -191,46 +246,49 @@ public sealed unsafe class RawInputPump : IDisposable
             {
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "RegisterClassEx failed.");
             }
-            _window = User32.CreateWindowExW(0, ClassName, string.Empty, 0, 0, 0, 0, 0, User32.HWND_MESSAGE, 0, instance, 0);
-            if (_window == 0)
+            var window = User32.CreateWindowExW(0, ClassName, string.Empty, 0, 0, 0, 0, 0, User32.HWND_MESSAGE, 0, instance, 0);
+            if (window == 0)
             {
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "CreateWindowEx failed.");
             }
+            Volatile.Write(ref _window, window);
             var device = new User32.RAWINPUTDEVICE
             {
                 usUsagePage = User32.HID_USAGE_PAGE_GENERIC,
                 usUsage = User32.HID_USAGE_GENERIC_KEYBOARD,
-                dwFlags = User32.RIDEV_INPUTSINK | User32.RIDEV_DEVNOTIFY,
-                hwndTarget = _window,
+                dwFlags = RegistrationFlags,
+                hwndTarget = window,
             };
             if (!User32.RegisterRawInputDevices(&device, 1, (uint)sizeof(User32.RAWINPUTDEVICE)))
             {
                 throw new Win32Exception(Marshal.GetLastWin32Error(), "RegisterRawInputDevices failed.");
             }
+            _ready.Set();
+            while (User32.GetMessageW(out var msg, 0, 0, 0) > 0)
+            {
+                User32.TranslateMessage(ref msg);
+                User32.DispatchMessageW(ref msg);
+            }
         }
         catch (Exception e)
         {
-            _startError = e;
-            Cleanup(atom, instance);
-            _ready.Set();
-            return;
+            Volatile.Write(ref _error, e);
         }
-        _ready.Set();
-        while (User32.GetMessageW(out var msg, 0, 0, 0) > 0)
+        finally
         {
-            User32.TranslateMessage(ref msg);
-            User32.DispatchMessageW(ref msg);
+            Cleanup(atom, instance);
+            Interlocked.CompareExchange(ref s_current, null, this);
+            _ready.Set();
         }
-        Cleanup(atom, instance);
-        Interlocked.Exchange(ref s_current, null);
     }
 
     private void Cleanup(ushort atom, nint instance)
     {
-        if (_window != 0)
+        var window = _window;
+        if (window != 0)
         {
-            User32.DestroyWindow(_window);
-            _window = 0;
+            User32.DestroyWindow(window);
+            Volatile.Write(ref _window, 0);
         }
         if (atom != 0)
         {
@@ -274,16 +332,24 @@ public sealed unsafe class RawInputPump : IDisposable
 
     private void OnInput(nint handle)
     {
-        User32.RAWINPUTKEYBOARD data;
-        var size = (uint)sizeof(User32.RAWINPUTKEYBOARD);
-        var read = User32.GetRawInputData(handle, User32.RID_INPUT, &data, &size, (uint)sizeof(User32.RAWINPUTHEADER));
-        if (read == uint.MaxValue || read < sizeof(User32.RAWINPUTKEYBOARD) || data.header.dwType != User32.RIM_TYPEKEYBOARD)
+        try
         {
-            return;
+            User32.RAWINPUTKEYBOARD data;
+            var size = (uint)sizeof(User32.RAWINPUTKEYBOARD);
+            var read = User32.GetRawInputData(handle, User32.RID_INPUT, &data, &size, (uint)sizeof(User32.RAWINPUTHEADER));
+            if (read == uint.MaxValue || read < sizeof(User32.RAWINPUTKEYBOARD) || data.header.dwType != User32.RIM_TYPEKEYBOARD || data.header.dwSize != read)
+            {
+                Interlocked.Increment(ref _malformedInputs);
+                return;
+            }
+            if (RawInputDecoder.TryDecode(data.keyboard.MakeCode, data.keyboard.Flags, out var code, out var down))
+            {
+                Enqueue(new RawKeyEvent(code, down, data.header.hDevice, Stopwatch.GetTimestamp()));
+            }
         }
-        if (RawInputDecoder.TryDecode(data.keyboard.MakeCode, data.keyboard.Flags, out var code, out var down))
+        catch (Exception)
         {
-            Enqueue(new RawKeyEvent(code, down, data.header.hDevice, Stopwatch.GetTimestamp()));
+            Interlocked.Increment(ref _handlerFaults);
         }
     }
 }
