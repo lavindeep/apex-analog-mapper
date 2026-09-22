@@ -4,6 +4,7 @@ using ApexMapper.Core.Calibration;
 using ApexMapper.Core.Engine;
 using ApexMapper.Core.Keys;
 using ApexMapper.Core.Profiles;
+using ApexMapper.Core.Response;
 using ApexMapper.Core.Sensors;
 using ApexMapper.Windows.Devices;
 using ApexMapper.Windows.Hid;
@@ -29,6 +30,9 @@ namespace ApexMapper.Windows.Tests.Hardware;
 public class OutputHardwareTests
 {
     private const ushort WScan = 0x11;
+
+    private static readonly ScanCode Semicolon = new(0x27);
+    private static readonly ScanCode Apostrophe = new(0x28);
 
     private static readonly ushort AllReadableButtons = Enum.GetValues<PadTarget>()
         .Where(t => t.IsButton() && t != PadTarget.Guide)
@@ -110,7 +114,8 @@ public class OutputHardwareTests
         TestContext.Current.SendDiagnosticMessage($"loopback: {rate:F0} packets/s, tick to readback p50 {p50:F3} ms, p99 {p99:F3} ms, max {latencies.Max():F3} ms");
         Assert.Null(engine.Fault);
         Assert.True(rate >= HardwareThresholds.XInputPacketsPerSecondMin, $"{rate:F0} packets/s.");
-        Assert.True(p99 < HardwareThresholds.LoopbackP99Ms, $"p50 {p50:F3} ms, p99 {p99:F3} ms.");
+        Assert.True(rate <= 1000 / VirtualPad.MinSubmitIntervalMs, $"{rate:F0} packets/s is above the submit floor's ceiling.");
+        Assert.True(p99 < HardwareThresholds.ReadbackP99Ms, $"p50 {p50:F3} ms, p99 {p99:F3} ms.");
     }
 
     /// <summary>
@@ -200,20 +205,35 @@ public class OutputHardwareTests
     }
 
     /// <summary>
-    /// The whole session against the real pad for <see cref="SoakFactAttribute.Minutes"/>:
-    /// the sensor stream sweeps W and D, and Space is pressed and released ten times a
-    /// second through the hook's callback body. After a minute of warm-up, working set,
-    /// handles, GC pauses and gen 2 collections must stay flat, and the pad must read
-    /// neutral once the input stops.
+    /// The whole session against the real pad for <see cref="SoakFactAttribute.Minutes"/>.
+    /// The profile is one axis, right stick X from ; and ', so the pad presses no button
+    /// and moves no stick Windows navigates with, and the hook swallows nothing anyone is
+    /// likely to type. The sensor stream sweeps ' through its travel once a second. After a
+    /// minute of warm-up, working set, handles, GC pauses and gen 2 collections must stay
+    /// flat, and the pad must read neutral once the sweep stops.
     /// </summary>
     [SoakFact]
     public async Task A_long_session_keeps_memory_handles_and_gc_flat_and_ends_with_every_key_at_zero()
     {
-        var stream = new SweepStream();
+        var calibrations = new Dictionary<ScanCode, KeyCalibration>();
+        foreach (var key in new[] { Semicolon, Apostrophe })
+        {
+            SensorMap.Default.TryGetSensorIndex(key, out var index);
+            var rest = RestRaw(index);
+            calibrations[key] = KeyCalibration.Create(rest, rest + Span, KeyCalibration.DefaultNoiseBand, index);
+        }
+        var profile = CompiledProfile.TryCompile(
+            new Profile("soak", "Soak", Keys: [], Axes:
+            [
+                new(Semicolon, Apostrophe, PadTarget.RightStickX, Response.Linear, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
+            ]),
+            SensorMap.Default,
+            calibrations,
+            out _)!;
+        var stream = new SweepStream(calibrations[Apostrophe]);
         using var rig = new LiveSession(VirtualPad.Connect, () => stream);
-        Assert.Null(await rig.Session.StartAsync(Request()));
+        Assert.Null(await rig.Session.StartAsync(new SessionRequest(KeyboardId, GamePath, profile, Fixtures.Signatures(3))));
         rig.Foreground!.Gain();
-        var hook = rig.Session.Hook!;
         var process = Process.GetCurrentProcess();
         var total = TimeSpan.FromMinutes(SoakFactAttribute.Minutes);
         var warmUp = TimeSpan.FromMinutes(1);
@@ -221,12 +241,9 @@ public class OutputHardwareTests
         long workingSet = 0, pauseTicks = 0;
         int handles = 0, gen2 = 0;
         var measuring = false;
-        var down = false;
         while (clock.Elapsed < total)
         {
-            down = !down;
-            hook.Handle(down ? User32.WM_KEYDOWN : User32.WM_KEYUP, Key(Space));
-            Thread.Sleep(50);
+            Thread.Sleep(250);
             if (!measuring && clock.Elapsed >= warmUp)
             {
                 measuring = true;
@@ -246,10 +263,6 @@ public class OutputHardwareTests
         var pauseMsPerSecond = TimeSpan.FromTicks(GC.GetTotalPauseDuration().Ticks - pauseTicks).TotalMilliseconds / measuredSeconds;
         var gen2Growth = GC.CollectionCount(2) - gen2;
 
-        if (down)
-        {
-            hook.Handle(User32.WM_KEYUP, Key(Space));
-        }
         stream.Rest();
         var status = rig.Session.Status();
         var neutral = SpinWait.SpinUntil(() => rig.Pad?.TryReadBack(out var s, out _) == true && s == PadReport.Neutral, 2000);
@@ -258,6 +271,7 @@ public class OutputHardwareTests
         TestContext.Current.SendDiagnosticMessage(
             $"soak {measuredSeconds / 60:F1} min: working set {workingSetGrowth:+0.0;-0.0} MB, handles {handleGrowth:+0;-0}, GC pause {pauseMsPerSecond:F3} ms/s, gen 2 {gen2Growth}, submits {status.SubmitCount}");
         Assert.True(neutral, "the pad did not return to neutral");
+        Assert.True(status.SubmitCount > 1000, $"only {status.SubmitCount} submits: the sweep did not drive the pad.");
         Assert.InRange(workingSetGrowth, -1000, 10);
         Assert.InRange(handleGrowth, -1000, 20);
         Assert.True(pauseMsPerSecond < 5, $"{pauseMsPerSecond:F3} ms of GC pause per second.");
@@ -265,7 +279,6 @@ public class OutputHardwareTests
         Assert.Equal(0, status.HookReinstalls);
         Assert.Equal(EndReason.UserStop, rig.Session.LastEnd!.Reason);
     }
-
     /// <summary>A session with the real pad and fakes for everything else a session needs.</summary>
     private sealed class LiveSession : IDisposable
     {
@@ -401,53 +414,36 @@ public class OutputHardwareTests
     }
 
     /// <summary>
-    /// A vendor stream for the soak: the rest captures with W and D sweeping their travel
-    /// over a second, one reply every three milliseconds, allocation-free.
+    /// A vendor stream for the soak: the group 3 rest capture with one key sweeping its
+    /// travel over a second, one reply every three milliseconds, allocation-free.
     /// </summary>
-    private sealed class SweepStream : IVendorStream
+    private sealed class SweepStream(KeyCalibration swept) : IVendorStream
     {
-        private readonly byte[] _group2 = Fixtures.RestGroup(2);
         private readonly byte[] _group3 = Fixtures.RestGroup(3);
         private readonly byte[] _firmware = Fixtures.Firmware;
-        private readonly (byte[] Reply, int Offset, int RestCount)[] _swept;
+        private readonly int _offset = 1 + 2 * SensorMap.SlotOf(swept.SensorIndex);
         private readonly long _start = Stopwatch.GetTimestamp();
         private byte _command;
-        private byte _selector;
         private int _resting;
 
-        public SweepStream()
-        {
-            _swept = [.. new[] { DefaultProfiles.Key.W, DefaultProfiles.Key.D }.Select(k =>
-            {
-                var cal = Calibrations()[k];
-                var reply = SensorMap.GroupOf(cal.SensorIndex) == 2 ? _group2 : _group3;
-                return (reply, 1 + 2 * SensorMap.SlotOf(cal.SensorIndex), cal.Rest);
-            })];
-        }
-
-        /// <summary>From now on every key reads at rest.</summary>
+        /// <summary>From now on the key reads at rest.</summary>
         public void Rest() => Volatile.Write(ref _resting, 1);
 
-        public void Write(byte[] buffer, int offset, int count)
-        {
-            _command = buffer[offset + 1];
-            _selector = buffer[offset + 2];
-        }
+        public void Write(byte[] buffer, int offset, int count) => _command = buffer[offset + 1];
 
         public int Read(byte[] buffer, int offset, int count)
         {
             Thread.Sleep(3);
-            var reply = _command == SensorRequest.FirmwareCommand ? _firmware : _selector == 2 ? _group2 : _group3;
+            var reply = _command == SensorRequest.FirmwareCommand ? _firmware : _group3;
             if (_command == SensorRequest.GroupCommand)
             {
                 var phase = (Stopwatch.GetTimestamp() - _start) % Stopwatch.Frequency / (double)Stopwatch.Frequency;
-                var depth = Volatile.Read(ref _resting) == 1 ? -1 : phase < 0.5 ? phase * 2 : 2 - phase * 2;
-                foreach (var (target, at, rest) in _swept)
-                {
-                    var value = depth < 0 ? rest : (ushort)(rest + KeyCalibration.DefaultNoiseBand + depth * (Span - KeyCalibration.DefaultNoiseBand));
-                    target[at] = (byte)value;
-                    target[at + 1] = (byte)(value >> 8);
-                }
+                var depth = phase < 0.5 ? phase * 2 : 2 - phase * 2;
+                var value = Volatile.Read(ref _resting) == 1
+                    ? swept.Rest
+                    : (int)(swept.Rest + swept.NoiseBand + depth * (Span - swept.NoiseBand));
+                _group3[_offset] = (byte)value;
+                _group3[_offset + 1] = (byte)(value >> 8);
             }
             var length = Math.Min(reply.Length, count);
             Array.Copy(reply, 0, buffer, offset, length);

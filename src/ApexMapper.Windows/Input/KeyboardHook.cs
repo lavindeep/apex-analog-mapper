@@ -215,10 +215,13 @@ public sealed unsafe class KeyboardHook : IDisposable
             return true;
         }
         var swallow = _policy.Decide(slot, down, injected, _foreground.IsGameForeground);
-        _store.SetDigital(slot, down);
         if (down && !swallow && _policy.IsMapped(slot))
         {
-            _store.Gate(slot);
+            _store.SetDownGated(slot);
+        }
+        else
+        {
+            _store.SetDigital(slot, down);
         }
         return swallow;
     }

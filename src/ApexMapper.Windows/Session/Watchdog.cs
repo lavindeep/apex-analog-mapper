@@ -12,7 +12,7 @@ public enum WatchdogVerdict
     /// <summary>A game can no longer see the pad in its XInput slot.</summary>
     ControllerLost,
 
-    /// <summary>Raw Input keeps seeing keys while the hook sees none: Windows removed the hook.</summary>
+    /// <summary>Raw Input counted a key the hook never saw: Windows removed the hook.</summary>
     HookLost,
 }
 
@@ -29,11 +29,17 @@ public enum WatchdogVerdict
 /// fresh <see cref="StallMs"/> from that moment instead of being declared stalled.
 ///
 /// Hook loss: Windows removes a low-level hook without telling anyone when a callback
-/// overruns its timeout. The hook and Raw Input see the same keys, so Raw Input
-/// counting events over <see cref="HookLossChecks"/> consecutive checks while the
-/// hook's count stands still means the hook is gone. Judged only while the game has
-/// focus: that is when a lost hook leaks keys into the game, and the game is then known
-/// to be visible to both (an elevated window hides input from the hook).
+/// overruns its timeout. The hook and Raw Input see the same keys, so while the hook
+/// lives, Raw Input's count minus the hook's stays where it was, apart from a moment of
+/// skew when one counter has an event the other has not counted yet. A difference that
+/// has grown on <see cref="HookLossChecks"/> consecutive checks is an event the hook
+/// never saw: one missed key-up is enough. A difference that has shrunk on two checks
+/// in a row (the hook saw something Raw Input never gets) becomes the new baseline.
+/// Judged only while the game
+/// has focus: that is when a lost hook leaks keys into the game, and the game is then
+/// known to be visible to both (an elevated window hides input from the hook). The
+/// baseline is taken afresh whenever focus returns, so what happened elsewhere does not
+/// count.
 ///
 /// Each verdict is returned once; <see cref="HookReinstalled"/> re-enables hook loss.
 /// </summary>
@@ -56,13 +62,14 @@ public sealed class Watchdog
     private bool _stallReported;
     private bool _controllerReported;
     private bool _hookReported;
-    private long _hookSeen;
-    private long _rawSeen;
-    private int _silentChecks;
+    private long _baselineDifference;
+    private long _previousDifference;
+    private bool _focusedLastCheck;
+    private int _missedChecks;
 
     /// <param name="engineTick">Timestamp of the engine's last completed tick.</param>
-    /// <param name="padPresent">Whether the pad's XInput slot still has a controller.</param>
-    /// <param name="hookEvents">The hook's callback count; any change counts as activity, so a reinstalled hook starting from zero is fine.</param>
+    /// <param name="padPresent">Whether the pad's XInput slot still had a controller at the engine's last look; never a driver call here.</param>
+    /// <param name="hookEvents">The hook's callback count; <see cref="HookReinstalled"/> rebases it when a new hook starts from zero.</param>
     /// <param name="rawEvents">Raw Input's keyboard event count.</param>
     /// <param name="gameFocused">The foreground flag the hook reads.</param>
     /// <param name="ticksPerMs">Clock ticks per millisecond; Stopwatch ticks by default.</param>
@@ -84,9 +91,7 @@ public sealed class Watchdog
     {
         _lastCheck = nowTicks;
         _baseline = nowTicks;
-        _hookSeen = _hookEvents();
-        _rawSeen = _rawEvents();
-        _silentChecks = 0;
+        Rebase();
         Volatile.Write(ref _armed, 1);
     }
 
@@ -95,9 +100,7 @@ public sealed class Watchdog
     /// <summary>A new hook is in place: forget the silence that condemned the old one.</summary>
     public void HookReinstalled()
     {
-        _silentChecks = 0;
-        _hookSeen = _hookEvents();
-        _rawSeen = _rawEvents();
+        Rebase();
         Volatile.Write(ref _hookReported, false);
     }
 
@@ -128,27 +131,45 @@ public sealed class Watchdog
 
     private bool CheckHook()
     {
-        var hook = _hookEvents();
-        var raw = _rawEvents();
-        var hookMoved = hook != _hookSeen;
-        var rawMoved = raw != _rawSeen;
-        _hookSeen = hook;
-        _rawSeen = raw;
-        if (!_gameFocused() || hookMoved)
+        if (!_gameFocused())
         {
-            _silentChecks = 0;
+            _focusedLastCheck = false;
             return false;
         }
-        if (!rawMoved)
+        if (!_focusedLastCheck)
         {
+            _focusedLastCheck = true;
+            Rebase();
             return false;
         }
-        _silentChecks++;
-        if (_silentChecks < HookLossChecks || Volatile.Read(ref _hookReported))
+        var difference = _rawEvents() - _hookEvents();
+        var previous = _previousDifference;
+        _previousDifference = difference;
+        if (difference <= _baselineDifference)
+        {
+            // Below the baseline on two checks in a row: the hook saw something Raw Input
+            // never will. Below it on one only: the hook counted an event first, and Raw
+            // Input catches up on the next check.
+            if (difference < _baselineDifference && previous < _baselineDifference)
+            {
+                _baselineDifference = Math.Max(difference, previous);
+            }
+            _missedChecks = 0;
+            return false;
+        }
+        _missedChecks++;
+        if (_missedChecks < HookLossChecks || Volatile.Read(ref _hookReported))
         {
             return false;
         }
         Volatile.Write(ref _hookReported, true);
         return true;
+    }
+
+    private void Rebase()
+    {
+        _baselineDifference = _rawEvents() - _hookEvents();
+        _previousDifference = _baselineDifference;
+        _missedChecks = 0;
     }
 }

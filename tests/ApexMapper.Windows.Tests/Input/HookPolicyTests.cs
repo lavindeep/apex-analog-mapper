@@ -84,8 +84,11 @@ public class HookPolicyTests
         Assert.False(policy.Decide(W, false, false, true));
         Assert.Equal(2, policy.SwallowedCount);
 
+        // Pressed on the desktop, still repeating when the game takes focus: the repeats
+        // are swallowed so the game never sees a key it did not get the down of.
         Assert.False(policy.Decide(S, true, false, false));
-        Assert.False(policy.Decide(S, true, false, true));
+        Assert.True(policy.Decide(S, true, false, true));
+        Assert.False(policy.Decide(S, false, false, true));
     }
 
     [Fact]
@@ -94,7 +97,10 @@ public class HookPolicyTests
         var policy = Policy();
         policy.MarkDown(W);
 
-        Assert.False(policy.Decide(W, true, false, true));
+        // Its repeats are swallowed while the game has focus and pass while it has not;
+        // its key-up passes to wherever the down went.
+        Assert.True(policy.Decide(W, true, false, true));
+        Assert.False(policy.Decide(W, true, false, false));
         Assert.False(policy.Decide(W, false, false, true));
         Assert.True(policy.Decide(W, true, false, true));
     }
@@ -273,5 +279,15 @@ public class HookPolicyTests
         Assert.False(policy.CtrlDown);
         Assert.False(policy.IsSwallowedDown(W));
         Assert.True(policy.Decide(W, true, false, true));
+    }
+
+    [Fact]
+    public void A_repeat_of_a_passed_key_passes_while_a_modifier_is_down()
+    {
+        var policy = Policy();
+        policy.MarkDown(W);
+        Assert.False(policy.Decide(LeftCtrl, true, false, true));
+
+        Assert.False(policy.Decide(W, true, false, true));
     }
 }

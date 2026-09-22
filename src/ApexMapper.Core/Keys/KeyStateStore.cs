@@ -75,6 +75,24 @@ public sealed class KeyStateStore
         }
     }
 
+    /// <summary>
+    /// Hook thread. A mapped key's down that passed through to the desktop or the game:
+    /// recorded down and gated in one write, so the engine never reads it down and
+    /// ungated in between.
+    /// </summary>
+    public void SetDownGated(int slot)
+    {
+        ref var cell = ref _cells[slot];
+        while (true)
+        {
+            var current = Volatile.Read(ref cell);
+            if (Commit(ref cell, current, current | DigitalBit | GatedBit))
+            {
+                return;
+            }
+        }
+    }
+
     /// <summary>Engine thread. A reading at rest (exactly zero) clears the gate of an analog-driven key.</summary>
     public void SetAnalog(int slot, float depth)
     {

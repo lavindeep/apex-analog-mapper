@@ -18,7 +18,9 @@ namespace ApexMapper.Windows.Input;
 /// keys physically down at install are marked passed; a Ctrl, Alt, or Win chord passes
 /// through and releases held mapped keys; on foreground loss, swallowed-down keys are
 /// marked passed so their key-up reaches the desktop, and a repeat after the flag
-/// dropped passes too.
+/// dropped passes too. The auto-repeat of a mapped key whose down passed (pressed on
+/// the desktop, then focus moved to the game) is swallowed while the game has focus and
+/// no modifier is down; its key-up still passes to whoever got the down.
 /// </summary>
 public sealed class HookPolicy
 {
@@ -141,7 +143,7 @@ public sealed class HookPolicy
                     Volatile.Write(ref _state[slot], PassedDown);
                     return false;
                 case PassedDown:
-                    return false;
+                    return Count(_mapped[slot] && gameForeground && Modifiers == 0);
                 default:
                     var swallow = _mapped[slot] && gameForeground && Modifiers == 0;
                     Volatile.Write(ref _state[slot], swallow ? SwallowedDown : PassedDown);

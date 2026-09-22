@@ -19,7 +19,10 @@ internal sealed class CrashGuard : IDisposable
         AppDomain.CurrentDomain.UnhandledException += OnUnhandled;
     }
 
-    private void OnUnhandled(object? sender, UnhandledExceptionEventArgs e)
+    private void OnUnhandled(object? sender, UnhandledExceptionEventArgs e) => Run();
+
+    /// <summary>What the handler does. Internal so a test can drive it without ending its own process.</summary>
+    internal void Run()
     {
         if (Volatile.Read(ref _disposed) != 0)
         {

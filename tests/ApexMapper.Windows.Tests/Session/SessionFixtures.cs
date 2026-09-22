@@ -129,6 +129,11 @@ internal sealed class FakeForeground(ForegroundFlag flag) : IForegroundSource
 
     public bool Stopped { get; private set; }
 
+    /// <summary>Its thread ended early, as a tracker whose loop failed.</summary>
+    public bool Died { get; set; }
+
+    public bool IsRunning => Started && !Stopped && !Died;
+
     public void Start() => Started = true;
 
     public bool Stop()

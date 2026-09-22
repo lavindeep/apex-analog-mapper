@@ -22,22 +22,35 @@ namespace ApexMapper.Windows.Session;
 /// it). A stop asked for while a start is still connecting the pad cancels the start
 /// at its next step, and the start unwinds whatever it had started.
 ///
-/// Two reactions cannot wait for the queue and run where the event lands. On the
+/// Three reactions cannot wait for the queue and run where the event lands. On the
 /// tracker thread, gaining focus gates every key whose state is unknown before the
 /// flag flips, and losing focus hands swallowed keys back to the desktop after it has
-/// dropped. On the hook thread's 50 ms timer, the <see cref="Watchdog"/>: an engine
-/// that stopped ticking gets its pad claimed at once, zeroed and unplugged on a
-/// separate thread (so the hook thread never waits on the driver), and the hook
-/// removed. A lost controller and a lost hook are posted.
+/// dropped. On the pump thread, a keyboard's removal pauses the engine's output at once;
+/// the debounced keyboard list decides, on the session thread, whether to resume. On
+/// the hook thread's 50 ms timer, the <see cref="Watchdog"/>: an engine that stopped
+/// ticking gets its pad unplugged on a worker (the hook thread never waits on the
+/// driver) and the hook removed. A lost controller and a lost hook are posted. A 250 ms
+/// health check on the session thread notices a hook or a tracker whose thread has
+/// ended, since that takes the watchdog with it.
 ///
-/// Shutdown order, each step bounded by the part's own stop: disarm the watchdog; stop
-/// the engine; zero and unplug the pad; remove the hook; stop the sensor; stop the
-/// foreground tracker; restore the GC latency mode.
+/// Shutdown order: disarm the watchdog; stop the engine; zero and unplug the pad;
+/// remove the hook; stop the sensor; stop the foreground tracker; restore the GC latency
+/// mode. Each step is bounded by the part's own stop. The keyboard is back to normal the
+/// moment the hook is gone: a key still held then reaches the game as a keyboard key,
+/// which the maintainer chose over any delay (stage 3 ledger, Q1).
 /// </summary>
 public sealed class MappingSession : IDisposable
 {
     /// <summary>How long <see cref="Dispose"/> waits for the session thread to finish the last stop.</summary>
-    public const int DisposeTimeoutMs = 10_000;
+    public const int DisposeTimeoutMs = 15_000;
+
+    public const int HealthCheckMs = 250;
+
+    /// <summary>How often a session started before its game looks for the game's process.</summary>
+    public const int GameSearchMs = 1000;
+
+    /// <summary>Handler faults on the hook thread within one health check that mean its safety checks are broken.</summary>
+    public const int HealthFaultLimit = 3;
 
     private readonly SessionServices _services;
     private readonly BlockingCollection<Action> _work = new();
@@ -47,6 +60,8 @@ public sealed class MappingSession : IDisposable
     private SessionEnd? _pendingStop;
     private SessionEnd? _lastEnd;
     private int _state;
+    private int _startPending;
+    private int _restartRequired;
     private int _handlerFaults;
     private int _disposed;
 
@@ -57,7 +72,11 @@ public sealed class MappingSession : IDisposable
         _thread.Start();
     }
 
-    /// <summary>Raised on the session thread after every state change. Must not wait for the session.</summary>
+    /// <summary>
+    /// Raised on the session thread after every state change. Must not wait for the
+    /// session: a UI marshals it with a non-blocking post, never a blocking invoke, or a
+    /// UI thread waiting in <see cref="Dispose"/> would hold up the stop.
+    /// </summary>
     public event Action<SessionState>? StateChanged;
 
     public SessionState State => (SessionState)Volatile.Read(ref _state);
@@ -74,21 +93,39 @@ public sealed class MappingSession : IDisposable
     /// <summary>For tests: the key state of the running session.</summary>
     internal KeyStateStore? Store => _parts?.Store;
 
+    /// <summary>For tests: the crash guard of the running session.</summary>
+    internal CrashGuard? CrashGuard => _parts?.CrashGuard;
+
+    /// <summary>
+    /// A controller from an earlier session could not be removed (a hung driver). Start
+    /// is refused until the app restarts, which is the only thing that clears it; the
+    /// window offers the restart.
+    /// </summary>
+    public bool RestartRequired => Volatile.Read(ref _restartRequired) != 0;
+
     /// <summary>
     /// Why a session could not start right now, or null when it can: the keyboard is
-    /// connected, the driver is running, and the game is running. Calibration is proven
-    /// by the <see cref="CompiledProfile"/> a request carries.
+    /// connected, the driver is running, and no stuck controller needs a restart. The game
+    /// need not be running yet; calibration is proven by the <see cref="CompiledProfile"/>
+    /// a request carries.
     /// </summary>
-    public SessionEnd? WhyNotStartable(Guid keyboard, string gamePath)
-    {
-        var refusal = CheckPreconditions(keyboard, gamePath, out var game);
-        game?.Dispose();
-        return refusal;
-    }
+    public SessionEnd? WhyNotStartable(Guid keyboard) => CheckPreconditions(keyboard);
 
-    /// <summary>Completes with null once the session is running (or paused), or with why it did not start.</summary>
+    /// <summary>
+    /// Completes with null once the session is running (or paused), or with why it did
+    /// not start. Refused at once while another start is in flight or after
+    /// <see cref="Dispose"/>.
+    /// </summary>
     public Task<SessionEnd?> StartAsync(SessionRequest request)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return Task.FromResult<SessionEnd?>(new SessionEnd(EndReason.StartFailed, "The app is closing."));
+        }
+        if (Interlocked.CompareExchange(ref _startPending, 1, 0) != 0)
+        {
+            return Task.FromResult<SessionEnd?>(new SessionEnd(EndReason.StartFailed, "A start is already in progress."));
+        }
         var done = new TaskCompletionSource<SessionEnd?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var cancel = new CancellationTokenSource();
         Volatile.Write(ref _pendingStop, null);
@@ -103,9 +140,14 @@ public sealed class MappingSession : IDisposable
             {
                 done.TrySetException(e);
             }
+            finally
+            {
+                Volatile.Write(ref _startPending, 0);
+            }
         });
         if (!posted)
         {
+            Volatile.Write(ref _startPending, 0);
             done.TrySetResult(new SessionEnd(EndReason.StartFailed, "The app is closing."));
         }
         return done.Task;
@@ -143,7 +185,7 @@ public sealed class MappingSession : IDisposable
         var parts = Volatile.Read(ref _parts);
         if (parts is null)
         {
-            return new SessionStatus(State, LastEnd, false, false, 0, null, false, 0, 0);
+            return new SessionStatus(State, LastEnd, false, false, false, 0, null, false, 0, 0, RestartRequired);
         }
         var focus = parts.Flag.IsGameForeground;
         var foreground = Volatile.Read(ref parts.Foreground)?.Current;
@@ -163,13 +205,15 @@ public sealed class MappingSession : IDisposable
         return new SessionStatus(
             State,
             LastEnd,
+            Volatile.Read(ref parts.Game) is not null,
             focus,
             foreground is { IsGame: true, Elevation: not Elevation.Visible },
             fallback,
             problem,
             awaitingRelease,
             Volatile.Read(ref parts.Pad)?.SubmitCount ?? 0,
-            Volatile.Read(ref parts.HookReinstalls));
+            Volatile.Read(ref parts.HookReinstalls),
+            RestartRequired);
     }
 
     /// <summary>Stops a running session (as the app closing) and ends the session thread.</summary>
@@ -228,9 +272,12 @@ public sealed class MappingSession : IDisposable
         Volatile.Read(ref _starting)?.Cancel();
     }
 
-    private SessionEnd? CheckPreconditions(Guid keyboard, string gamePath, out IGameProcess? game)
+    private SessionEnd? CheckPreconditions(Guid keyboard)
     {
-        game = null;
+        if (RestartRequired)
+        {
+            return SessionEnd.For(EndReason.RestartRequired);
+        }
         if (!KeyboardPresent(keyboard))
         {
             return SessionEnd.For(EndReason.KeyboardMissing);
@@ -242,11 +289,12 @@ public sealed class MappingSession : IDisposable
             case DriverState.NotStarted:
                 return SessionEnd.For(EndReason.DriverNotStarted);
         }
-        game = _services.FindGame(gamePath);
-        return game is null ? SessionEnd.For(EndReason.GameNotRunning) : null;
+        return null;
     }
 
     private bool KeyboardPresent(Guid keyboard) => _services.Keyboards.Current.Any(k => k.ContainerId == keyboard);
+
+    private SessionEnd PendingStop() => Volatile.Read(ref _pendingStop) ?? SessionEnd.For(EndReason.UserStop);
 
     private SessionEnd? DoStart(SessionRequest request, CancellationToken cancel)
     {
@@ -254,21 +302,25 @@ public sealed class MappingSession : IDisposable
         {
             return new SessionEnd(EndReason.StartFailed, "A session is already running.");
         }
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return new SessionEnd(EndReason.StartFailed, "The app is closing.");
+        }
         SetState(SessionState.Starting);
-        var refusal = CheckPreconditions(request.Keyboard, request.GamePath, out var game);
-        if (refusal is null && cancel.IsCancellationRequested)
-        {
-            refusal = Volatile.Read(ref _pendingStop) ?? SessionEnd.For(EndReason.UserStop);
-        }
-        if (refusal is not null)
-        {
-            game?.Dispose();
-            return End(refusal);
-        }
-        var parts = new Parts(request, game!, _services.SwallowInjected);
-        Volatile.Write(ref _parts, parts);
+        Parts? parts = null;
         try
         {
+            var refusal = CheckPreconditions(request.Keyboard);
+            if (refusal is null && cancel.IsCancellationRequested)
+            {
+                refusal = PendingStop();
+            }
+            if (refusal is not null)
+            {
+                return End(refusal);
+            }
+            parts = new Parts(request, _services.SwallowInjected);
+            Volatile.Write(ref _parts, parts);
             StartParts(parts, cancel);
             return null;
         }
@@ -276,10 +328,14 @@ public sealed class MappingSession : IDisposable
         {
             var end = e switch
             {
-                OperationCanceledException => Volatile.Read(ref _pendingStop) ?? SessionEnd.For(EndReason.UserStop),
+                OperationCanceledException => PendingStop(),
                 PadException pad => new SessionEnd(EndReason.PadFailed, pad.Message),
                 _ => new SessionEnd(EndReason.StartFailed, "The session could not start: " + e.Message),
             };
+            if (parts is null)
+            {
+                return End(end);
+            }
             SetState(SessionState.Stopping);
             var problem = Teardown(parts);
             Volatile.Write(ref _parts, null);
@@ -320,22 +376,33 @@ public sealed class MappingSession : IDisposable
         engine.Start();
 
         parts.CrashGuard = new CrashGuard(() => Emergency(parts));
-        parts.Game.OnExit(() => RequestStop(parts, SessionEnd.For(EndReason.GameExited)));
+        LookForGame(parts);
+        if (Volatile.Read(ref parts.Game) is null)
+        {
+            parts.GameSearch = new Timer(_ => Post(() => LookForGame(parts)), null, GameSearchMs, GameSearchMs);
+        }
         parts.OnPower = () => RequestStop(parts, SessionEnd.For(EndReason.SleepOrWake));
         _services.Power.SleepOrWake += parts.OnPower;
-        parts.OnKeyboards = _ => Post(() => OnKeyboards(parts));
+        parts.OnKeyboards = _ => Post(() => OnKeyboards(parts, removal: false));
         _services.Keyboards.Changed += parts.OnKeyboards;
+        parts.OnRemoving = () =>
+        {
+            // Pump thread: one volatile write now, the state change on the session thread.
+            engine.Paused = true;
+            Post(() => OnKeyboards(parts, removal: true));
+        };
+        _services.Keyboards.Removing += parts.OnRemoving;
         cancel.ThrowIfCancellationRequested();
 
-        var pad = parts.Pad!;
         var watchdog = new Watchdog(
             () => engine.LastTickTicks,
-            pad.IsPresent,
+            () => engine.PadPresent,
             () => Volatile.Read(ref parts.Hook)?.EventCount ?? 0,
             _services.RawInputEvents,
             () => parts.Flag.IsGameForeground);
         watchdog.Arm(Stopwatch.GetTimestamp());
         Volatile.Write(ref parts.Watchdog, watchdog);
+        parts.Health = new Timer(_ => Post(() => CheckHealth(parts)), null, HealthCheckMs, HealthCheckMs);
 
         var present = KeyboardPresent(request.Keyboard);
         engine.Paused = !present;
@@ -377,12 +444,11 @@ public sealed class MappingSession : IDisposable
         switch (watchdog.Check(Stopwatch.GetTimestamp()))
         {
             case WatchdogVerdict.EngineStalled:
-                var pad = parts.Pad!;
-                pad.Claim();
-                new Thread(() => pad.Unplug()) { IsBackground = true, Name = "apex-unplug" }.Start();
+                // The stop goes first: nothing below can keep it from being asked for.
+                RequestStop(parts, SessionEnd.For(EndReason.EngineStalled));
+                Volatile.Read(ref parts.Pad)?.BeginUnplug();
                 // From the hook thread this returns at once; the hook goes when this timer message returns.
                 Volatile.Read(ref parts.Hook)?.Stop();
-                RequestStop(parts, SessionEnd.For(EndReason.EngineStalled));
                 break;
             case WatchdogVerdict.ControllerLost:
                 RequestStop(parts, SessionEnd.For(EndReason.ControllerDisconnected));
@@ -393,31 +459,95 @@ public sealed class MappingSession : IDisposable
         }
     }
 
-    /// <summary>Session thread. Pause when the selected keyboard disappears; on its return, gate what is unknown, then resume.</summary>
-    private void OnKeyboards(Parts parts)
+    /// <summary>
+    /// Session thread. Once the game's process is found, its exit stops the session.
+    /// Called at start and, until then, every <see cref="GameSearchMs"/>, so Start works
+    /// before the game is launched as well as after.
+    /// </summary>
+    private void LookForGame(Parts parts)
     {
-        if (!ReferenceEquals(Volatile.Read(ref _parts), parts) || State is not (SessionState.Running or SessionState.Paused))
+        if (Volatile.Read(ref parts.Game) is not null || !ReferenceEquals(Volatile.Read(ref _parts), parts))
         {
             return;
         }
-        var present = KeyboardPresent(parts.Request.Keyboard);
-        if (!present && State == SessionState.Running)
+        var game = _services.FindGame(parts.Request.GamePath);
+        if (game is null)
         {
-            parts.Engine!.Paused = true;
-            SetState(SessionState.Paused);
+            return;
         }
-        else if (present && State == SessionState.Paused)
+        Volatile.Write(ref parts.Game, game);
+        parts.GameSearch?.Dispose();
+        game.OnExit(() => RequestStop(parts, SessionEnd.For(EndReason.GameExited)));
+    }
+
+    /// <summary>
+    /// Session thread. A removal (already paused on the pump thread) pauses the session;
+    /// the debounced list resumes it when the selected keyboard is there, gating what is
+    /// unknown first, or keeps it paused when it is not. A removal of another keyboard
+    /// costs a pause of about the debounce and a gate on the held keys.
+    /// </summary>
+    private void OnKeyboards(Parts parts, bool removal)
+    {
+        if (!IsCurrent(parts))
+        {
+            return;
+        }
+        var engine = parts.Engine!;
+        if (removal || !KeyboardPresent(parts.Request.Keyboard))
+        {
+            engine.Paused = true;
+            if (State == SessionState.Running)
+            {
+                SetState(SessionState.Paused);
+            }
+            return;
+        }
+        if (State == SessionState.Paused || engine.Paused)
         {
             parts.Store.GateUnknown();
-            parts.Engine!.Paused = false;
-            SetState(SessionState.Running);
+            engine.Paused = false;
+            if (State == SessionState.Paused)
+            {
+                SetState(SessionState.Running);
+            }
         }
     }
 
-    /// <summary>Session thread. Windows removed the hook: gate what is unknown, put a new hook in, and count it.</summary>
+    /// <summary>
+    /// Session thread, every <see cref="HealthCheckMs"/>. The watchdog lives on the hook
+    /// thread's timer, so a hook thread that ended takes it along: that hook is replaced.
+    /// A watchdog that throws on every tick, or a tracker that stopped following focus,
+    /// ends the session.
+    /// </summary>
+    private void CheckHealth(Parts parts)
+    {
+        if (!IsCurrent(parts))
+        {
+            return;
+        }
+        var hook = Volatile.Read(ref parts.Hook);
+        if (hook is not null && !hook.IsInstalled)
+        {
+            ReinstallHook(parts);
+            return;
+        }
+        var faults = hook?.HandlerFaults ?? 0;
+        if (faults - parts.HookFaultsSeen >= HealthFaultLimit)
+        {
+            DoStop(parts, new SessionEnd(EndReason.SafetyFault, SessionEnd.For(EndReason.SafetyFault).Message + " The keyboard hook's checks kept failing."));
+            return;
+        }
+        parts.HookFaultsSeen = faults;
+        if (Volatile.Read(ref parts.Foreground) is { IsRunning: false })
+        {
+            DoStop(parts, new SessionEnd(EndReason.SafetyFault, SessionEnd.For(EndReason.SafetyFault).Message + " Focus tracking stopped."));
+        }
+    }
+
+    /// <summary>Session thread. Windows removed the hook, or its thread ended: gate what is unknown, put a new hook in, and count it.</summary>
     private void ReinstallHook(Parts parts)
     {
-        if (!ReferenceEquals(Volatile.Read(ref _parts), parts) || State is not (SessionState.Running or SessionState.Paused))
+        if (!IsCurrent(parts))
         {
             return;
         }
@@ -431,14 +561,14 @@ public sealed class MappingSession : IDisposable
         old?.Dispose();
         try
         {
-            var watchdog = parts.Watchdog!;
             var hook = new KeyboardHook(parts.Store, parts.Policy, parts.Flag, parts.MappedKeys)
             {
                 StopRequested = old?.StopRequested,
                 Timer = old?.Timer,
             };
             Volatile.Write(ref parts.Hook, hook);
-            watchdog.HookReinstalled();
+            parts.HookFaultsSeen = 0;
+            parts.Watchdog!.HookReinstalled();
             hook.Start();
             Interlocked.Increment(ref parts.HookReinstalls);
         }
@@ -447,6 +577,9 @@ public sealed class MappingSession : IDisposable
             DoStop(parts, new SessionEnd(EndReason.HookFailed, SessionEnd.For(EndReason.HookFailed).Message + " " + e.Message));
         }
     }
+
+    private bool IsCurrent(Parts parts) =>
+        ReferenceEquals(Volatile.Read(ref _parts), parts) && State is SessionState.Running or SessionState.Paused;
 
     /// <summary>Session thread. The first stop for a session wins; later ones, and stale ones from an earlier session, do nothing.</summary>
     private void DoStop(Parts? expected, SessionEnd end)
@@ -474,7 +607,8 @@ public sealed class MappingSession : IDisposable
 
     /// <summary>
     /// The shutdown order. Every step runs even when an earlier one fails; what went
-    /// wrong comes back as one sentence for the status card, or null.
+    /// wrong comes back as one sentence for the status card, or null. A part whose
+    /// thread did not stop is not disposed, so nothing joins it a second time.
     /// </summary>
     private string? Teardown(Parts parts)
     {
@@ -497,6 +631,7 @@ public sealed class MappingSession : IDisposable
         Step(() =>
         {
             Volatile.Read(ref parts.Watchdog)?.Disarm();
+            parts.Health?.Dispose();
             parts.CrashGuard?.Dispose();
             if (parts.OnPower is not null)
             {
@@ -506,7 +641,12 @@ public sealed class MappingSession : IDisposable
             {
                 _services.Keyboards.Changed -= parts.OnKeyboards;
             }
-            parts.Game.Dispose();
+            if (parts.OnRemoving is not null)
+            {
+                _services.Keyboards.Removing -= parts.OnRemoving;
+            }
+            parts.GameSearch?.Dispose();
+            Volatile.Read(ref parts.Game)?.Dispose();
             return null;
         });
         var engineStopped = true;
@@ -527,7 +667,13 @@ public sealed class MappingSession : IDisposable
             {
                 pad.Dispose();
             }
-            return unplugged ? pad.UnplugError : "The virtual controller could not be removed in time.";
+            if (!unplugged)
+            {
+                // Only the process ending clears a controller the driver will not remove.
+                Volatile.Write(ref _restartRequired, 1);
+                return "The virtual controller could not be removed. Restart the app to clear it.";
+            }
+            return pad.UnplugError;
         });
         Step(() =>
         {
@@ -536,7 +682,10 @@ public sealed class MappingSession : IDisposable
                 return null;
             }
             var stopped = hook.Stop();
-            hook.Dispose();
+            if (stopped)
+            {
+                hook.Dispose();
+            }
             return stopped ? null : "The keyboard hook thread did not stop.";
         });
         Step(() =>
@@ -546,7 +695,10 @@ public sealed class MappingSession : IDisposable
                 return null;
             }
             var stopped = poller.Stop();
-            poller.Dispose();
+            if (stopped)
+            {
+                poller.Dispose();
+            }
             return stopped ? null : "The sensor thread did not stop.";
         });
         Step(() =>
@@ -556,7 +708,10 @@ public sealed class MappingSession : IDisposable
                 return null;
             }
             var stopped = foreground.Stop();
-            foreground.Dispose();
+            if (stopped)
+            {
+                foreground.Dispose();
+            }
             return stopped ? null : "The foreground tracker thread did not stop.";
         });
         Step(() =>
@@ -601,7 +756,8 @@ public sealed class MappingSession : IDisposable
     private sealed class Parts
     {
         public readonly SessionRequest Request;
-        public readonly IGameProcess Game;
+        public IGameProcess? Game;
+        public Timer? GameSearch;
         public readonly KeyStateStore Store = new();
         public readonly ForegroundFlag Flag = new();
         public readonly HookPolicy Policy;
@@ -617,14 +773,16 @@ public sealed class MappingSession : IDisposable
         public EngineLoop? Engine;
         public Watchdog? Watchdog;
         public CrashGuard? CrashGuard;
+        public Timer? Health;
         public Action? OnPower;
         public Action<IReadOnlyList<KeyboardInfo>>? OnKeyboards;
+        public Action? OnRemoving;
+        public int HookFaultsSeen;
         public int HookReinstalls;
 
-        public Parts(SessionRequest request, IGameProcess game, bool swallowInjected)
+        public Parts(SessionRequest request, bool swallowInjected)
         {
             Request = request;
-            Game = game;
             Policy = new HookPolicy { SwallowInjected = swallowInjected };
             Mapper = new Mapper(request.Profile, Store);
             MappedKeys = request.Profile.Keys.Select(k => k.Key.Key)

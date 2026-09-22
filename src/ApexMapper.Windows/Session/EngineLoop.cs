@@ -8,14 +8,19 @@ using ApexMapper.Windows.Timing;
 namespace ApexMapper.Windows.Session;
 
 /// <summary>
-/// The engine thread: every millisecond on the high-resolution timer it runs the
-/// mapper over the latest sensor snapshot and the hook's key state, offers the report
-/// to the pad, and publishes the tick's timestamp for the watchdog.
+/// The engine thread: on every period of the 1 ms high-resolution timer (1.51 ms at
+/// p50 as measured in stage 0) it runs the mapper over the latest sensor snapshot and
+/// the hook's key state, offers the report to the pad, and publishes the tick's
+/// timestamp for the watchdog.
 ///
 /// Output is live while the game has focus and the session is not paused; otherwise
 /// the engine keeps ticking (gates and fallback stay current) but offers neutral. When
 /// output goes live again the mapper's ramp, handover, conflict and rate state is reset
 /// first, so nothing from before the gap is released.
+///
+/// Every <see cref="PresenceCheckMs"/> the engine also reads the pad's XInput slot and
+/// publishes <see cref="PadPresent"/> for the watchdog, which keeps that driver call off
+/// the hook thread; a stalled engine stops the reads, and the stall rule covers it.
 ///
 /// The thread ends when the pad is claimed (the watchdog or shutdown took it), when
 /// <see cref="Stop"/> is called, or on a failure, which is kept in <see cref="Fault"/>
@@ -26,6 +31,7 @@ namespace ApexMapper.Windows.Session;
 public sealed class EngineLoop
 {
     public const int PeriodMs = 1;
+    public const int PresenceCheckMs = 50;
 
     /// <summary>How long <see cref="Stop"/> waits for the thread; the plan's shutdown bound for the engine.</summary>
     public const int JoinTimeoutMs = 50;
@@ -35,12 +41,15 @@ public sealed class EngineLoop
     private readonly VirtualPad _pad;
     private readonly ForegroundFlag _foreground;
     private readonly double _ticksPerMs = Stopwatch.Frequency / 1000d;
+    private readonly long _presenceCheckTicks = PresenceCheckMs * Stopwatch.Frequency / 1000;
     private readonly Lock _timerLock = new();
     private HighResolutionTimer? _timer;
     private Thread? _thread;
     private PadReport _report;
     private long _previousTicks;
     private long _lastTickTicks;
+    private long _nextPresenceCheck;
+    private int _padPresent = 1;
     private bool _wasLive;
     private int _paused;
     private int _stopping;
@@ -67,6 +76,9 @@ public sealed class EngineLoop
 
     /// <summary>Stopwatch timestamp of the last completed tick, or zero before the first.</summary>
     public long LastTickTicks => Volatile.Read(ref _lastTickTicks);
+
+    /// <summary>Whether a game could see the pad at the engine's last look, at most <see cref="PresenceCheckMs"/> ago.</summary>
+    public bool PadPresent => Volatile.Read(ref _padPresent) != 0;
 
     /// <summary>Why the engine stopped on its own, if it did.</summary>
     public string? Fault => Volatile.Read(ref _fault);
@@ -125,6 +137,11 @@ public sealed class EngineLoop
         if (!_pad.TrySubmit(_report, nowTicks))
         {
             return false;
+        }
+        if (nowTicks >= _nextPresenceCheck)
+        {
+            _nextPresenceCheck = nowTicks + _presenceCheckTicks;
+            Volatile.Write(ref _padPresent, _pad.IsPresent() ? 1 : 0);
         }
         Volatile.Write(ref _lastTickTicks, nowTicks);
         return true;

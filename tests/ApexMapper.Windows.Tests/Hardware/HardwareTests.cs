@@ -4,6 +4,7 @@ using ApexMapper.Core.Sensors;
 using ApexMapper.Windows.Devices;
 using ApexMapper.Windows.Hid;
 using ApexMapper.Windows.Input;
+using ApexMapper.Windows.Session;
 using ApexMapper.Windows.Tests.Native;
 using Xunit;
 
@@ -297,6 +298,8 @@ public class HardwareTests
         Thread.Sleep(200);
         var current = tracker.Current;
         var flagWhileInFront = flag.IsGameForeground;
+        // The session watches the game's process for its exit: it must be able to open an elevated one.
+        using var game = GameProcess.Find(regedit);
         Assert.True(hook.Stop());
         Assert.True(tracker.Stop());
 
@@ -306,5 +309,41 @@ public class HardwareTests
         Assert.Equal(0, policy.SwallowedCount);
         Assert.Equal(0, tracker.HandlerFaults);
         Assert.Equal(0, hook.HandlerFaults);
+        Assert.NotNull(game);
+    }
+
+    /// <summary>
+    /// A question for the design, not a pass/fail rule: when a keyboard is unplugged with a
+    /// key held, does Windows deliver that key's key-up? Hold W, pull the Apex's cable
+    /// within 30 s, keep holding W for a second, then plug it back in. Needs
+    /// APEX_UNPLUG_CHECK=1 as well, since it waits for a person.
+    /// </summary>
+    [HardwareFact]
+    public void What_the_hook_sees_when_a_keyboard_is_unplugged_with_a_key_held()
+    {
+        Assert.SkipUnless(Environment.GetEnvironmentVariable("APEX_UNPLUG_CHECK") == "1", "Set APEX_UNPLUG_CHECK=1 as well; it waits for someone to pull the cable.");
+        var store = new KeyStateStore();
+        var w = new ScanCode(WScan);
+        using var hook = new KeyboardHook(store, new HookPolicy(), new ForegroundFlag(), []);
+        using var pump = new RawInputPump();
+        long removedAt = 0;
+        pump.DeviceChanged += (_, arrived) =>
+        {
+            if (!arrived)
+            {
+                Interlocked.CompareExchange(ref removedAt, Stopwatch.GetTimestamp(), 0);
+            }
+        };
+        hook.Start();
+        pump.Start();
+
+        Assert.True(SpinWait.SpinUntil(() => store.Read(w.Slot).Digital, 30_000), "W was never held.");
+        Assert.True(SpinWait.SpinUntil(() => Volatile.Read(ref removedAt) != 0, 30_000), "No keyboard was removed while W was held.");
+        var upAfterRemoval = SpinWait.SpinUntil(() => !store.Read(w.Slot).Digital, 1000);
+        var ms = (Stopwatch.GetTimestamp() - Volatile.Read(ref removedAt)) * 1000d / Stopwatch.Frequency;
+
+        TestContext.Current.SendDiagnosticMessage(upAfterRemoval
+            ? $"unplug: the hook saw W's key-up {ms:F0} ms after the removal notice"
+            : "unplug: no key-up for W within 1 s of the removal notice; W stays down in the store");
     }
 }

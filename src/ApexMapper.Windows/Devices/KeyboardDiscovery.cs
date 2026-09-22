@@ -31,6 +31,13 @@ public sealed class KeyboardDiscovery : IDisposable
     /// <summary>Raised on a thread-pool thread with the new list after a device change.</summary>
     public event Action<IReadOnlyList<KeyboardInfo>>? Changed;
 
+    /// <summary>
+    /// Raised on the pump thread the moment any keyboard is removed, before the debounced
+    /// <see cref="Changed"/> says which. A running session pauses on it. Must be cheap; a
+    /// throwing handler is counted in <see cref="HandlerFaults"/>.
+    /// </summary>
+    public event Action? Removing;
+
     public KeyboardDiscovery(Func<IReadOnlyList<KeyboardInfo>>? enumerate = null)
     {
         _enumerate = enumerate ?? Enumerate;
@@ -42,7 +49,7 @@ public sealed class KeyboardDiscovery : IDisposable
     /// <summary>Why the last background refresh kept the previous list; null after a good one.</summary>
     public string? LastError => Volatile.Read(ref _lastError);
 
-    /// <summary>Exceptions thrown by <see cref="Changed"/> subscribers; they are not enumeration failures and never reach <see cref="LastError"/>.</summary>
+    /// <summary>Exceptions thrown by <see cref="Changed"/> and <see cref="Removing"/> subscribers; they are not enumeration failures and never reach <see cref="LastError"/>.</summary>
     public int HandlerFaults => Volatile.Read(ref _handlerFaults);
 
     /// <summary>
@@ -131,6 +138,17 @@ public sealed class KeyboardDiscovery : IDisposable
     /// <summary>Pump thread. A device change that races Dispose is ignored rather than touching a disposed timer.</summary>
     internal void OnDeviceChanged(nint device, bool arrived)
     {
+        if (!arrived)
+        {
+            try
+            {
+                Removing?.Invoke();
+            }
+            catch (Exception)
+            {
+                Interlocked.Increment(ref _handlerFaults);
+            }
+        }
         lock (_lifetime)
         {
             if (!_disposed)

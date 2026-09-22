@@ -76,7 +76,7 @@ public class VirtualPadTests
     }
 
     [Fact]
-    public void Changes_are_capped_at_one_submit_per_two_milliseconds_and_the_last_change_still_lands()
+    public void A_change_is_held_back_for_one_and_a_half_milliseconds_and_the_last_change_still_lands()
     {
         var driver = new FakePadDriver();
         using var pad = Connect(driver);
@@ -84,11 +84,11 @@ public class VirtualPadTests
         var softer = Throttle with { RightTrigger = 100 };
 
         pad.TrySubmit(Throttle, Ms(100));
-        pad.TrySubmit(softer, Ms(101));
+        pad.TrySubmit(softer, Ms(101.4));
         Assert.Equal(before + 1, driver.Submits);
         Assert.Equal(Throttle, driver.State);
 
-        pad.TrySubmit(softer, Ms(102));
+        pad.TrySubmit(softer, Ms(101.6));
         Assert.Equal(before + 2, driver.Submits);
         Assert.Equal(softer, driver.State);
     }
@@ -199,5 +199,93 @@ public class VirtualPadTests
         Assert.True(pad.IsPresent());
         driver.Gone = true;
         Assert.False(pad.IsPresent());
+    }
+
+    /// <summary>A driver whose zero never returns until released, on the unplug worker only.</summary>
+    private static (FakePadDriver Driver, ManualResetEventSlim Release) Hanging()
+    {
+        var release = new ManualResetEventSlim(false);
+        var driver = new FakePadDriver
+        {
+            OnSubmit = _ =>
+            {
+                if (Thread.CurrentThread.Name == "apex-unplug")
+                {
+                    release.Wait(TestContext.Current.CancellationToken);
+                }
+            },
+        };
+        return (driver, release);
+    }
+
+    [Fact]
+    public void A_hung_driver_holds_every_unplug_caller_for_the_bound_and_no_longer()
+    {
+        var (driver, release) = Hanging();
+        using var _ = release;
+        using var pad = Connect(driver);
+        var clock = Stopwatch.StartNew();
+
+        Assert.False(pad.Unplug());
+
+        Assert.InRange(clock.ElapsedMilliseconds, VirtualPad.UnplugWaitMs - 50, VirtualPad.UnplugWaitMs + 1000);
+        Assert.True(pad.IsClaimed);
+        Assert.False(pad.IsUnplugged);
+        release.Set();
+        Assert.True(pad.Unplug());
+        Assert.False(driver.Connected);
+    }
+
+    [Fact]
+    public void A_second_caller_waits_for_the_first_unplug_and_the_pad_is_disconnected_once()
+    {
+        var (driver, release) = Hanging();
+        using var _ = release;
+        using var pad = Connect(driver);
+        var results = new bool[2];
+        var callers = Enumerable.Range(0, 2).Select(i => new Thread(() => results[i] = pad.Unplug())).ToArray();
+        foreach (var caller in callers)
+        {
+            caller.Start();
+        }
+
+        Thread.Sleep(100);
+        Assert.All(callers, c => Assert.True(c.IsAlive));
+        release.Set();
+        Assert.All(callers, c => Assert.True(c.Join(2000)));
+
+        Assert.Equal([true, true], results);
+        Assert.Single(driver.Log, "disconnect");
+    }
+
+    [Fact]
+    public void Begin_unplug_claims_and_returns_at_once_while_the_worker_is_in_the_driver()
+    {
+        var (driver, release) = Hanging();
+        using var _ = release;
+        using var pad = Connect(driver);
+        var clock = Stopwatch.StartNew();
+
+        pad.BeginUnplug();
+
+        Assert.True(clock.ElapsedMilliseconds < 100, $"BeginUnplug took {clock.ElapsedMilliseconds} ms.");
+        Assert.True(pad.IsClaimed);
+        Assert.False(pad.TrySubmit(Throttle, Ms(100)));
+        release.Set();
+        Assert.True(SpinWait.SpinUntil(() => pad.IsUnplugged, 2000));
+        Assert.False(driver.Connected);
+    }
+
+    [Fact]
+    public void Unplugging_a_disposed_pad_is_a_no_op_not_a_crash()
+    {
+        var driver = new FakePadDriver();
+        var pad = Connect(driver);
+        pad.Dispose();
+
+        pad.BeginUnplug();
+
+        Assert.True(pad.Unplug());
+        Assert.Single(driver.Log, "disconnect");
     }
 }

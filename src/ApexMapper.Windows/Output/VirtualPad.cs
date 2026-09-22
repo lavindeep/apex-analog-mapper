@@ -15,26 +15,32 @@ public sealed class PadException(string message, Exception? inner = null) : Exce
 /// and a zero, then reads back until every channel is zero, for up to two seconds.
 ///
 /// The engine owns the pad and submits through <see cref="TrySubmit"/>, which skips a
-/// report equal to the last one and holds a change back until the second engine tick
-/// after the previous submit (500 Hz); a later tick offers it again. Any thread can
-/// take the pad away: <see cref="Claim"/> is one interlocked exchange, after which every
-/// <see cref="TrySubmit"/> returns false without touching the driver, including the
-/// return of a submit that was already inside the driver. <see cref="Unplug"/> claims,
-/// zeros, then disconnects; the first caller does the work and later ones wait for it.
-/// If the engine is inside a driver call when the pad is taken, the zero may race it;
-/// the disconnect that follows is what a game acts on.
+/// report equal to the last one and holds a change back until
+/// <see cref="MinSubmitIntervalMs"/> after the previous submit; a later tick offers it
+/// again. Any thread can take the pad away: <see cref="Claim"/> is one interlocked
+/// exchange, after which every <see cref="TrySubmit"/> returns false without touching
+/// the driver, including the return of a submit that was already inside the driver.
+///
+/// Unplugging zeros, then disconnects, on a worker thread of its own, so a driver that
+/// hangs holds nobody but that worker. <see cref="BeginUnplug"/> claims and starts it
+/// without waiting (the watchdog, on the hook thread); <see cref="Unplug"/> also waits,
+/// at most <see cref="UnplugWaitMs"/>. Whoever comes first starts the worker, and every
+/// caller waits on the same result. If the engine is inside a driver call when the pad
+/// is taken, the zero may race it; the disconnect that follows is what a game acts on.
 /// </summary>
 public sealed class VirtualPad : IDisposable
 {
     public const int ConnectTimeoutMs = 2000;
 
     /// <summary>
-    /// 500 Hz on the engine's 1 ms ticks: every other tick. Half a tick of slack keeps a
-    /// tick that arrives a little early from pushing the change to the third tick.
+    /// The least time between two submits. The engine's 1 ms waitable timer measured a
+    /// p50 period of 1.51 ms in stage 0, so this admits about one change per tick and
+    /// averages under 500 a second (486 to 490 measured). A 2 ms floor made every change
+    /// wait for the second tick and measured 438.
     /// </summary>
     public const double MinSubmitIntervalMs = 1.5;
 
-    /// <summary>How long a second <see cref="Unplug"/> caller waits for the first to finish.</summary>
+    /// <summary>The bound on <see cref="Unplug"/>: the plan's 2 s for the pad step, far above the sub-millisecond measured zero and disconnect.</summary>
     public const int UnplugWaitMs = 2000;
 
     private const int EngineOwns = 0;
@@ -43,6 +49,9 @@ public sealed class VirtualPad : IDisposable
 
     private readonly IPadDriver _driver;
     private readonly long _minIntervalTicks = (long)(MinSubmitIntervalMs * Stopwatch.Frequency / 1000);
+
+    // Never disposed: a caller may still arrive to wait on it after the pad was disposed,
+    // and without WaitHandle being touched it holds no kernel handle.
     private readonly ManualResetEventSlim _unplugged = new(false);
     private int _owner;
     private int _unplugStarted;
@@ -50,7 +59,6 @@ public sealed class VirtualPad : IDisposable
     private long _lastSubmitTicks = long.MinValue / 2;
     private long _submitCount;
     private string? _unplugError;
-
     private VirtualPad(IPadDriver driver, int userIndex)
     {
         _driver = driver;
@@ -142,14 +150,15 @@ public sealed class VirtualPad : IDisposable
                 driver.Submit(PadReport.Neutral);
                 nudged = true;
             }
-            cancel.WaitHandle.WaitOne(10);
+            // A sleep, not the token's wait handle, which would create a kernel event per connect.
+            Thread.Sleep(10);
         }
         throw new PadException("The virtual controller did not read neutral within 2 seconds of connecting.");
     }
 
     /// <summary>
     /// Engine thread. False once the pad has been claimed: the engine must stop. True
-    /// otherwise, whether the report was sent, was unchanged, or waits for the 500 Hz cap.
+    /// otherwise, whether the report was sent, was unchanged, or waits for the interval.
     /// Throws <see cref="PadException"/> when the driver fails.
     /// </summary>
     public bool TrySubmit(in PadReport report, long nowTicks)
@@ -186,17 +195,44 @@ public sealed class VirtualPad : IDisposable
     public bool Claim() => Interlocked.Exchange(ref _owner, Claimed) != Claimed;
 
     /// <summary>
-    /// Claims, submits neutral, then disconnects. Driver errors are kept in
-    /// <see cref="UnplugError"/>, never thrown. Idempotent: a later caller waits up to
-    /// <see cref="UnplugWaitMs"/> for the first and returns whether it finished.
+    /// Claims and starts the zero and disconnect on a worker, returning at once. Safe on
+    /// the hook thread. If no thread can be started, the next <see cref="Unplug"/> does
+    /// the work on its own thread instead.
     /// </summary>
-    public bool Unplug()
+    public void BeginUnplug()
     {
         Claim();
         if (Interlocked.Exchange(ref _unplugStarted, 1) != 0)
         {
-            return _unplugged.Wait(UnplugWaitMs);
+            return;
         }
+        try
+        {
+            new Thread(UnplugNow) { IsBackground = true, Name = "apex-unplug" }.Start();
+        }
+        catch (Exception)
+        {
+            Volatile.Write(ref _unplugStarted, 0);
+        }
+    }
+
+    /// <summary>
+    /// Claims, zeros, disconnects, and waits at most <see cref="UnplugWaitMs"/>. Returns
+    /// whether both were attempted in time. Driver errors are kept in
+    /// <see cref="UnplugError"/>, never thrown. Any number of callers, from any thread.
+    /// </summary>
+    public bool Unplug()
+    {
+        BeginUnplug();
+        if (Interlocked.CompareExchange(ref _unplugStarted, 1, 0) == 0)
+        {
+            UnplugNow();
+        }
+        return _unplugged.Wait(UnplugWaitMs);
+    }
+
+    private void UnplugNow()
+    {
         try
         {
             _driver.Submit(PadReport.Neutral);
@@ -214,22 +250,19 @@ public sealed class VirtualPad : IDisposable
             Interlocked.CompareExchange(ref _unplugError, Describe(e), null);
         }
         _unplugged.Set();
-        return true;
     }
-
     /// <summary>True while a game can see a controller in this pad's slot. Any thread; costs one XInput read.</summary>
     public bool IsPresent() => _driver.TryReadBack(UserIndex, out _, out _);
 
     /// <summary>The state a game reads right now, for tests and the loopback measurement.</summary>
     public bool TryReadBack(out PadReport report, out uint packetNumber) => _driver.TryReadBack(UserIndex, out report, out packetNumber);
 
-    /// <summary>Unplugs if nobody has, then releases the driver handle.</summary>
+    /// <summary>Unplugs if nobody has, then releases the driver handle, unless the unplug is still stuck in the driver.</summary>
     public void Dispose()
     {
         if (Unplug())
         {
             _driver.Dispose();
-            _unplugged.Dispose();
         }
     }
 

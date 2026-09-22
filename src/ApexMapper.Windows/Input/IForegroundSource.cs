@@ -23,6 +23,9 @@ public interface IForegroundSource : IDisposable
     /// <summary>Exceptions caught on the source's thread, handlers included.</summary>
     int HandlerFaults { get; }
 
+    /// <summary>Following focus right now; false before start, after stop, or when its thread ended early.</summary>
+    bool IsRunning { get; }
+
     void Start();
 
     /// <summary>Stops following and clears the flag. Returns whether the source's thread has exited.</summary>
