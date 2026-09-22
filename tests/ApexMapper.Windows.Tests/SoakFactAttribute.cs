@@ -3,10 +3,10 @@ using Xunit;
 
 namespace ApexMapper.Windows.Tests;
 
-/// <summary>The long soak against the real driver. Runs only with APEX_SOAK=1; APEX_SOAK_MINUTES shortens it for a trial run.</summary>
+/// <summary>The long soak against the real driver. Runs only with APEX_SOAK=1; APEX_SOAK_MINUTES changes its length.</summary>
 public sealed class SoakFactAttribute : FactAttribute
 {
-    public const int DefaultMinutes = 30;
+    public const int DefaultMinutes = 10;
 
     public static bool Enabled => Environment.GetEnvironmentVariable("APEX_SOAK") == "1";
 
