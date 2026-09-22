@@ -40,7 +40,8 @@ public enum WatchdogVerdict
 /// Judged only while the game has focus: that is when a lost hook leaks keys into the
 /// game, and the game is then known to be visible to both (an elevated window hides
 /// input from the hook).
-////// Each verdict is returned once; <see cref="HookReinstalled"/> re-enables hook loss.
+///
+/// Each verdict is returned once; <see cref="HookReinstalled"/> re-enables hook loss.
 /// </summary>
 public sealed class Watchdog
 {

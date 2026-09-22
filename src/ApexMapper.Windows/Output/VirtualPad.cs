@@ -246,6 +246,7 @@ public sealed class VirtualPad : IDisposable
             }
         }
     }
+
     private void UnplugNow()
     {
         try
@@ -266,6 +267,7 @@ public sealed class VirtualPad : IDisposable
         }
         _unplugged.Set();
     }
+
     /// <summary>True while a game can see a controller in this pad's slot. Any thread; costs one XInput read.</summary>
     public bool IsPresent() => _driver.TryReadBack(UserIndex, out _, out _);
 

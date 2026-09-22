@@ -275,6 +275,7 @@ public class OutputHardwareTests
         Assert.Equal(0, status.HookReinstalls);
         Assert.Equal(EndReason.UserStop, rig.Session.LastEnd!.Reason);
     }
+
     /// <summary>A session with the real pad and fakes for everything else a session needs.</summary>
     private sealed class LiveSession : IDisposable
     {
