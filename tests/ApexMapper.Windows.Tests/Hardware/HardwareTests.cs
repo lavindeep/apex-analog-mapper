@@ -262,4 +262,49 @@ public class HardwareTests
         Assert.True(hook.EventCount >= 2);
         Assert.True(pump.EventCount >= 2);
     }
+
+    /// <summary>
+    /// Registry Editor always runs elevated, so it stands in for an elevated game. With it
+    /// chosen and in front, this non-elevated process must report it as elevated, keep the
+    /// flag down and swallow nothing. Raises a UAC prompt, so it also needs
+    /// APEX_ELEVATED_CHECK=1. Close Registry Editor afterwards; this process cannot.
+    /// </summary>
+    [HardwareFact]
+    public void An_elevated_game_in_front_is_reported_and_nothing_is_swallowed()
+    {
+        Assert.SkipUnless(Environment.GetEnvironmentVariable("APEX_ELEVATED_CHECK") == "1", "Set APEX_ELEVATED_CHECK=1 as well; it raises a UAC prompt.");
+        Assert.NotEqual(true, Win32WindowSystem.Instance.IsCurrentProcessElevated());
+        var regedit = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "regedit.exe");
+        var store = new KeyStateStore();
+        var policy = new HookPolicy { SwallowInjected = true };
+        var flag = new ForegroundFlag();
+        using var tracker = new ForegroundTracker(flag) { GamePath = regedit };
+        using var hook = new KeyboardHook(store, policy, flag, [new ScanCode(WScan)]);
+        tracker.Start();
+        hook.Start();
+
+        Process.Start(new ProcessStartInfo(regedit) { UseShellExecute = true })?.Dispose();
+        Assert.True(SpinWait.SpinUntil(() => tracker.Current.IsGame, 60_000), "Registry Editor never came to the front.");
+        try
+        {
+            Injector.SendScanCode(WScan, true);
+            Injector.SendScanCode(WScan, false);
+        }
+        finally
+        {
+            Injector.SendScanCode(WScan, false);
+        }
+        Thread.Sleep(200);
+        var current = tracker.Current;
+        var flagWhileInFront = flag.IsGameForeground;
+        Assert.True(hook.Stop());
+        Assert.True(tracker.Stop());
+
+        Assert.Equal(Elevation.Elevated, current.Elevation);
+        Assert.False(current.GameHasFocus);
+        Assert.False(flagWhileInFront);
+        Assert.Equal(0, policy.SwallowedCount);
+        Assert.Equal(0, tracker.HandlerFaults);
+        Assert.Equal(0, hook.HandlerFaults);
+    }
 }
