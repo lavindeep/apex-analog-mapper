@@ -21,8 +21,11 @@ public sealed class KeyboardDiscovery : IDisposable
 
     private readonly Func<IReadOnlyList<KeyboardInfo>> _enumerate;
     private readonly Timer _debounce;
+    private readonly Lock _lifetime = new();
     private RawInputPump? _pump;
     private IReadOnlyList<KeyboardInfo> _current = [];
+    private string? _lastError;
+    private bool _disposed;
 
     /// <summary>Raised on a thread-pool thread with the new list after a device change.</summary>
     public event Action<IReadOnlyList<KeyboardInfo>>? Changed;
@@ -30,10 +33,13 @@ public sealed class KeyboardDiscovery : IDisposable
     public KeyboardDiscovery(Func<IReadOnlyList<KeyboardInfo>>? enumerate = null)
     {
         _enumerate = enumerate ?? Enumerate;
-        _debounce = new Timer(_ => Refresh(), null, Timeout.Infinite, Timeout.Infinite);
+        _debounce = new Timer(_ => RefreshQuietly(), null, Timeout.Infinite, Timeout.Infinite);
     }
 
     public IReadOnlyList<KeyboardInfo> Current => Volatile.Read(ref _current);
+
+    /// <summary>Why the last background refresh kept the previous list; null after a good one.</summary>
+    public string? LastError => Volatile.Read(ref _lastError);
 
     /// <summary>Folds interfaces into one entry per container id, SteelSeries only.</summary>
     public static IReadOnlyList<KeyboardInfo> Select(IEnumerable<HidInterfaceInfo> interfaces)
@@ -70,21 +76,54 @@ public sealed class KeyboardDiscovery : IDisposable
         Refresh();
     }
 
+    /// <summary>Enumerates now, on the calling thread. Throws if enumeration does.</summary>
     public void Refresh()
     {
         var list = _enumerate();
         Volatile.Write(ref _current, list);
+        Volatile.Write(ref _lastError, null);
         Changed?.Invoke(list);
     }
 
     public void Dispose()
     {
-        if (_pump is not null)
+        lock (_lifetime)
         {
-            _pump.DeviceChanged -= OnDeviceChanged;
+            if (_disposed)
+            {
+                return;
+            }
+            _disposed = true;
+            if (_pump is not null)
+            {
+                _pump.DeviceChanged -= OnDeviceChanged;
+            }
+            _debounce.Dispose();
         }
-        _debounce.Dispose();
     }
 
-    private void OnDeviceChanged(nint device, bool arrived) => _debounce.Change(DebounceMs, Timeout.Infinite);
+    /// <summary>Pump thread. A device change that races Dispose is ignored rather than touching a disposed timer.</summary>
+    internal void OnDeviceChanged(nint device, bool arrived)
+    {
+        lock (_lifetime)
+        {
+            if (!_disposed)
+            {
+                _debounce.Change(DebounceMs, Timeout.Infinite);
+            }
+        }
+    }
+
+    /// <summary>Thread pool. An unhandled exception here would end the process, so enumeration failures keep the previous list and are reported through <see cref="LastError"/>.</summary>
+    internal void RefreshQuietly()
+    {
+        try
+        {
+            Refresh();
+        }
+        catch (Exception e)
+        {
+            Volatile.Write(ref _lastError, e.Message);
+        }
+    }
 }

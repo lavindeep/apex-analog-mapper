@@ -23,19 +23,23 @@ public sealed unsafe class RawInputPump : IDisposable
     private readonly RawKeyEvent[] _ring = new RawKeyEvent[RingSize];
     private readonly ManualResetEventSlim _ready = new(false);
     private readonly Lock _namesLock = new();
-    private readonly Dictionary<nint, Guid?> _containers = new();
+    private readonly Dictionary<nint, Guid> _containers = new();
     private int _head;
     private int _tail;
     private int _overflows;
+    private int _handlerFaults;
     private Thread? _thread;
     private uint _threadId;
     private nint _window;
     private Exception? _startError;
 
-    /// <summary>A keyboard arrived (true) or was removed (false). Raised on the pump thread.</summary>
+    /// <summary>A keyboard arrived (true) or was removed (false). Raised on the pump thread; a handler that throws is counted, never propagated.</summary>
     public event Action<nint, bool>? DeviceChanged;
 
     public int Overflows => Volatile.Read(ref _overflows);
+
+    /// <summary>Exceptions thrown by <see cref="DeviceChanged"/> handlers; an exception must never leave the window procedure.</summary>
+    public int HandlerFaults => Volatile.Read(ref _handlerFaults);
 
     public bool IsRunning => _thread is { IsAlive: true } && _window != 0;
 
@@ -92,7 +96,12 @@ public sealed unsafe class RawInputPump : IDisposable
         return true;
     }
 
-    /// <summary>The container id of a Raw Input device handle, cached; null when Windows cannot say. Not for the hot path.</summary>
+    /// <summary>
+    /// The container id of a Raw Input device handle, or null when Windows cannot say.
+    /// Successful lookups are cached until the handle is reported removed or re-added,
+    /// since Windows reuses handle values across a replug; failures are not cached, so a
+    /// lookup that races an arrival is retried. Not for the hot path.
+    /// </summary>
     public Guid? ContainerIdOf(nint device)
     {
         lock (_namesLock)
@@ -103,8 +112,35 @@ public sealed unsafe class RawInputPump : IDisposable
             }
             var name = DeviceName(device);
             var container = name is null ? null : CfgMgr32.ContainerIdOf(name);
-            _containers[device] = container;
+            if (container is { } found)
+            {
+                _containers[device] = found;
+            }
             return container;
+        }
+    }
+
+    private void Forget(nint device)
+    {
+        lock (_namesLock)
+        {
+            _containers.Remove(device);
+        }
+    }
+
+    internal bool IsCached(nint device)
+    {
+        lock (_namesLock)
+        {
+            return _containers.ContainsKey(device);
+        }
+    }
+
+    internal void CacheForTest(nint device, Guid container)
+    {
+        lock (_namesLock)
+        {
+            _containers[device] = container;
         }
     }
 
@@ -216,10 +252,23 @@ public sealed unsafe class RawInputPump : IDisposable
                 self.OnInput(lParam);
                 return User32.DefWindowProcW(hwnd, message, wParam, lParam);
             case User32.WM_INPUT_DEVICE_CHANGE:
-                self.DeviceChanged?.Invoke(lParam, wParam == User32.GIDC_ARRIVAL);
+                self.OnDeviceChanged(lParam, wParam == User32.GIDC_ARRIVAL);
                 return 0;
             default:
                 return User32.DefWindowProcW(hwnd, message, wParam, lParam);
+        }
+    }
+
+    internal void OnDeviceChanged(nint device, bool arrived)
+    {
+        Forget(device);
+        try
+        {
+            DeviceChanged?.Invoke(device, arrived);
+        }
+        catch (Exception)
+        {
+            Interlocked.Increment(ref _handlerFaults);
         }
     }
 

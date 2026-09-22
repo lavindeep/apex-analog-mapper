@@ -48,6 +48,33 @@ public class KeyboardDiscoveryTests
     }
 
     [Fact]
+    public void A_device_change_after_dispose_is_ignored()
+    {
+        var discovery = new KeyboardDiscovery(() => []);
+        discovery.Dispose();
+
+        discovery.OnDeviceChanged(1, arrived: true);
+        discovery.Dispose();
+    }
+
+    [Fact]
+    public void A_failing_background_refresh_keeps_the_previous_list_and_reports_why()
+    {
+        var fail = false;
+        using var discovery = new KeyboardDiscovery(() => fail ? throw new IOException("bus reset") : [new KeyboardInfo(Tkl, 0x1614, "Apex Pro TKL", true, true)]);
+        discovery.Refresh();
+        fail = true;
+
+        discovery.RefreshQuietly();
+
+        Assert.Single(discovery.Current);
+        Assert.Equal("bus reset", discovery.LastError);
+        fail = false;
+        discovery.RefreshQuietly();
+        Assert.Null(discovery.LastError);
+    }
+
+    [Fact]
     public void Refresh_publishes_the_current_list()
     {
         var calls = 0;
