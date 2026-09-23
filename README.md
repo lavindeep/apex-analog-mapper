@@ -29,15 +29,16 @@ Xbox controller works.
 
 1. Download `ApexAnalogMapper-win-Setup.exe` from the
    [latest release](https://github.com/lavindeep/apex-analog-mapper/releases).
-2. Check its hash. The release notes list the SHA-256 of every file. In PowerShell:
-   `Get-FileHash .\ApexAnalogMapper-win-Setup.exe`. The two should match.
+2. Check its hash. The release notes list the SHA-256 of each download. In PowerShell,
+   `(Get-FileHash .\ApexAnalogMapper-win-Setup.exe).Hash -eq '<the hash from the notes>'`
+   should print True.
 3. Run it. The installer isn't code-signed, so SmartScreen says it doesn't recognize
    the app. Choose More info, then Run anyway.
 
-The installer is about 70 MB and the app takes about 140 MB once installed, because it
-carries its own copy of .NET. It installs for your user only, with no administrator
-prompt, adds Start menu and desktop shortcuts, and shows up in Settings > Apps for
-uninstalling.
+The installer is about 70 MB and the app takes about 210 MB once installed, because it
+carries its own copy of .NET and keeps its install package for the next update. It
+installs for your user only, with no administrator prompt, adds Start menu and desktop
+shortcuts, and shows up in Settings > Apps for uninstalling.
 
 If you installed v0.1.0 from its MSI, uninstall that first. The two versions share
 nothing.
@@ -102,11 +103,11 @@ so a hiccup doesn't cut your throttle mid-corner. It isn't meant to be driven on
 
 ## Updates
 
-The app looks for a newer version on GitHub when it starts, at most once every six
-hours. Turn that off on the Setup card if you'd rather check by hand. Nothing
-downloads until you press Update, and the new version installs when you restart the
-app, never while mapping runs. While you're on a test version like an alpha, you're
-offered the next test version too.
+The app looks for a newer version on GitHub when it starts, unless it had an answer in
+the last six hours. Turn that off on the Setup card if you'd rather check by hand.
+Nothing downloads until you press Update, and the new version installs when you
+restart the app, never while mapping runs. While you're on a test version like an
+alpha, you're offered the next test version too.
 
 ## Troubleshooting
 
@@ -121,7 +122,8 @@ offered the next test version too.
 - **A key's calibration is refused.** Let go of the key and every key near it, then
   press Set released again. A key held during that step is caught and nothing is saved.
 - **Something else.** The Setup card opens the folder with the log. It records
-  sessions and faults, never which keys you pressed. Attach it to a
+  sessions, calibrations and faults, never your key presses. File paths in it can
+  show your Windows user name, so read it over, then attach it to a
   [new issue](https://github.com/lavindeep/apex-analog-mapper/issues/new).
 
 ## Uninstall
@@ -146,7 +148,7 @@ dotnet build ApexAnalogMapper.slnx
 dotnet test ApexAnalogMapper.slnx
 ```
 
-`scripts/pack.ps1 -Version 0.5.0` builds the installer with the
+`scripts/pack.ps1 -Version 0.5.0-alpha` builds the installer with the
 [Velopack](https://velopack.io) CLI (`dotnet tool install -g vpk --version 1.2.0`).
 [CONTRIBUTING.md](CONTRIBUTING.md) covers the hardware tests and how to send a change.
 

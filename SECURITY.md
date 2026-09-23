@@ -10,8 +10,9 @@ and how to report a vulnerability.
   depth through the keyboard's own vendor HID interface, and installs a low-level
   keyboard hook. While the selected game is in the foreground, the hook blocks the
   mapped keys so the game sees controller input instead of keystrokes. Keystroke data
-  stays in memory. The log records session events and faults, never which keys were
-  pressed.
+  stays in memory. The log records session events, calibrations and faults, never key
+  presses. It names a key only in a calibration line, or once a session when the key
+  presses deeper than its calibration.
 - The keyboard's vendor interface. The app sends exactly two commands to it: a
   firmware version query and a sensor read. Nothing else is ever written to the
   keyboard, and the app never changes firmware or actuation settings.
@@ -20,11 +21,16 @@ and how to report a vulnerability.
 ## Network posture
 
 The app makes one kind of network request. It asks this repository's GitHub Releases
-whether there is a newer version, when it starts and at most once every six hours, and
-whenever you press Check for updates. The check on start can be turned off on the Setup
-card. A new version downloads only when you press Update, Velopack checks the download
-against the hash in the release's feed, and it installs only when you restart the app,
-never while mapping runs. There is no telemetry.
+whether there is a newer version when it starts, unless it had an answer in the last six
+hours, when you press Check for updates, and when you turn on test versions. The check
+on start can be turned off on the Setup card. The request carries no account, token or
+app version. There is no telemetry.
+
+A new version downloads only when you press Update. Velopack checks the download against
+the SHA-256 in the release's feed. That catches a damaged download, not a release
+published by someone who controls this GitHub account. The download also replaces
+Velopack's updater, `Update.exe`, at once. The new version installs when the app
+restarts, never while mapping runs.
 
 ## What the installer touches
 
@@ -32,7 +38,12 @@ Setup.exe installs the app for the current user into `%LocalAppData%\ApexAnalogM
 adds Start menu and desktop shortcuts, and registers an uninstall entry for the current
 user. It needs no administrator rights and adds no service, driver or scheduled task.
 Uninstalling removes all of that. Profiles, calibration, settings and the log live in
-`%AppData%\ApexAnalogMapper` and stay after an uninstall.
+`%AppData%\ApexAnalogMapper` and stay after an uninstall, and so does Velopack's own
+log in `%LocalAppData%\velopack`.
+
+Your user account can change the files in the install folder, as with any app installed
+for one user. Running the app as administrator, for a game that runs as administrator,
+runs those files with administrator rights.
 
 ## Third-party kernel driver (ViGEmBus)
 

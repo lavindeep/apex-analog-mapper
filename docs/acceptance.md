@@ -1,8 +1,12 @@
 # Acceptance checklist
 
-What I run by hand, on my own PC and in Forza Horizon, before a release goes out. The
+What I run by hand, on my own PC and in Forza Horizon, for every release. The
 automated tests cover the logic; this covers the parts only a person at the keyboard
 can judge. Tick every box, or write down why one was skipped.
+
+Everything down to the update section runs on the packed build before I push the tag.
+The update section needs the release to be public, so it runs right after I publish
+it, on a copy of the release before. The first release has nothing to update from.
 
 Record the version, keyboard, firmware and game at the top of the run:
 
@@ -13,7 +17,6 @@ Record the version, keyboard, firmware and game at the top of the run:
 
 ## Install
 
-- [ ] The installer's SHA-256 matches the one in the release notes.
 - [ ] SmartScreen shows More info, then Run anyway, and nothing else asks for
       administrator rights.
 - [ ] The app starts after the install, with its icon in the title bar, the taskbar,
@@ -64,14 +67,19 @@ Start mapping before launching the game, then drive for at least 30 minutes.
 
 ## Update and uninstall
 
+- [ ] The released installer's SHA-256 matches the one in the release notes.
 - [ ] Installed on the previous release, the Setup card offers the new one. Update
       downloads it, Restart and update installs it, and the app comes back on the new
       version with its profiles, calibration and settings intact.
 - [ ] Update and Restart and update are off while mapping.
+- [ ] With an update downloaded and mapping running, opening the app from the Start
+      menu only brings its window forward. Mapping carries on, and the update waits for
+      a restart.
 - [ ] Uninstalling from Settings > Apps removes the app and its shortcuts and leaves
       `%AppData%\ApexAnalogMapper`.
 
 ## After the run
 
-- [ ] The log has each session start and end and no key names or codes.
+- [ ] The log has each session start and end. It names keys only in calibration
+      lines and in warnings about a key's calibration.
 - [ ] Anything that failed has an issue.

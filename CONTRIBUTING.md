@@ -14,7 +14,8 @@ when there is one. A useful bug report has:
 - The game and how it was launched (Steam, Store, Game Pass), and whether it runs as
   administrator.
 - What you did, what you expected, and what happened instead.
-- The session log, if the app produced one. It never records which keys were pressed.
+- The session log, if the app produced one. It never records key presses, but file
+  paths in it can show your Windows user name.
 
 Security problems go in a public issue too. There is no private channel and no bounty.
 
@@ -59,9 +60,9 @@ You need the .NET 10 SDK on Windows.
 dotnet test ApexAnalogMapper.slnx -c Release
 ```
 
-Hardware tests need an Apex Pro plugged in and run only with `APEX_HW_TESTS=1`. Two
-of them inject W keystrokes, which land in whatever window is in the foreground, so
-focus an empty editor first:
+Hardware tests need an Apex Pro plugged in and run only with `APEX_HW_TESTS=1`.
+Several of them inject W keystrokes, which land in whatever window is in the
+foreground, so focus an empty editor first:
 
 ```
 $env:APEX_HW_TESTS = '1'

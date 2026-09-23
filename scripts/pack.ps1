@@ -1,7 +1,7 @@
 # Publishes the app self-contained and packs it with Velopack into Setup.exe, a portable
 # zip and the update packages. A previous release already in the output folder becomes
 # the base of a delta package.
-# Usage: scripts/pack.ps1 -Version 0.5.0 [-Output releases] [-ReleaseNotes notes.md]
+# Usage: scripts/pack.ps1 -Version 0.5.0-alpha [-Output releases] [-ReleaseNotes notes.md]
 param(
     [Parameter(Mandatory = $true)] [string] $Version,
     [string] $Output = "releases",
