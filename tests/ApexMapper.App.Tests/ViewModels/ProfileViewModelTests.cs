@@ -1,5 +1,6 @@
 using System.Windows;
 using ApexMapper.App.ViewModels;
+using ApexMapper.Core.Bindings;
 using ApexMapper.Core.Calibration;
 using ApexMapper.Core.Keys;
 using ApexMapper.Core.Profiles;
@@ -240,6 +241,19 @@ public sealed class ProfileViewModelTests : IDisposable
 
         // What a screen reader says for the row in the list.
         Assert.Equal("W, Right trigger", w.ToString());
+    }
+
+    [Fact]
+    public async Task An_axis_switched_to_rate_saves_that_way()
+    {
+        var profile = Create();
+        var axis = profile.Rows.First(r => r.IsAxis);
+
+        axis.Mode = AxisMode.Rate;
+        Assert.True(axis.IsRateMode);
+        await profile.SaveAsync();
+
+        Assert.Equal(AxisMode.Rate, _h.Workspace.ActiveProfile!.Axes.Single(a => a.NegativeKey == axis.NegativeKey).Mode);
     }
 
     [Fact]

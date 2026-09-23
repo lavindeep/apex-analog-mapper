@@ -223,6 +223,7 @@ public sealed class StatusViewModelTests : IDisposable
         status.Tick(_h.Now + StatusViewModel.RefreshMs);
         _h.Session.NextStatus = faulty with { FallbackKeys = 0, SensorProblem = null };
         status.Tick(_h.Now + 2 * StatusViewModel.RefreshMs);
+        Assert.DoesNotContain(Warning, status.Warnings);
         _h.Session.NextStatus = faulty;
         status.Tick(_h.Now + 3 * StatusViewModel.RefreshMs);
         Assert.Single(_h.Log, line => line.StartsWith("Sensor fault", StringComparison.Ordinal));
@@ -232,6 +233,21 @@ public sealed class StatusViewModelTests : IDisposable
         await status.StartAsync();
         status.Tick(_h.Now + 4 * StatusViewModel.RefreshMs);
         Assert.Equal(2, _h.Log.Count(line => line.StartsWith("Sensor fault", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task A_session_the_driver_ended_says_why_on_the_card_and_in_the_log()
+    {
+        const string Why = "The controller driver reported an error: the device is not connected.";
+        _h.MakeReady();
+        var status = Create();
+        await status.StartAsync();
+
+        _h.Session.LastEnd = new SessionEnd(EndReason.EngineFault, Why);
+        _h.Session.Move(SessionState.Idle);
+
+        Assert.Equal(Why, status.Reason);
+        Assert.Contains("Session ended (EngineFault): " + Why, _h.Log);
     }
 
     [Fact]
