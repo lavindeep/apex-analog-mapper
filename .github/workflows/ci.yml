@@ -18,7 +18,7 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - name: Install Velopack CLI
-        run: dotnet tool install -g vpk
+        run: dotnet tool install -g vpk --version 1.2.0
       - name: Restore
         run: dotnet restore ApexAnalogMapper.slnx
       - name: Build

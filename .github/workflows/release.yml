@@ -1,0 +1,104 @@
+name: Release
+
+# A tag like v0.5.0 or v0.5.0-alpha.1 builds, tests and packs that version, then
+# publishes it as a GitHub release with SHA-256 hashes in the notes. The annotated
+# tag's message becomes the release notes. A version with a hyphen is a prerelease.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      REPO_URL: https://github.com/${{ github.repository }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from the tag
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+            Write-Error "Tag '$env:GITHUB_REF_NAME' does not look like a semantic version"
+            exit 1
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value "VERSION=$version"
+          Add-Content -Path $env:GITHUB_ENV -Value "PRERELEASE=$($version.Contains('-').ToString().ToLowerInvariant())"
+
+      - name: Release notes from the annotated tag
+        run: |
+          # Checkout peels the tag to a lightweight ref, so fetch the tag object again.
+          git fetch origin --force "+refs/tags/$($env:GITHUB_REF_NAME):refs/tags/$($env:GITHUB_REF_NAME)"
+          $notes = (git tag -l --format='%(contents)' $env:GITHUB_REF_NAME | Out-String).Trim()
+          if (-not $notes) {
+            Write-Error "Tag '$env:GITHUB_REF_NAME' has no message to use as release notes. Tag with: git tag -a"
+            exit 1
+          }
+          Set-Content -Path release-notes.md -Value $notes -Encoding utf8
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install Velopack CLI
+        # The same version as the Velopack package the app references.
+        run: dotnet tool install -g vpk --version 1.2.0
+      - name: Restore
+        run: dotnet restore ApexAnalogMapper.slnx
+      - name: Build
+        run: dotnet build ApexAnalogMapper.slnx -c Release --no-restore -p:Version=$env:VERSION
+      - name: Test
+        run: dotnet test ApexAnalogMapper.slnx -c Release --no-build
+
+      - name: Previous release, for a delta package
+        # Nothing to download before the first release; a full package still works then.
+        run: |
+          $pre = if ($env:PRERELEASE -eq 'true') { @('--pre') } else { @() }
+          vpk download github --repoUrl $env:REPO_URL --token $env:GH_TOKEN --outputDir releases @pre
+          if ($LASTEXITCODE -ne 0) { Write-Warning "No previous release was downloaded, so this one has no delta package." }
+          exit 0
+      - name: Pack
+        run: scripts/pack.ps1 -Version $env:VERSION -ReleaseNotes release-notes.md
+
+      - name: Upload as a draft
+        run: |
+          $pre = if ($env:PRERELEASE -eq 'true') { @('--pre') } else { @() }
+          vpk upload github --repoUrl $env:REPO_URL --token $env:GH_TOKEN --outputDir releases `
+            --tag $env:GITHUB_REF_NAME --releaseName "Apex Analog Mapper $env:VERSION" @pre
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Hashes, then publish
+        run: |
+          # The files this pack made, as vpk lists them: not the base package downloaded for the delta.
+          $names = (Get-Content releases/assets.win.json -Raw | ConvertFrom-Json).RelativeFileName | Sort-Object
+          $sums = foreach ($name in $names) {
+            "$((Get-FileHash (Join-Path releases $name) -Algorithm SHA256).Hash.ToLowerInvariant())  $name"
+          }
+          $sums | Set-Content -Path SHA256SUMS.txt -Encoding ascii
+          $notes = @(
+            (Get-Content release-notes.md -Raw).Trim()
+            ''
+            '## SHA-256'
+            ''
+            'The files are not code-signed, so Windows SmartScreen may warn about Setup.exe. Compare its hash with `Get-FileHash ApexAnalogMapper-win-Setup.exe` in PowerShell before running it.'
+            ''
+            '```'
+            $sums
+            '```'
+          ) -join "`n"
+          Set-Content -Path release-body.md -Value $notes -Encoding utf8
+          gh release upload $env:GITHUB_REF_NAME SHA256SUMS.txt --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release edit $env:GITHUB_REF_NAME --notes-file release-body.md --draft=false
+          exit $LASTEXITCODE
