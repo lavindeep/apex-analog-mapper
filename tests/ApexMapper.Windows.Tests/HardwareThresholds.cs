@@ -15,13 +15,12 @@ public static class HardwareThresholds
     public static double SensorCycleP99Ms(int groups) => 6 * groups + 9;
 
     /// <summary>
-    /// To XInput readback with a spinning sampler: from the submit, measured p99 0.032 ms
-    /// in stage 0; from the engine tick that sent it (the loopback test), 0.04 to 0.09 ms
-    /// in stage 3.
+    /// To XInput readback with a spinning sampler: from the submit, measured p99 0.032 ms;
+    /// from the engine tick that sent it (the loopback test), p99 0.030 to 0.09 ms.
     /// </summary>
     public const double ReadbackP99Ms = 1;
 
-    /// <summary>Distinct XInput packets per second while changing every tick; measured 473 to 487, and 486 to 490 in stage 3.</summary>
+    /// <summary>Distinct XInput packets per second while changing every tick; measured 473 to 490.</summary>
     public const int XInputPacketsPerSecondMin = 400;
 
     /// <summary>Pad gone after TerminateProcess; measured at the first poll, 4 to 5 ms.</summary>

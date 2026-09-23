@@ -22,7 +22,7 @@ namespace ApexMapper.Windows.Tests.Session;
 
 /// <summary>
 /// The design's session table, one test per row, plus the orderings the plan names and
-/// the stage 3 ledger's findings. The hook runs its real thread, timer and callback body
+/// the findings of the session's reviews. The hook runs its real thread, timer and callback body
 /// but detached: nothing is installed into Windows and the real keyboard is never read,
 /// so these tests neither swallow nor see anyone's keys. Key events arrive through the
 /// callback body by hand. The pad, foreground, game, power, Raw Input, keyboard list and

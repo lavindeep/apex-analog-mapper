@@ -3,7 +3,7 @@ using System.Diagnostics;
 namespace ApexMapper.Core.Sensors;
 
 /// <summary>
-/// One cycle's readings for every sensor, stamped at the start of the cycle. The
+/// One cycle's readings for every sensor, stamped when the cycle's last group lands. The
 /// poller fills a private working snapshot with <see cref="Begin"/> and
 /// <see cref="SetGroup"/>, then copies it into the shared one with
 /// <see cref="Publish"/>. The copy runs under a sequence lock: the generation is odd

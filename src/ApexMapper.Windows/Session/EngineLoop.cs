@@ -9,7 +9,7 @@ namespace ApexMapper.Windows.Session;
 
 /// <summary>
 /// The engine thread: on every period of the 1 ms high-resolution timer (1.51 ms at
-/// p50 as measured in stage 0) it runs the mapper over the latest sensor snapshot and
+/// p50 as measured) it runs the mapper over the latest sensor snapshot and
 /// the hook's key state, offers the report to the pad, and publishes the tick's
 /// timestamp for the watchdog.
 ///

@@ -117,7 +117,7 @@ public class SettingsStoreTests
         Assert.Equal([board], new SettingsStore(path).Load().Settings.ConsentedKeyboards!);
     }
 
-    /// <summary>Stage 4 ledger P5: a file held open at startup is read again by the first update, which then keeps its contents.</summary>
+    /// <summary>A file held open at startup is read again by the first update, which then keeps its contents.</summary>
     [Fact]
     public void An_update_after_a_startup_the_file_was_held_reads_it_again_instead_of_saving_defaults()
     {

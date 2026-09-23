@@ -21,7 +21,7 @@ public enum ExchangeStatus
 /// One request and one reply on the vendor interface, serialised by the caller. The
 /// request goes through <see cref="SensorRequest.WriteTo"/>, which is where the
 /// command allowlist lives; nothing else in the process writes to the keyboard. No
-/// input-queue drain (stage 0: zero stale replies, 10 ms per drain). <see cref="Abort"/>
+/// input-queue drain (measured: zero stale replies, and 10 ms per drain). <see cref="Abort"/>
 /// closes the handle from any thread to unblock a pending read.
 /// </summary>
 public sealed class VendorInterface : IDisposable

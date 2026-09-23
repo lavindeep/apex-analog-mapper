@@ -6,7 +6,7 @@
     <ProjectReference Include="..\..\src\ApexMapper.Core\ApexMapper.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <!-- Real replies captured from the maintainer's board in stage 0. -->
+    <!-- Real replies captured from the maintainer's board. -->
     <Content Include="..\ApexMapper.Windows.Tests\fixtures\*.hex" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -4,7 +4,7 @@ using Xunit;
 
 namespace ApexMapper.Windows.Tests.Hid;
 
-/// <summary>Stage 0 captures from the maintainer's board.</summary>
+/// <summary>Captures from the maintainer's board.</summary>
 public static class Fixtures
 {
     private static readonly Dictionary<string, byte[]> Cache = new();
@@ -65,7 +65,7 @@ public sealed class FakeVendorStream : IVendorStream
     /// <summary>Called with the read index (0-based), command and selector. Return the reply, or null for a timeout.</summary>
     public Func<int, byte, byte, byte[]?>? OnRead { get; set; }
 
-    /// <summary>The stage 0 reply for a request. Shared arrays: never mutate the result.</summary>
+    /// <summary>The captured reply for a request. Shared arrays: never mutate the result.</summary>
     public static byte[] DefaultReply(byte command, byte selector) => command switch
     {
         SensorRequest.FirmwareCommand => FirmwareReply,

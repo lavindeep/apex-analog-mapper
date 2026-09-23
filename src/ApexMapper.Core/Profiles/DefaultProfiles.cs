@@ -10,7 +10,7 @@ public static class DefaultProfiles
 
     /// <summary>
     /// Forza's Default Layout 1 controller mapping with WASD driving. Steering and
-    /// throttle response defaults are provisional until the feel step in stage 5.
+    /// throttle response defaults are provisional until they are tried in the game.
     /// </summary>
     public static Profile Forza()
     {

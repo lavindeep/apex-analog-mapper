@@ -5,8 +5,8 @@ using ApexMapper.Windows.Native;
 namespace ApexMapper.Windows.Timing;
 
 /// <summary>
-/// A periodic wait on the high-resolution waitable timer, the only method stage 0
-/// found consistent (p99 under 2 ms at a 1 ms period) regardless of the timer
+/// A periodic wait on the high-resolution waitable timer, the only method measured
+/// consistent (p99 under 2 ms at a 1 ms period) regardless of the timer
 /// resolution Windows grants the process. <see cref="WaitNext"/> returns false once
 /// <see cref="Stop"/> has been called, from any thread. Windows reuses handle values
 /// at once, so the owner must join the waiting thread before <see cref="Dispose"/>;

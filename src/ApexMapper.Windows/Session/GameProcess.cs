@@ -17,7 +17,7 @@ public interface IGameProcess : IDisposable
 /// the foreground tracker matches it. The game counts as exited when the last of them
 /// has. A process that cannot be opened for waiting is left out, and if none can be the
 /// game counts as not running. An elevated game opens fine from a process that is not
-/// (checked on the maintainer's PC in stage 3).
+/// (checked on the maintainer's PC).
 /// </summary>
 public sealed class GameProcess : IGameProcess
 {

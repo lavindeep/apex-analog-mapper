@@ -37,7 +37,7 @@ namespace ApexMapper.Windows.Session;
 /// remove the hook; stop the sensor; stop the foreground tracker; restore the GC latency
 /// mode. Each step is bounded by the part's own stop. The keyboard is back to normal the
 /// moment the hook is gone: a key still held then reaches the game as a keyboard key,
-/// which the maintainer chose over any delay (stage 3 ledger, Q1).
+/// which the maintainer chose over any delay.
 /// </summary>
 public sealed class MappingSession : IMappingSession, IDisposable
 {

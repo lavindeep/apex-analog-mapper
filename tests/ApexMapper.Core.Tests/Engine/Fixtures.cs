@@ -5,7 +5,7 @@ using ApexMapper.Core.Sensors;
 
 namespace ApexMapper.Core.Tests.Engine;
 
-/// <summary>The maintainer's board as measured in stage 0. Snapshot clocks tick in milliseconds.</summary>
+/// <summary>The maintainer's board as measured. Snapshot clocks tick in milliseconds.</summary>
 internal static class Fixtures
 {
     public static readonly KeyCalibration W = KeyCalibration.Create(878, 4095, 20, 16);

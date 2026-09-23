@@ -34,7 +34,7 @@ public sealed class VirtualPad : IDisposable
 
     /// <summary>
     /// The least time between two submits. The engine's 1 ms waitable timer measured a
-    /// p50 period of 1.51 ms in stage 0, so this admits about one change per tick and
+    /// p50 period of 1.51 ms, so this admits about one change per tick and
     /// averages under 500 a second (486 to 490 measured). A 2 ms floor made every change
     /// wait for the second tick and measured 438.
     /// </summary>

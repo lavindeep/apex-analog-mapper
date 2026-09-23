@@ -61,7 +61,7 @@ public readonly record struct ScanCode
     /// reaches Raw Input as E1 1D and then 45, whose second half reads as Num Lock, so
     /// the E1 page and Num Lock are both left out. The Korean language keys send a lone
     /// code with the break bit set (F1, F2), which the two report differently, so codes
-    /// 71 and 72 and anything with that bit are left out too (stage 2 ledger M3).
+    /// 71 and 72 and anything with that bit are left out too.
     /// </summary>
     public bool IsBindable => !IsReserved && Value >> 8 != 0xE1 && Value != 0x45 && (Value & 0x7F) is not (0x71 or 0x72) && (Value & 0x80) == 0;
 
