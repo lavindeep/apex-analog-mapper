@@ -185,6 +185,17 @@ internal sealed class AppHarness : IDisposable
         [DefaultProfiles.Key.A] = "A",
         [DefaultProfiles.Key.S] = "S",
         [DefaultProfiles.Key.D] = "D",
+        [DefaultProfiles.Key.Q] = "Q",
+        [DefaultProfiles.Key.E] = "E",
+        [DefaultProfiles.Key.R] = "R",
+        [DefaultProfiles.Key.G] = "G",
+        [DefaultProfiles.Key.Tab] = "Tab",
+        [DefaultProfiles.Key.Space] = "Space",
+        [DefaultProfiles.Key.LeftShift] = "Left Shift",
+        [DefaultProfiles.Key.Up] = "Up",
+        [DefaultProfiles.Key.Down] = "Down",
+        [DefaultProfiles.Key.Left] = "Left",
+        [DefaultProfiles.Key.Right] = "Right",
     };
 
     public FakeSession Session { get; } = new();

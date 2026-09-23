@@ -14,8 +14,8 @@ public enum ResponsePreset
     Custom,
 }
 
-/// <summary>A pad control with the name the editor shows for it.</summary>
-public sealed record TargetOption(PadTarget Value, string Name);
+/// <summary>A choice in one of the editor's lists, with the name it shows.</summary>
+public sealed record Option<T>(T Value, string Name);
 
 /// <summary>
 /// One binding in the profile editor: a key to a button or trigger, or two keys to a
@@ -24,15 +24,23 @@ public sealed record TargetOption(PadTarget Value, string Name);
 /// </summary>
 public sealed class BindingRowViewModel : ObservableObject
 {
-    public static readonly IReadOnlyList<TargetOption> KeyTargets = [.. Enum.GetValues<PadTarget>().Where(t => !t.IsAxis()).Select(t => new TargetOption(t, NameOf(t)))];
+    public static readonly IReadOnlyList<Option<PadTarget>> KeyTargets = [.. Enum.GetValues<PadTarget>().Where(t => !t.IsAxis()).Select(t => new Option<PadTarget>(t, NameOf(t)))];
 
-    public static readonly IReadOnlyList<TargetOption> AxisTargets = [.. Enum.GetValues<PadTarget>().Where(t => t.IsAxis()).Select(t => new TargetOption(t, NameOf(t)))];
+    public static readonly IReadOnlyList<Option<PadTarget>> AxisTargets = [.. Enum.GetValues<PadTarget>().Where(t => t.IsAxis()).Select(t => new Option<PadTarget>(t, NameOf(t)))];
 
     public static readonly IReadOnlyList<ResponsePreset> Presets = Enum.GetValues<ResponsePreset>();
 
-    public static readonly IReadOnlyList<AxisMode> Modes = Enum.GetValues<AxisMode>();
+    public static readonly IReadOnlyList<Option<AxisMode>> Modes =
+    [
+        new(AxisMode.Position, "Position: how far the key is pressed sets how far the stick leans"),
+        new(AxisMode.Rate, "Rate: how far the key is pressed sets how fast the stick moves"),
+    ];
 
-    public static readonly IReadOnlyList<ConflictRule> Conflicts = Enum.GetValues<ConflictRule>();
+    public static readonly IReadOnlyList<Option<ConflictRule>> Conflicts =
+    [
+        new(ConflictRule.LastInputWins, "The key pressed last wins"),
+        new(ConflictRule.Neutral, "The stick centres"),
+    ];
 
     private readonly Func<ScanCode, string> _keyName;
     private readonly Action<BindingRowViewModel> _changed;
@@ -105,7 +113,7 @@ public sealed class BindingRowViewModel : ObservableObject
 
     public string KeysText => IsAxis ? $"{_keyName(_negativeKey)} and {_keyName(_key)}" : _keyName(_key);
 
-    public IReadOnlyList<TargetOption> Targets => IsAxis ? AxisTargets : KeyTargets;
+    public IReadOnlyList<Option<PadTarget>> Targets => IsAxis ? AxisTargets : KeyTargets;
 
     public PadTarget Target
     {

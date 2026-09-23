@@ -1,0 +1,102 @@
+<UserControl x:Class="ApexMapper.App.Views.CalibrationCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:CalibrationViewModel}">
+  <UserControl.Resources>
+    <!-- A saved reading marked on the bar. -->
+    <Style x:Key="Mark" TargetType="Rectangle">
+      <Setter Property="Width" Value="2" />
+      <Setter Property="Height" Value="14" />
+      <Setter Property="Margin" Value="-1,-3,0,0" />
+      <Setter Property="Fill" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+    </Style>
+  </UserControl.Resources>
+
+  <ui:CardExpander Icon="{ui:SymbolIcon Gauge24}" IsExpanded="{Binding IsOpen}">
+    <ui:CardExpander.Header>
+      <StackPanel>
+        <ui:TextBlock FontTypography="BodyStrong" Text="Calibration" />
+        <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Summary}" />
+      </StackPanel>
+    </ui:CardExpander.Header>
+    <StackPanel>
+      <ui:TextBlock Style="{StaticResource Note}"
+                    Text="Each analog key needs a reading released and fully pressed. Keep the other keys released while you do it. The bar shows the key's sensor now; the marks show what is saved." />
+      <ui:TextBlock Style="{StaticResource Paragraph}" Text="{Binding Blocker}"
+                    Visibility="{Binding Blocker, Converter={StaticResource ShowWhenPresent}}" />
+      <ui:InfoBar Style="{StaticResource Warning}" Message="{Binding Problem}"
+                  Visibility="{Binding Problem, Converter={StaticResource ShowWhenPresent}}" />
+      <ui:InfoBar Style="{StaticResource Warning}" Severity="Error" Message="{Binding SensorProblem}"
+                  Visibility="{Binding SensorProblem, Converter={StaticResource ShowWhenPresent}}" />
+
+      <ItemsControl ItemsSource="{Binding Rows}" Margin="0,8,0,0" IsEnabled="{Binding CanCalibrate}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="vm:CalibrationRowViewModel">
+            <Border Padding="0,10" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="72" />
+                  <ColumnDefinition Width="*" MinWidth="160" />
+                  <ColumnDefinition Width="56" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <ui:TextBlock VerticalAlignment="Center" FontTypography="Subtitle" Text="{Binding Name}" />
+
+                <Grid Grid.Column="1" VerticalAlignment="Center" x:Name="Bar">
+                  <ProgressBar Minimum="0" Maximum="1" Value="{Binding Fill, Mode=OneWay}" Height="8" />
+                  <Canvas>
+                    <Rectangle Style="{StaticResource Mark}" ToolTip="Saved released reading"
+                               Visibility="{Binding RestMark, Converter={StaticResource ShowWhenPresent}}">
+                      <Canvas.Left>
+                        <MultiBinding Converter="{StaticResource FractionOfLength}">
+                          <Binding Path="RestMark" />
+                          <Binding Path="ActualWidth" ElementName="Bar" />
+                        </MultiBinding>
+                      </Canvas.Left>
+                    </Rectangle>
+                    <Rectangle Style="{StaticResource Mark}" ToolTip="Saved fully pressed reading"
+                               Visibility="{Binding FullMark, Converter={StaticResource ShowWhenPresent}}">
+                      <Canvas.Left>
+                        <MultiBinding Converter="{StaticResource FractionOfLength}">
+                          <Binding Path="FullMark" />
+                          <Binding Path="ActualWidth" ElementName="Bar" />
+                        </MultiBinding>
+                      </Canvas.Left>
+                    </Rectangle>
+                  </Canvas>
+                </Grid>
+
+                <ui:TextBlock Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Text="{Binding Raw, TargetNullValue='-'}" />
+
+                <StackPanel Grid.Column="3" Margin="12,0,0,0" Orientation="Horizontal">
+                  <ui:Button Content="Learn" ToolTip="Find which sensor this key reads" Command="{Binding Learn}" />
+                  <ui:Button Margin="8,0,0,0" Content="Set released" Command="{Binding SetReleased}" />
+                  <ui:Button Margin="8,0,0,0" Content="Set fully pressed" Command="{Binding SetPressed}" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,6,0,0">
+                  <ui:TextBlock Style="{StaticResource CardSummary}" TextWrapping="Wrap" TextTrimming="None" Text="{Binding Status}" />
+                  <StackPanel Orientation="Horizontal" Visibility="{Binding Message, Converter={StaticResource ShowWhenPresent}}">
+                    <ui:ProgressRing Width="14" Height="14" Margin="0,2,6,0" IsIndeterminate="True"
+                                     Visibility="{Binding IsBusy, Converter={StaticResource ShowWhenTrue}}" />
+                    <ui:TextBlock TextWrapping="Wrap" Text="{Binding Message}" />
+                  </StackPanel>
+                </StackPanel>
+              </Grid>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+  </ui:CardExpander>
+</UserControl>

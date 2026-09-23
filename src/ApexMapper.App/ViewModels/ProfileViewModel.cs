@@ -69,6 +69,7 @@ public sealed class ProfileViewModel : ObservableObject
         Remove = new Command(RemoveRow, () => CanEdit && _selectedRow is not null);
         CaptureKey = new Command(() => BeginCapture(new Capture(_selectedRow, false, _selectedRow!.IsAxis)), () => CanEdit && _selectedRow is not null);
         CaptureNegativeKey = new Command(() => BeginCapture(new Capture(_selectedRow, true, true)), () => CanEdit && _selectedRow is { IsAxis: true });
+        CancelCapture = new Command(() => EndCapture(null), () => _capture is not null);
         _workspace.PropertyChanged += OnWorkspaceChanged;
         _remembered = remembered;
         Reload(remembered ?? DefaultProfiles.ForzaId);
@@ -194,6 +195,9 @@ public sealed class ProfileViewModel : ObservableObject
     public Command CaptureKey { get; }
 
     public Command CaptureNegativeKey { get; }
+
+    /// <summary>Stops waiting for a key: the card's button, and the window when it loses focus, since Raw Input keeps seeing keys typed elsewhere.</summary>
+    public Command CancelCapture { get; }
 
     /// <summary>A key event from Raw Input, drained on the UI thread. Only key downs while capturing count.</summary>
     public void OnKey(in RawKeyEvent key)
@@ -539,7 +543,7 @@ public sealed class ProfileViewModel : ObservableObject
     private void RefreshCommands()
     {
         Raise(nameof(CanEdit));
-        foreach (var command in new[] { Save, Discard, New, Delete, Reset, AddKey, AddAxis, Remove, CaptureKey, CaptureNegativeKey })
+        foreach (var command in new[] { Save, Discard, New, Delete, Reset, AddKey, AddAxis, Remove, CaptureKey, CaptureNegativeKey, CancelCapture })
         {
             command.Refresh();
         }

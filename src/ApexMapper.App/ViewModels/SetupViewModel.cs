@@ -37,6 +37,8 @@ public sealed class SetupViewModel : ObservableObject
 
     public bool DriverReady => _driver == DriverState.Running;
 
+    public string VersionText => $"Apex Analog Mapper {_services.AppVersion}";
+
     public Command OpenDriverPage { get; }
 
     public Command OpenDataFolder { get; }
