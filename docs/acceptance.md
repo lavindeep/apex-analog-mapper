@@ -33,6 +33,8 @@ Record the version, keyboard, firmware and game at the top of the run:
       released is refused and says why.
 - [ ] Start stays off until all four are calibrated, and the status card says which are
       missing.
+- [ ] With Narrator on, Change key reads out what the capture waits for, and a
+      calibration step reads out what to do next.
 
 ## Driving
 
