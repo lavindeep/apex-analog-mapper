@@ -10,6 +10,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="ApexMapper.Windows.Tests" />
     <InternalsVisibleTo Include="ApexMapper.Harness" />
+    <!-- For a sensor poller that opens nothing, so the window's tests never read a keyboard. -->
+    <InternalsVisibleTo Include="ApexMapper.App.Tests" />
   </ItemGroup>
   <ItemGroup>
     <!-- Compile assets stay in this project: nothing outside it may reach the HID library. -->
