@@ -127,4 +127,10 @@ public sealed class SessionServices
 
     /// <summary>Test mode: the hook treats injected keys as physical ones.</summary>
     public bool SwallowInjected { get; init; }
+
+    /// <summary>
+    /// Unit tests: the session's hook runs detached, never installed into Windows and
+    /// never reading the real keyboard, so a test cannot swallow or see anyone's keys.
+    /// </summary>
+    internal bool DetachedHook { get; init; }
 }

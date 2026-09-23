@@ -436,14 +436,18 @@ public sealed class MappingSession : IDisposable
 
     private void InstallHook(Parts parts)
     {
-        var hook = new KeyboardHook(parts.Store, parts.Policy, parts.Flag, parts.MappedKeys)
-        {
-            StopRequested = () => RequestStop(parts, SessionEnd.For(EndReason.Hotkey)),
-            Timer = () => OnHookTimer(parts),
-        };
+        var hook = NewHook(parts);
         Volatile.Write(ref parts.Hook, hook);
         hook.Start();
     }
+
+    /// <summary>The session's hook, not yet started, with the stop hotkey and the watchdog's timer wired. Every hook the session installs comes from here.</summary>
+    private KeyboardHook NewHook(Parts parts) => new(parts.Store, parts.Policy, parts.Flag, parts.MappedKeys)
+    {
+        Detached = _services.DetachedHook,
+        StopRequested = () => RequestStop(parts, SessionEnd.For(EndReason.Hotkey)),
+        Timer = () => OnHookTimer(parts),
+    };
 
     /// <summary>Tracker thread. On gain this runs before the flag flips; on loss, after it dropped.</summary>
     private static void OnFocusChanged(Parts parts, ForegroundInfo info)
@@ -613,11 +617,7 @@ public sealed class MappingSession : IDisposable
         old?.Dispose();
         try
         {
-            var hook = new KeyboardHook(parts.Store, parts.Policy, parts.Flag, parts.MappedKeys)
-            {
-                StopRequested = old?.StopRequested,
-                Timer = old?.Timer,
-            };
+            var hook = NewHook(parts);
             Volatile.Write(ref parts.Hook, hook);
             parts.HookFaultsSeen = 0;
             parts.Watchdog!.HookReinstalled();

@@ -65,6 +65,9 @@ public sealed class MappingSessionTests : IDisposable
             GameRelaunchGrace = TimeSpan.FromMilliseconds(300),
             CreateForeground = flag => _createForeground is { } create ? create(flag) : _foreground = new FakeForeground(flag),
             CreatePoller = (_, snapshot, config) => new SensorPoller(_openSensor, snapshot, config),
+            // The game is "in front" in these tests; a real hook would swallow the keys of
+            // whoever is using this PC and let their key state into the results.
+            DetachedHook = true,
         });
     }
 
@@ -707,6 +710,7 @@ public sealed class MappingSessionTests : IDisposable
         Eventually(() => !ReferenceEquals(_session.Hook, first), "a new hook");
         Eventually(() => _session.Status().HookReinstalls == 1 && _session.Hook!.IsInstalled, "the new hook installed");
         Assert.False(first.IsInstalled);
+        Assert.True(_session.Hook!.Detached, "a reinstalled hook comes from the same factory, detached in tests");
         Assert.Equal(SessionState.Running, _session.State);
         Assert.True(_session.Store!.IsGated(Space.Slot));
         WaitForPad(PadReport.Neutral);

@@ -81,6 +81,14 @@ public sealed unsafe class KeyboardHook : IDisposable
         _policy.SetMapped(_mapped);
     }
 
+    /// <summary>
+    /// For tests: the thread, timer and handlers run, but nothing is installed into
+    /// Windows and the real keyboard is never read, so a test can neither swallow nor see
+    /// anyone's keys. Events arrive only through <see cref="Handle"/>.
+    /// </summary>
+    internal bool Detached { get; init; }
+
+    /// <summary>Installed into Windows, or running detached.</summary>
     public bool IsInstalled => Volatile.Read(ref _hook) != 0;
 
     /// <summary>Callbacks seen since install, whether swallowed or passed.</summary>
@@ -248,7 +256,8 @@ public sealed unsafe class KeyboardHook : IDisposable
     private void Run()
     {
         _threadId = Kernel32.GetCurrentThreadId();
-        var hook = User32.SetWindowsHookExW(User32.WH_KEYBOARD_LL, &Callback, Kernel32.GetModuleHandleW(null), 0);
+        // Detached, a stand-in handle keeps IsInstalled reading as it would.
+        var hook = Detached ? -1 : User32.SetWindowsHookExW(User32.WH_KEYBOARD_LL, &Callback, Kernel32.GetModuleHandleW(null), 0);
         if (hook == 0)
         {
             _error = new Win32Exception(Marshal.GetLastWin32Error(), "SetWindowsHookEx failed.");
@@ -260,8 +269,11 @@ public sealed unsafe class KeyboardHook : IDisposable
         nuint timer = 0;
         try
         {
-            SyncModifiers();
-            MarkKeysAlreadyDown();
+            if (!Detached)
+            {
+                SyncModifiers();
+                MarkKeysAlreadyDown();
+            }
             timer = User32.SetTimer(0, 0, TimerMs, 0);
             _ready.Set();
             while (User32.GetMessageW(out var msg, 0, 0, 0) > 0)
@@ -285,7 +297,10 @@ public sealed unsafe class KeyboardHook : IDisposable
             {
                 User32.KillTimer(0, timer);
             }
-            User32.UnhookWindowsHookEx(hook);
+            if (!Detached)
+            {
+                User32.UnhookWindowsHookEx(hook);
+            }
             Volatile.Write(ref _hook, 0);
             _policy.Reset();
             Interlocked.CompareExchange(ref s_current, null, this);
@@ -297,7 +312,10 @@ public sealed unsafe class KeyboardHook : IDisposable
     {
         try
         {
-            SyncModifiers();
+            if (!Detached)
+            {
+                SyncModifiers();
+            }
             Timer?.Invoke();
         }
         catch (Exception)
