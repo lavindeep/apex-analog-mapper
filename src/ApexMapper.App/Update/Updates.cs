@@ -63,6 +63,29 @@ public sealed class VelopackUpdates : IUpdates
         manager.WaitExitThenApplyUpdates(release, silent: false, restart: true);
     }
 
+    /// <summary>
+    /// Starts Velopack's updater for a version downloaded in an earlier run, which installs
+    /// it once this copy exits and starts the new version. False when there is none, or
+    /// when the updater cannot start and the app should run as it is.
+    /// </summary>
+    public static bool InstallPendingOnExit()
+    {
+        try
+        {
+            var manager = Manager(prereleases: false);
+            if (!manager.IsInstalled || manager.UpdatePendingRestart is not { } pending)
+            {
+                return false;
+            }
+            manager.WaitExitThenApplyUpdates(pending, silent: false, restart: true);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     /// <summary>A copy whose install Velopack cannot read cannot update either, and the app still starts.</summary>
     private static bool IsInstalled()
     {

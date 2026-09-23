@@ -1,3 +1,4 @@
+using ApexMapper.App.Update;
 using Velopack;
 
 namespace ApexMapper.App;
@@ -15,7 +16,13 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
-        VelopackApp.Build().Run();
+        // Velopack would install a downloaded update here, in any copy, and close the one
+        // that is mapping to do it. Only the copy that claims the app installs it, below.
+        var restarted = false;
+        VelopackApp.Build()
+            .SetAutoApplyOnStartup(false)
+            .OnRestarted(_ => restarted = true)
+            .Run();
 
         SingleInstance? claimed;
         try
@@ -31,6 +38,12 @@ public static class Program
         }
         using var instance = claimed;
         if (instance is null)
+        {
+            return 0;
+        }
+        // A copy Velopack started after an install does not try again, so an update that
+        // fails to install cannot stop the app from starting.
+        if (!restarted && VelopackUpdates.InstallPendingOnExit())
         {
             return 0;
         }
