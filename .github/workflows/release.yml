@@ -2,7 +2,8 @@ name: Release
 
 # A tag like v0.5.0 or v0.5.0-alpha builds, tests and packs that version, then
 # publishes it as a GitHub release with SHA-256 hashes in the notes. The annotated
-# tag's message becomes the release notes. A version with a hyphen is a prerelease.
+# tag's message becomes the release notes: start it with a one-line title, since git
+# joins the lines of its first paragraph. A version with a hyphen is a prerelease.
 # A run that fails after the upload leaves a draft release; delete it before running
 # the tag again.
 on:
@@ -108,7 +109,7 @@ jobs:
             ''
             '## SHA-256'
             ''
-            'The files are not code-signed, so Windows SmartScreen may warn about Setup.exe. Compare its hash with `Get-FileHash ApexAnalogMapper-win-Setup.exe` in PowerShell before running it.'
+            'The files are not code-signed, so Windows SmartScreen may warn about Setup.exe. Before running it, check its hash in PowerShell: `(Get-FileHash .\ApexAnalogMapper-win-Setup.exe).Hash -eq ''<the hash below>''` should print True.'
             ''
             '```'
             $sums

@@ -4,9 +4,10 @@ What I run by hand, on my own PC and in Forza Horizon, for every release. The
 automated tests cover the logic; this covers the parts only a person at the keyboard
 can judge. Tick every box, or write down why one was skipped.
 
-Everything down to the update section runs on the packed build before I push the tag.
-The update section needs the release to be public, so it runs right after I publish
-it, on a copy of the release before. The first release has nothing to update from.
+Everything down to the release section runs on the packed build before I push the
+tag. The release section needs the release to be public, so it runs right after I
+publish it. Its update checks start from a copy of the release before; the first
+release has nothing to update from.
 
 Record the version, keyboard, firmware and game at the top of the run:
 
@@ -17,8 +18,7 @@ Record the version, keyboard, firmware and game at the top of the run:
 
 ## Install
 
-- [ ] SmartScreen shows More info, then Run anyway, and nothing else asks for
-      administrator rights.
+- [ ] Nothing asks for administrator rights.
 - [ ] The app starts after the install, with its icon in the title bar, the taskbar,
       the Start menu and the desktop shortcut.
 - [ ] With ViGEmBus uninstalled, the Setup card opens by itself, Start asks for the
@@ -67,16 +67,17 @@ Start mapping before launching the game, then drive for at least 30 minutes.
 - [ ] Sleep and wake while mapping ends the session.
 - [ ] A mapped key pressed on another keyboard shows the notice once.
 
-## Update and uninstall
+## Release
 
 - [ ] The released installer's SHA-256 matches the one in the release notes.
-- [ ] Installed on the previous release, the Setup card offers the new one. Update
-      downloads it, Restart and update installs it, and the app comes back on the new
-      version with its profiles, calibration and settings intact.
-- [ ] Update and Restart and update are off while mapping.
-- [ ] With an update downloaded and mapping running, opening the app from the Start
-      menu only brings its window forward. Mapping carries on, and the update waits for
-      a restart.
+- [ ] The downloaded installer gets SmartScreen's More info, then Run anyway.
+- [ ] Installed on the previous release, the Setup card offers the new one, and Update
+      is off while mapping.
+- [ ] Update downloads it. Restart and update is off while mapping.
+- [ ] With the update downloaded and mapping running, opening the app from the Start
+      menu only brings its window forward. Mapping carries on.
+- [ ] After mapping stops, Restart and update installs it, and the app comes back on
+      the new version with its profiles, calibration and settings intact.
 - [ ] Uninstalling from Settings > Apps removes the app and its shortcuts and leaves
       `%AppData%\ApexAnalogMapper`.
 

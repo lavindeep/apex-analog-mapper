@@ -14,8 +14,9 @@ when there is one. A useful bug report has:
 - The game and how it was launched (Steam, Store, Game Pass), and whether it runs as
   administrator.
 - What you did, what you expected, and what happened instead.
-- The session log, if the app produced one. It never records key presses, but file
-  paths in it can show your Windows user name.
+- The session log, if the app produced one. It never records typing, and names a key
+  only in calibration lines and calibration warnings, but file paths in it can show
+  your Windows user name.
 
 Security problems go in a public issue too. There is no private channel and no bounty.
 

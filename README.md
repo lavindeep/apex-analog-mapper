@@ -61,7 +61,9 @@ checks its signature every time it loads.
    game by its executable, so a restarted game keeps working.
 3. **Calibrate.** Every key the profile reads for depth needs calibrating once. For
    W, A, S and D in the Forza profile:
-   1. Open the calibration card. Each key has a bar showing its sensor reading.
+   1. Open the calibration card. Each key has a bar showing its sensor reading. On a
+      keyboard the app hasn't been tested with, a row first asks for **Learn**: keep
+      your hands off the keyboard, then hold that key all the way down when it asks.
    2. With the key up and your hands off the keyboard, press **Set released**.
    3. Hold the key all the way down and press **Set fully pressed** with the mouse.
       Keep holding until the row says it saved.
@@ -119,11 +121,13 @@ alpha, you're offered the next test version too.
   about running as administrator.
 - **Start stays greyed out.** The status card says what's missing, with a button to
   the fix when there is one.
-- **A key's calibration is refused.** Let go of the key and every key near it, then
-  press Set released again. A key held during that step is caught and nothing is saved.
+- **A key's calibration is refused.** Let go of the key, then press Set released
+  again. If the key was down during that step, the reading is refused and nothing is
+  saved.
 - **Something else.** The Setup card opens the folder with the log. It records
-  sessions, calibrations and faults, never your key presses. File paths in it can
-  show your Windows user name, so read it over, then attach it to a
+  sessions, calibrations and faults, never your typing. It names a key only when you
+  calibrate it or when the app warns about its calibration. File paths in it can show
+  your Windows user name, so read it over, then attach it to a
   [new issue](https://github.com/lavindeep/apex-analog-mapper/issues/new).
 
 ## Uninstall

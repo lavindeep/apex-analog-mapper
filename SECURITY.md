@@ -10,8 +10,8 @@ and how to report a vulnerability.
   depth through the keyboard's own vendor HID interface, and installs a low-level
   keyboard hook. While the selected game is in the foreground, the hook blocks the
   mapped keys so the game sees controller input instead of keystrokes. Keystroke data
-  stays in memory. The log records session events, calibrations and faults, never key
-  presses. It names a key only in a calibration line, or once a session when the key
+  stays in memory. The log records session events, calibrations and faults, never
+  typing. It names a key only in a calibration line, or in a warning that the key
   presses deeper than its calibration.
 - The keyboard's vendor interface. The app sends exactly two commands to it: a
   firmware version query and a sensor read. Nothing else is ever written to the
@@ -22,9 +22,9 @@ and how to report a vulnerability.
 
 The app makes one kind of network request. It asks this repository's GitHub Releases
 whether there is a newer version when it starts, unless it had an answer in the last six
-hours, when you press Check for updates, and when you turn on test versions. The check
-on start can be turned off on the Setup card. The request carries no account, token or
-app version. There is no telemetry.
+hours, when you press Check for updates, and when you turn test versions on or off. The
+check on start can be turned off on the Setup card. The request carries no account,
+token or app version. There is no telemetry.
 
 A new version downloads only when you press Update. Velopack checks the download against
 the SHA-256 in the release's feed. That catches a damaged download, not a release
@@ -61,7 +61,7 @@ and 64-bit Windows checks that signature every time the driver loads.
 ## Unsigned binaries
 
 Releases are unsigned. Windows SmartScreen will warn the first time you run the
-installer. Every release lists the SHA-256 of each file in its notes and in
+installer. Every release lists the SHA-256 of each download in its notes and in
 `SHA256SUMS.txt`. Check the installer's hash before running it.
 
 ## What the app never does
