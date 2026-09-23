@@ -62,4 +62,23 @@ public class ScanCodeTests
     {
         Assert.Equal(reserved, new ScanCode((ushort)value).IsReserved);
     }
+
+    [Theory]
+    [InlineData(0x11, true)]
+    [InlineData(0x39, true)]
+    [InlineData(0xE048, true)]
+    [InlineData(0xE01C, true)]
+    [InlineData(0x1D, false)]
+    [InlineData(0xE11D, false)]
+    [InlineData(0xE145, false)]
+    [InlineData(0x45, false)]
+    [InlineData(0x71, false)]
+    [InlineData(0x72, false)]
+    [InlineData(0xF1, false)]
+    [InlineData(0xF2, false)]
+    [InlineData(0xE0F2, false)]
+    public void Only_keys_the_hook_and_raw_input_report_alike_and_that_are_not_reserved_can_be_bound(int value, bool bindable)
+    {
+        Assert.Equal(bindable, new ScanCode((ushort)value).IsBindable);
+    }
 }

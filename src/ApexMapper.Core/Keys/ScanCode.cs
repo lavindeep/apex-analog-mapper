@@ -55,5 +55,15 @@ public readonly record struct ScanCode
     /// </summary>
     public bool IsReserved => Value is 0x1D or 0xE01D or 0x38 or 0xE038 or 0xE05B or 0xE05C or 0x58;
 
+    /// <summary>
+    /// A key a binding may use: not reserved, and reported the same way by the keyboard
+    /// hook, which blocks it, and by Raw Input, which the editor captures it with. Pause
+    /// reaches Raw Input as E1 1D and then 45, whose second half reads as Num Lock, so
+    /// the E1 page and Num Lock are both left out. The Korean language keys send a lone
+    /// code with the break bit set (F1, F2), which the two report differently, so codes
+    /// 71 and 72 and anything with that bit are left out too (stage 2 ledger M3).
+    /// </summary>
+    public bool IsBindable => !IsReserved && Value >> 8 != 0xE1 && Value != 0x45 && (Value & 0x7F) is not (0x71 or 0x72) && (Value & 0x80) == 0;
+
     public override string ToString() => $"0x{Value:X2}";
 }

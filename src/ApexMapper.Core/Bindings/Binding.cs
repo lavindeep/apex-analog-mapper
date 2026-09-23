@@ -40,6 +40,10 @@ public sealed record KeyBinding(
         {
             return $"{key} is reserved (Ctrl, Alt, Windows, and F12 cannot be mapped).";
         }
+        if (!key.IsBindable)
+        {
+            return $"{key} cannot be mapped: the keyboard hook does not report it the way Raw Input does.";
+        }
         if (target.IsAxis())
         {
             return $"{target} needs two keys; use an axis binding.";
@@ -81,6 +85,10 @@ public sealed record AxisBinding(
         if (negativeKey.IsReserved || positiveKey.IsReserved)
         {
             return "Ctrl, Alt, Windows, and F12 cannot be mapped.";
+        }
+        if (!negativeKey.IsBindable || !positiveKey.IsBindable)
+        {
+            return "Pause, Num Lock and the language keys cannot be mapped: the keyboard hook does not report them the way Raw Input does.";
         }
         if (negativeKey == positiveKey)
         {
