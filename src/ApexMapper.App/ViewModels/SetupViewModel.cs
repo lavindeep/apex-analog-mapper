@@ -15,11 +15,14 @@ public sealed class SetupViewModel : ObservableObject
     public const string DriverVersion = "1.22.0";
 
     private readonly AppServices _services;
+    private readonly Workspace _workspace;
     private DriverState _driver;
+    private bool _isOpen;
 
-    public SetupViewModel(AppServices services)
+    public SetupViewModel(AppServices services, Workspace workspace)
     {
         _services = services;
+        _workspace = workspace;
         OpenDriverPage = new Command(() => _services.Open(DriverPage));
         OpenDataFolder = new Command(() => _services.Open(_services.DataFolder));
         Recheck();
@@ -29,11 +32,25 @@ public sealed class SetupViewModel : ObservableObject
     {
         DriverState.Running => "ViGEmBus is installed and running.",
         DriverState.NotStarted => "ViGEmBus is installed but not running. Restart the PC to finish installing it.",
-        DriverState.Missing => $"ViGEmBus is not installed. The mapper needs it to create the virtual controller. Install version {DriverVersion} from its release page, then come back to this window.",
+        DriverState.Missing => $"ViGEmBus is not installed. The app needs it to create the virtual controller. Install version {DriverVersion} from its release page, then come back to this window.",
         _ => "Windows would not say whether ViGEmBus is installed. Start will find out.",
     };
 
     public bool DriverMissing => _driver == DriverState.Missing;
+
+    /// <summary>The card is expanded. It opens by itself while the driver is missing or not running, since nothing works without it.</summary>
+    public bool IsOpen
+    {
+        get => _isOpen;
+        set => Set(ref _isOpen, value);
+    }
+
+    public string Summary => _driver switch
+    {
+        DriverState.Missing => "The controller driver is not installed",
+        DriverState.NotStarted => "The controller driver is not running yet",
+        _ => "Controller driver, Steam, and where the app keeps its files",
+    };
 
     public bool DriverReady => _driver == DriverState.Running;
 
@@ -60,6 +77,12 @@ public sealed class SetupViewModel : ObservableObject
         {
             Raise(nameof(DriverMissing));
             Raise(nameof(DriverReady));
+            Raise(nameof(Summary));
+            if (state is DriverState.Missing or DriverState.NotStarted)
+            {
+                IsOpen = true;
+            }
         }
+        _workspace.Driver = state;
     }
 }

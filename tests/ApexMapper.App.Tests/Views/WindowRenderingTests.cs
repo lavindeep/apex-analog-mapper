@@ -12,6 +12,7 @@ using ApexMapper.Core.Calibration;
 using ApexMapper.Core.Profiles;
 using ApexMapper.Windows.Hid;
 using ApexMapper.Windows.Input;
+using ApexMapper.Windows.Output;
 using ApexMapper.Windows.Session;
 using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
@@ -28,10 +29,14 @@ public sealed class WindowRenderingTests
 {
     private const double Scale = 1.5;
 
-    /// <summary>Long enough for WPF-UI's expand and open animations to finish.</summary>
+    /// <summary>Long enough for WPF-UI's expand and open animations to finish, which only images need.</summary>
     private const int AnimationsMs = 800;
 
-    private sealed record Scenario(string Name, Action<AppHarness> Arrange, Func<MainViewModel, AppHarness, Task>? Act = null);
+    /// <summary>Long enough for layout and every binding to resolve.</summary>
+    private const int BindingsMs = 50;
+
+    /// <param name="Narrow">Shown at the window's minimum width.</param>
+    private sealed record Scenario(string Name, Action<AppHarness> Arrange, Func<MainViewModel, AppHarness, Task>? Act = null, bool Narrow = false);
 
     private static readonly Scenario[] Scenarios =
     [
@@ -55,7 +60,7 @@ public sealed class WindowRenderingTests
         }, async (main, h) =>
         {
             await main.Status.StartAsync();
-            var status = new SessionStatus(SessionState.Running, null, GameRunning: false, GameHasFocus: false, GameElevated: false, FallbackKeys: 1,
+            var status = new SessionStatus(SessionState.Running, null, GameRunning: false, GameHasFocus: false, GameElevation: Elevation.Visible, FallbackKeys: 1,
                 SensorProblem: "The keyboard stopped answering.", KeysAwaitingRelease: false, SubmitCount: 0, HookReinstalls: 1, RestartRequired: false,
                 CycleP50Ms: 1.5f, CycleP99Ms: 2.9f, KeysAtLimit: [DefaultProfiles.Key.S]);
             for (var ms = 0; ms <= StatusViewModel.AtLimitWarningMs; ms += 500)
@@ -69,6 +74,20 @@ public sealed class WindowRenderingTests
             h.Boards[0] = AppHarness.Gen3Info;
             h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
         }),
+        new("driver-missing", h => h.DriverCheck = () => DriverState.Missing),
+        new("restart-required", h =>
+        {
+            h.CalibrateForza();
+            h.Session.RestartRequired = true;
+            h.Session.LastEnd = SessionEnd.For(EndReason.EngineStalled);
+        }),
+        new("axis-capture", _ => { }, (main, _) =>
+        {
+            main.Profile.IsOpen = true;
+            main.Profile.SelectedRow = main.Profile.Rows.First(r => r.IsAxis);
+            main.Profile.CaptureNegativeKey.Execute(null);
+            return Task.CompletedTask;
+        }, Narrow: true),
     ];
 
     [Fact]
@@ -76,7 +95,8 @@ public sealed class WindowRenderingTests
     {
         var folder = Environment.GetEnvironmentVariable("APEX_SCREENSHOTS");
         var errors = OnStaThread(() => RenderAll(folder));
-        Assert.Empty(errors);
+        // Whole, since the collection's own message cuts each one short.
+        Assert.True(errors.Count == 0, string.Join(Environment.NewLine, errors));
     }
 
     private static List<string> RenderAll(string? folder)
@@ -92,7 +112,7 @@ public sealed class WindowRenderingTests
         {
             foreach (var theme in new[] { ApplicationTheme.Light, ApplicationTheme.Dark })
             {
-                ApplicationThemeManager.Apply(theme, WindowBackdropType.None, updateAccent: false);
+                ApplicationThemeManager.Apply(theme, WindowBackdropType.None, updateAccent: true);
                 foreach (var scenario in Scenarios)
                 {
                     errors.Scenario = $"{scenario.Name}, {theme}";
@@ -127,32 +147,45 @@ public sealed class WindowRenderingTests
             ShowActivated = false,
             ShowInTaskbar = false,
         };
+        if (scenario.Narrow)
+        {
+            window.Width = window.MinWidth;
+        }
         window.Show(main);
         try
         {
-            foreach (var expander in Descendants<CardExpander>(window))
+            ExpandAll(window, true);
+            Settle(folder is null ? BindingsMs : AnimationsMs);
+            // The cards with live readings only read the keyboard while open, so their expanders must drive it both ways.
+            Assert.True(main.Calibration.IsOpen && main.Profile.IsOpen, $"{scenario.Name}: expanding did not open the cards");
+            if (folder is not null)
             {
-                expander.IsExpanded = true;
+                Directory.CreateDirectory(folder);
+                var background = (Brush)Application.Current.Resources["ApplicationBackgroundBrush"];
+                var column = (System.Windows.Controls.Panel)Descendants<System.Windows.Controls.ScrollViewer>(window).First().Content;
+                var index = 0;
+                foreach (FrameworkElement card in column.Children)
+                {
+                    index++;
+                    var name = $"{scenario.Name}-{theme.ToString().ToLowerInvariant()}-{index}-{card.GetType().Name}.png";
+                    Save(Snapshot(card, background), Path.Combine(folder, name));
+                }
             }
-            Settle(AnimationsMs);
-            if (folder is null)
-            {
-                return;
-            }
-            Directory.CreateDirectory(folder);
-            var background = (Brush)Application.Current.Resources["ApplicationBackgroundBrush"];
-            var column = (System.Windows.Controls.Panel)Descendants<System.Windows.Controls.ScrollViewer>(window).First().Content;
-            var index = 0;
-            foreach (FrameworkElement card in column.Children)
-            {
-                index++;
-                var name = $"{scenario.Name}-{theme.ToString().ToLowerInvariant()}-{index}-{card.GetType().Name}.png";
-                Save(Snapshot(card, background), Path.Combine(folder, name));
-            }
+            ExpandAll(window, false);
+            Settle(BindingsMs);
+            Assert.False(main.Calibration.IsOpen || main.Profile.IsOpen, $"{scenario.Name}: collapsing did not close the cards");
         }
         finally
         {
             window.Close();
+        }
+    }
+
+    private static void ExpandAll(Window window, bool expanded)
+    {
+        foreach (var expander in Descendants<CardExpander>(window))
+        {
+            expander.IsExpanded = expanded;
         }
     }
 

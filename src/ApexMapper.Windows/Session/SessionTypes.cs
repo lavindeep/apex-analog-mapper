@@ -48,16 +48,16 @@ public sealed record SessionEnd(EndReason Reason, string Message)
     public static SessionEnd For(EndReason reason) => new(reason, reason switch
     {
         EndReason.UserStop => "Stopped.",
-        EndReason.Hotkey => "Stopped with Ctrl+Alt+F12.",
+        EndReason.Hotkey => "Stopped with Ctrl+Left Alt+F12.",
         EndReason.AppClosing => "Stopped because the app closed.",
         EndReason.ProfileEdited => "Stopped because the active profile was edited.",
         EndReason.GameExited => "Stopped because the game exited.",
         EndReason.ControllerDisconnected => "Stopped because the virtual controller disappeared.",
         EndReason.SleepOrWake => "Stopped because the PC went to sleep. Press Start to map again.",
-        EndReason.EngineStalled => "Stopped because the mapper stopped responding. The controller was unplugged as a precaution.",
-        EndReason.EngineFault => "Stopped because the engine failed.",
-        EndReason.HookFailed => "Stopped because Windows removed the keyboard hook and it could not be put back.",
-        EndReason.SafetyFault => "Stopped because one of the mapper's safety checks stopped working.",
+        EndReason.EngineStalled => "Stopped because the app stopped updating the controller for a moment. Press Start to try again.",
+        EndReason.EngineFault => "Stopped because of an internal error. Press Start to try again.",
+        EndReason.HookFailed => "Stopped because Windows turned off key blocking and it could not be turned back on. Press Start to try again.",
+        EndReason.SafetyFault => "Stopped because one of the app's safety checks stopped working.",
         EndReason.KeyboardMissing => "The selected keyboard is not connected.",
         EndReason.RestartRequired => "The last virtual controller could not be removed. Restart the app to clear it, then press Start.",
         EndReason.DriverMissing => "The ViGEmBus driver is not installed.",
@@ -79,7 +79,7 @@ public sealed record SessionRequest(
 
 /// <summary>A reading for the status card, taken on any thread.</summary>
 /// <param name="GameRunning">The game's process has been found; until then the session is up and waiting for it.</param>
-/// <param name="GameElevated">The game has focus but runs elevated (or cannot be read) while the mapper does not, so its input is invisible.</param>
+/// <param name="GameElevation">Whether the game in front runs where the hook cannot see it: elevated while this process is not, or with a token that could not be read. <see cref="Elevation.Visible"/> when the game is not in front.</param>
 /// <param name="FallbackKeys">Analog keys driven from the keyboard's on/off state right now.</param>
 /// <param name="SensorProblem">Why, while <paramref name="FallbackKeys"/> is above zero.</param>
 /// <param name="KeysAwaitingRelease">The game has focus and a mapped key stays dead until it is released once.</param>
@@ -94,7 +94,7 @@ public sealed record SessionStatus(
     SessionEnd? LastEnd,
     bool GameRunning,
     bool GameHasFocus,
-    bool GameElevated,
+    Elevation GameElevation,
     int FallbackKeys,
     string? SensorProblem,
     bool KeysAwaitingRelease,

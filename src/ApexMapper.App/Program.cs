@@ -17,7 +17,19 @@ public static class Program
     {
         VelopackApp.Build().Run();
 
-        using var instance = SingleInstance.TryClaim(args.Contains(RestartedArgument) ? RestartWait : TimeSpan.Zero);
+        SingleInstance? claimed;
+        try
+        {
+            claimed = SingleInstance.TryClaim(args.Contains(RestartedArgument) ? RestartWait : TimeSpan.Zero);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // A copy run as administrator holds the name, and this one may not even open it.
+            System.Windows.MessageBox.Show("Apex Analog Mapper is already running as administrator. Switch to it from the taskbar.",
+                "Apex Analog Mapper", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            return 0;
+        }
+        using var instance = claimed;
         if (instance is null)
         {
             return 0;

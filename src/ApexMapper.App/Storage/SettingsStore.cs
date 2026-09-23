@@ -28,6 +28,9 @@ public sealed class SettingsStore(string path)
 
     private LoadResult<AppSettings>? _unsafeToSave;
 
+    /// <summary>The last <see cref="Load"/> found a file it could not read, or one a newer version wrote, and returned defaults in its place.</summary>
+    public bool LastLoadUsedDefaults => _unsafeToSave is not null;
+
     public (AppSettings Settings, string? Problem) Load()
     {
         var result = JsonFile.Load(path, Parse);

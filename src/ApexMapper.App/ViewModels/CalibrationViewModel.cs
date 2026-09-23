@@ -5,6 +5,7 @@ using ApexMapper.App.Mvvm;
 using ApexMapper.Core.Calibration;
 using ApexMapper.Core.Keys;
 using ApexMapper.Core.Sensors;
+using ApexMapper.Windows.Input;
 
 namespace ApexMapper.App.ViewModels;
 
@@ -115,13 +116,17 @@ public enum CalibrationStep
 /// group's signature, which the session hands to its poller for the desync check. The
 /// keyboard is read only while the card is open, a board may be read, and no session
 /// runs. On an unverified board the built-in sensor table is not trusted: each key is
-/// learned first.
+/// learned first. Raw Input says which keys are down, so a released reading taken with
+/// its key pressed is refused.
 /// </summary>
 public sealed class CalibrationViewModel : ObservableObject
 {
     public const int ReleasedMs = 2000;
     public const int PressedMs = 1000;
     public const int LearnMs = 3000;
+
+    /// <summary>How long the learn step waits before its at-rest reading, so a key that clicked the button (Enter) is up again.</summary>
+    public const int SettleMs = 500;
 
     /// <summary>A step with no fresh reading for this long gives up.</summary>
     public const int NoReadingMs = 3000;
@@ -133,6 +138,7 @@ public sealed class CalibrationViewModel : ObservableObject
     private bool _isOpen;
     private string? _sensorProblem;
     private Run? _run;
+    private readonly HashSet<ScanCode> _held = [];
 
     /// <summary>The step in progress: its samples, and when the last reading came.</summary>
     private sealed class Run(CalibrationRowViewModel row, CalibrationStep step, long started)
@@ -147,6 +153,9 @@ public sealed class CalibrationViewModel : ObservableObject
         public int Max { get; set; } = int.MinValue;
         public int Extreme { get; set; } = -1;
         public LearnStep? Learn { get; set; }
+
+        /// <summary>The row's key went down during a released step.</summary>
+        public bool KeyPressed { get; set; }
     }
 
     public CalibrationViewModel(AppServices services, Workspace workspace)
@@ -250,6 +259,25 @@ public sealed class CalibrationViewModel : ObservableObject
         }
     }
 
+    /// <summary>A key event from Raw Input, drained on the UI thread. Keeps track of which keys are down.</summary>
+    public void OnKey(in RawKeyEvent key)
+    {
+        if (key.Device == 0)
+        {
+            return;
+        }
+        if (!key.Down)
+        {
+            _held.Remove(key.Code);
+            return;
+        }
+        _held.Add(key.Code);
+        if (_run is { Step: CalibrationStep.Released } run && run.Row.Key == key.Code)
+        {
+            run.KeyPressed = true;
+        }
+    }
+
     internal bool CanStep(CalibrationRowViewModel row, CalibrationStep step) => CanCalibrate && _run is null && step switch
     {
         CalibrationStep.Learn => true,
@@ -263,7 +291,7 @@ public sealed class CalibrationViewModel : ObservableObject
         {
             return;
         }
-        _run = new Run(row, step, _services.NowMs());
+        _run = new Run(row, step, _services.NowMs()) { KeyPressed = _held.Contains(row.Key) };
         row.IsBusy = true;
         row.Message = step switch
         {
@@ -280,6 +308,10 @@ public sealed class CalibrationViewModel : ObservableObject
         switch (run.Step)
         {
             case CalibrationStep.Learn when run.Learn is null:
+                if (nowMs - run.Started < SettleMs)
+                {
+                    break;
+                }
                 run.Learn = new LearnStep(_raw);
                 run.Started = nowMs;
                 row.Message = $"Now press {row.Name} all the way down and hold it.";
@@ -351,6 +383,11 @@ public sealed class CalibrationViewModel : ObservableObject
     private void FinishReleased(Run run)
     {
         var row = run.Row;
+        if (run.KeyPressed)
+        {
+            Finish(run, $"{row.Name} was pressed while its released reading was taken, so nothing was saved. Let go of it and press Set released again.");
+            return;
+        }
         var index = row.SensorIndex!.Value;
         var rest = (int)Math.Round(run.Sum / (double)run.Count);
         var noise = run.Max - run.Min;
@@ -370,14 +407,16 @@ public sealed class CalibrationViewModel : ObservableObject
             Finish(run, "The calibration could not be saved: " + e.Message);
             return;
         }
-        var full = row.Stored is { } stored && stored.SensorIndex == index ? stored.FullPress : (int?)null;
+        // Saved alone only when it is close to the saved one: a rest that moved further may
+        // have been taken with the key part way down, and would spoil a good calibration.
+        var full = row.Stored is { } stored && stored.SensorIndex == index && Math.Abs(rest - stored.Rest) <= band ? stored.FullPress : (int?)null;
         if (full is { } known && KeyCalibration.Validate(rest, known, band, index) is null)
         {
-            Save(run, new KeyCalibration(rest, known, band, index), $"Rest {rest}, noise {noise} counts. Saved.");
+            Save(run, new KeyCalibration(rest, known, band, index), $"Released {rest}, noise {noise} counts. Saved.");
             return;
         }
         row.PendingRest = (rest, band, index);
-        Finish(run, $"Rest {rest}, noise {noise} counts. Now hold {row.Name} all the way down and press Set fully pressed.");
+        Finish(run, $"Released {rest}, noise {noise} counts. Now hold {row.Name} all the way down and press Set fully pressed.");
     }
 
     private void FinishPressed(Run run)
@@ -386,16 +425,19 @@ public sealed class CalibrationViewModel : ObservableObject
         var index = row.SensorIndex!.Value;
         var (rest, band) = RestFor(row, index)!.Value;
         var full = run.Extreme;
+        // Keys on a tested board read higher as they go down; a lower reading means the released one was taken pressed.
+        if (_workspace.Board is { Verified: true } && full < rest - band)
+        {
+            row.PendingRest = null;
+            Finish(run, $"{row.Name} read lower pressed than released, so its released reading was taken with the key down. Press Set released with the key up, then Set fully pressed again.");
+            return;
+        }
         if (Math.Abs(full - rest) < band + KeyCalibration.MinimumSpanAboveBand)
         {
             Finish(run, $"{row.Name} did not move far enough from rest. Hold it all the way down, then press Set fully pressed again.");
             return;
         }
-        var calibration = new KeyCalibration(rest, full, band, index);
-        var clipping = calibration.IsClipping
-            ? $" {row.Name} reaches the sensor's limit before the bottom of its travel, so the last part of the press does nothing."
-            : "";
-        Save(run, calibration, $"Full press {full}. Saved.{clipping}");
+        Save(run, new KeyCalibration(rest, full, band, index), $"Fully pressed {full}. Saved.");
     }
 
     private void Save(Run run, KeyCalibration calibration, string done)
@@ -476,10 +518,12 @@ public sealed class CalibrationViewModel : ObservableObject
         var board = _workspace.Board;
         row.SensorIndex = row.Learned ?? row.Stored?.SensorIndex
             ?? (board is { Verified: true } && SensorMap.Default.TryGetSensorIndex(row.Key, out var index) ? index : null);
-        row.Status = row.Stored is not { } stored ? (row.SensorIndex is null ? "Press Learn to find its sensor." : "Not calibrated.")
+        row.Status = row.Stored is not { } stored
+            ? (row.SensorIndex is null ? "Not calibrated. Press Learn to find its sensor first." : "Not calibrated. With the key up, press Set released.")
             : row.Learned is not null ? "Learned a new sensor. Set released and fully pressed again."
-            : calibration!.FromOtherFirmware.Contains(row.Key) ? $"Calibrated on other firmware: rest {stored.Rest}, full press {stored.FullPress}."
-            : $"Rest {stored.Rest}, full press {stored.FullPress}, noise band {stored.NoiseBand}.{(stored.IsClipping ? " Reaches the sensor's limit before the bottom." : "")}";
+            : calibration!.FromOtherFirmware.Contains(row.Key) ? $"Calibrated on other firmware: released {stored.Rest}, fully pressed {stored.FullPress}."
+            : $"Calibrated: released {stored.Rest} (±{stored.NoiseBand}), fully pressed {stored.FullPress}." +
+              (stored.IsClipping ? $" {row.Name} reaches full output before it bottoms out; the last bit of travel does nothing." : "");
         row.RefreshAll();
     }
 

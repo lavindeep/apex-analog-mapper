@@ -1,5 +1,6 @@
 using ApexMapper.App.Model;
 using ApexMapper.App.Storage;
+using ApexMapper.App.ViewModels;
 using ApexMapper.Core.Calibration;
 using ApexMapper.Core.Keys;
 using ApexMapper.Core.Profiles;
@@ -25,6 +26,7 @@ internal sealed class FakeSession : IMappingSession
 
     public SessionEnd? NotStartable { get; set; }
 
+    /// <summary>What <see cref="Status"/> returns, with its state, last end and restart flag replaced by this fake's own.</summary>
     public SessionStatus? NextStatus { get; set; }
 
     public List<SessionRequest> Starts { get; } = [];
@@ -33,24 +35,41 @@ internal sealed class FakeSession : IMappingSession
 
     public SessionEnd? WhyNotStartable(Guid keyboard) => NotStartable;
 
+    /// <summary>Runs as a start begins, before the session opens anything.</summary>
+    public Action? Starting { get; set; }
+
+    /// <summary>When set, a start throws it and stays idle, as one that unwound after a fault.</summary>
+    public Exception? StartFault { get; set; }
+
     public Task<SessionEnd?> StartAsync(SessionRequest request)
     {
         Starts.Add(request);
+        Starting?.Invoke();
+        if (StartFault is { } fault)
+        {
+            return Task.FromException<SessionEnd?>(fault);
+        }
         Move(SessionState.Running);
         return Task.FromResult<SessionEnd?>(null);
     }
 
-    public Task StopAsync(EndReason reason)
+    /// <summary>When set, a stop waits for it: a session whose pad or poller is slow to let go.</summary>
+    public TaskCompletionSource? StopGate { get; set; }
+
+    public async Task StopAsync(EndReason reason)
     {
         Stops.Add(reason);
+        if (StopGate is { } gate)
+        {
+            await gate.Task;
+        }
         LastEnd = SessionEnd.For(reason);
         Move(SessionState.Idle);
-        return Task.CompletedTask;
     }
 
     public SessionStatus Status() => NextStatus is { } status
         ? status with { State = State, LastEnd = LastEnd, RestartRequired = RestartRequired }
-        : new SessionStatus(State, LastEnd, true, true, false, 0, null, false, 0, 0, RestartRequired);
+        : new SessionStatus(State, LastEnd, true, true, Elevation.Visible, 0, null, false, 0, 0, RestartRequired);
 
     public void Move(SessionState state)
     {
@@ -115,7 +134,8 @@ internal sealed class FakeKeyEvents : IKeyEvents
 
     public Dictionary<nint, Guid> Containers { get; } = new();
 
-    public void Press(ScanCode key, nint device = 1) => Pending.Enqueue(new RawKeyEvent(key, true, device, 0));
+    /// <summary>Stamped just late enough for a key capture that began at stamp zero.</summary>
+    public void Press(ScanCode key, nint device = 1) => Pending.Enqueue(new RawKeyEvent(key, true, device, ProfileViewModel.CaptureArmTicks));
 
     public bool TryRead(out RawKeyEvent key) => Pending.TryDequeue(out key);
 
@@ -136,7 +156,14 @@ internal sealed class FakeDialogs : IDialogs
         return Task.FromResult(Answer);
     }
 
-    public string? AskSavePath(string suggestedName) => SavePath;
+    /// <summary>Runs while the save dialog is open, as work posted to the UI thread would inside its modal loop.</summary>
+    public Action? WhileAsking { get; set; }
+
+    public string? AskSavePath(string suggestedName)
+    {
+        WhileAsking?.Invoke();
+        return SavePath;
+    }
 }
 
 /// <summary>
@@ -147,8 +174,8 @@ internal sealed class AppHarness : IDisposable
 {
     public static readonly Guid Tkl = new("27373de1-4206-11f1-b9e4-14ac60fcc13e");
     public static readonly Guid Gen3 = new("33333333-4206-11f1-b9e4-14ac60fcc13e");
-    public static readonly KeyboardInfo TklInfo = new(Tkl, 0x1614, "Apex Pro TKL", Known: true, HasVendorInterface: true);
-    public static readonly KeyboardInfo Gen3Info = new(Gen3, 0x1642, "Apex Pro TKL Gen 3", Known: true, HasVendorInterface: true);
+    public static readonly KeyboardInfo TklInfo = new(Tkl, 0x1614, "Apex Pro TKL", Known: true, HasVendorInterface: true, 65, 65);
+    public static readonly KeyboardInfo Gen3Info = new(Gen3, 0x1642, "Apex Pro TKL Gen 3", Known: true, HasVendorInterface: true, 65, 65);
     public const string Firmware = "4.16.8";
     public const string Game = @"C:\Games\ForzaHorizon6\ForzaHorizon6.exe";
 
@@ -174,6 +201,8 @@ internal sealed class AppHarness : IDisposable
             KeyName = key => Names.GetValueOrDefault(key, key.ToString()),
             Log = Log.Add,
             NowMs = () => Now,
+            // Raw Input's clock stands still at zero: a capture begins there and FakeKeyEvents stamps presses after it.
+            Timestamp = () => 0,
             Open = Opened.Add,
             Restart = () => Restarts++,
         };

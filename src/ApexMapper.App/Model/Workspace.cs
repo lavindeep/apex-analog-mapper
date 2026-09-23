@@ -5,6 +5,7 @@ using ApexMapper.Core.Profiles;
 using ApexMapper.Core.Sensors;
 using ApexMapper.Windows.Devices;
 using ApexMapper.Windows.Hid;
+using ApexMapper.Windows.Output;
 using ApexMapper.Windows.Session;
 
 namespace ApexMapper.App.Model;
@@ -41,6 +42,8 @@ public sealed class Workspace : ObservableObject
     private SessionState _session;
     private string? _runningProfileText;
     private string? _settingsProblem;
+    private DriverState _driver = DriverState.Unknown;
+    private bool _readingFirmware;
 
     /// <summary>The chosen keyboard while it is connected and its firmware was asked; null otherwise. Set by the keyboard card.</summary>
     public Board? Board
@@ -66,6 +69,20 @@ public sealed class Workspace : ObservableObject
     public SensorMap Map => _calibration is { Keys.Count: > 0 } calibration
         ? new SensorMap(calibration.Keys.ToDictionary(k => k.Key, k => k.Value.SensorIndex))
         : SensorMap.Default;
+
+    /// <summary>A keyboard is chosen and its firmware is being asked, so <see cref="Board"/> is null for now. Set by the keyboard card.</summary>
+    public bool ReadingFirmware
+    {
+        get => _readingFirmware;
+        set => Set(ref _readingFirmware, value);
+    }
+
+    /// <summary>The ViGEmBus driver as last checked. Set by the setup card.</summary>
+    public DriverState Driver
+    {
+        get => _driver;
+        set => Set(ref _driver, value);
+    }
 
     /// <summary>Executable path of the chosen game. Set by the game card.</summary>
     public string? GamePath
@@ -114,13 +131,32 @@ public sealed class Workspace : ObservableObject
         set => Set(ref _settingsProblem, value);
     }
 
-    /// <summary>Saves one change to the settings, or records why it could not be saved. The change still holds for this run.</summary>
-    public void Remember(SettingsStore settings, Func<AppSettings, AppSettings> change)
+    /// <summary>
+    /// The settings file could not be read at startup, so this run began from defaults.
+    /// Until the app restarts, only choices the user makes are saved, each landing on what
+    /// the file holds; a choice a card makes on its own would put a default over the
+    /// user's setting. The startup problem stays on the status card meanwhile.
+    /// </summary>
+    public bool SettingsUnread { get; init; }
+
+    /// <summary>
+    /// Saves one change to the settings, or records why it could not be saved. The change
+    /// still holds for this run. <paramref name="byUser"/> is false for a choice a card
+    /// makes on its own, such as the only keyboard plugged in.
+    /// </summary>
+    public void Remember(SettingsStore settings, Func<AppSettings, AppSettings> change, bool byUser = true)
     {
+        if (!byUser && SettingsUnread)
+        {
+            return;
+        }
         try
         {
             settings.Update(change);
-            SettingsProblem = null;
+            if (!SettingsUnread)
+            {
+                SettingsProblem = null;
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

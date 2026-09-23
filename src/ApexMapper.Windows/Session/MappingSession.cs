@@ -115,6 +115,13 @@ public sealed class MappingSession : IMappingSession, IDisposable
     public SessionEnd? WhyNotStartable(Guid keyboard) => CheckPreconditions(keyboard);
 
     /// <summary>
+    /// For a crash handler subscribed before this session's crash guard, which would
+    /// otherwise run first: does the guard's work now, on the calling thread, so the game
+    /// sees the controller at rest before the handler's slower work. Safe to repeat.
+    /// </summary>
+    public void CrashStop() => Volatile.Read(ref _parts)?.CrashGuard?.Run();
+
+    /// <summary>
     /// Completes with null once the session is running (or paused), or with why it did
     /// not start. Refused at once while another start is in flight or after
     /// <see cref="Dispose"/>.
@@ -193,7 +200,7 @@ public sealed class MappingSession : IMappingSession, IDisposable
         var parts = Volatile.Read(ref _parts);
         if (parts is null)
         {
-            return new SessionStatus(State, LastEnd, false, false, false, 0, null, false, 0, 0, RestartRequired);
+            return new SessionStatus(State, LastEnd, false, false, Elevation.Visible, 0, null, false, 0, 0, RestartRequired);
         }
         var focus = parts.Flag.IsGameForeground;
         var foreground = Volatile.Read(ref parts.Foreground)?.Current;
@@ -216,7 +223,7 @@ public sealed class MappingSession : IMappingSession, IDisposable
             LastEnd,
             Volatile.Read(ref parts.Game) is not null,
             focus,
-            foreground is { IsGame: true, Elevation: not Elevation.Visible },
+            foreground is { IsGame: true } ? foreground.Elevation : Elevation.Visible,
             fallback,
             problem,
             awaitingRelease,

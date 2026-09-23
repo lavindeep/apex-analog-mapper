@@ -15,7 +15,11 @@ public enum ResponsePreset
 }
 
 /// <summary>A choice in one of the editor's lists, with the name it shows.</summary>
-public sealed record Option<T>(T Value, string Name);
+public sealed record Option<T>(T Value, string Name)
+{
+    /// <summary>What a screen reader says for the item.</summary>
+    public override string ToString() => Name;
+}
 
 /// <summary>
 /// One binding in the profile editor: a key to a button or trigger, or two keys to a
@@ -101,17 +105,23 @@ public sealed class BindingRowViewModel : ObservableObject
     public ScanCode Key
     {
         get => _key;
-        set => Change(ref _key, value, [nameof(KeysText)]);
+        set => Change(ref _key, value, [nameof(KeysText), nameof(KeyName)]);
     }
 
     /// <summary>The negative key of an axis: left, or down.</summary>
     public ScanCode NegativeKey
     {
         get => _negativeKey;
-        set => Change(ref _negativeKey, value, [nameof(KeysText)]);
+        set => Change(ref _negativeKey, value, [nameof(KeysText), nameof(NegativeKeyName)]);
     }
 
+    public string KeyName => _keyName(_key);
+
+    public string NegativeKeyName => _keyName(_negativeKey);
+
     public string KeysText => IsAxis ? $"{_keyName(_negativeKey)} and {_keyName(_key)}" : _keyName(_key);
+
+    public bool Uses(ScanCode key) => _key == key || IsAxis && _negativeKey == key;
 
     public IReadOnlyList<Option<PadTarget>> Targets => IsAxis ? AxisTargets : KeyTargets;
 
@@ -211,6 +221,9 @@ public sealed class BindingRowViewModel : ObservableObject
     public CoreResponse CurrentResponse => new((float)_exponent, (float)_saturation, (float)_deadzone);
 
     public KeyBinding ToKeyBinding() => new(_key, _target, CurrentResponse, (float)_pressRampMs, (float)_releaseRampMs);
+
+    /// <summary>What a screen reader says for the row in the bindings list.</summary>
+    public override string ToString() => $"{KeysText}, {TargetText}";
 
     public AxisBinding ToAxisBinding() => new(
         _negativeKey, _key, _target, CurrentResponse, (float)_pressRampMs, (float)_releaseRampMs, _conflict, _mode, (float)_rateMs, (float)_returnMs);

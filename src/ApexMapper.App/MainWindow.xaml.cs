@@ -14,6 +14,7 @@ namespace ApexMapper.App;
 public partial class MainWindow : FluentWindow
 {
     private MainViewModel? _main;
+    private bool _closed;
 
     public MainWindow()
     {
@@ -34,15 +35,25 @@ public partial class MainWindow : FluentWindow
         Show();
     }
 
-    /// <summary>Another launch asked for the window.</summary>
+    /// <summary>Another launch asked for the window. One that asked just as this window closed is too late.</summary>
     public void BringForward()
     {
+        if (_closed)
+        {
+            return;
+        }
         Show();
         if (WindowState == WindowState.Minimized)
         {
             WindowState = WindowState.Normal;
         }
         Activate();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _closed = true;
+        base.OnClosed(e);
     }
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
@@ -58,7 +69,7 @@ public partial class MainWindow : FluentWindow
     protected override void OnActivated(EventArgs e)
     {
         base.OnActivated(e);
-        _main?.Setup.Recheck();
+        _main?.OnActivated();
     }
 
     protected override void OnDeactivated(EventArgs e)

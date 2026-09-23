@@ -16,16 +16,40 @@
         </Grid.ColumnDefinitions>
         <StackPanel VerticalAlignment="Center">
           <ui:TextBlock FontTypography="Subtitle" Text="{Binding StateText}" />
-          <ui:TextBlock Margin="0,2,0,0" Style="{StaticResource CardSummary}" TextWrapping="Wrap" TextTrimming="None"
-                        Text="{Binding Reason}" Visibility="{Binding Reason, Converter={StaticResource ShowWhenPresent}}" />
+          <ui:TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Text="{Binding Reason}"
+                        Visibility="{Binding Reason, Converter={StaticResource ShowWhenPresent}}" />
         </StackPanel>
+        <!-- Whichever of Start and Stop can be pressed is the prominent one. -->
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Play24}" Content="Start" MinWidth="96" Command="{Binding Start}" />
-          <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Stop24}" Content="Stop" MinWidth="96" Command="{Binding Stop}" />
+          <ui:Button Icon="{ui:SymbolIcon Play24}" Content="Start" MinWidth="96" Command="{Binding Start}"
+                     AutomationProperties.HelpText="{Binding Blocker, TargetNullValue=''}" ToolTip="{Binding Blocker}" ToolTipService.ShowOnDisabled="True">
+            <ui:Button.Style>
+              <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                <Setter Property="Appearance" Value="Primary" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding CanStop}" Value="True">
+                    <Setter Property="Appearance" Value="Secondary" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ui:Button.Style>
+          </ui:Button>
+          <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Stop24}" Content="Stop" MinWidth="96" Command="{Binding Stop}">
+            <ui:Button.Style>
+              <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                <Setter Property="Appearance" Value="Secondary" />
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding CanStop}" Value="True">
+                    <Setter Property="Appearance" Value="Primary" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </ui:Button.Style>
+          </ui:Button>
         </StackPanel>
       </Grid>
 
-      <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource CardSummary}" Text="Ctrl+Alt+F12 stops mapping from anywhere, even while the game is in front." />
+      <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource CardSummary}" Text="Ctrl+Left Alt+F12 stops mapping from anywhere, even while the game is in front." />
 
       <!-- Why Start is unavailable. -->
       <Grid Margin="0,12,0,0" Visibility="{Binding Blocker, Converter={StaticResource ShowWhenPresent}}">
@@ -36,23 +60,26 @@
         </Grid.ColumnDefinitions>
         <ui:SymbolIcon Symbol="Info24" Margin="0,0,8,0" VerticalAlignment="Center" />
         <ui:TextBlock Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding Blocker}" />
-        <ui:Button Grid.Column="2" Margin="8,0,0,0" Content="Go to calibration" Command="{Binding GoToCalibration}"
-                   Visibility="{Binding BlockedByCalibration, Converter={StaticResource ShowWhenTrue}}" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal">
+          <ui:Button Margin="8,0,0,0" Content="Go to calibration" Command="{Binding GoToCalibration}"
+                     Visibility="{Binding BlockedByCalibration, Converter={StaticResource ShowWhenTrue}}" />
+          <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Open24}" Content="Open the driver page" Command="{Binding OpenDriverPage}"
+                     Visibility="{Binding BlockedByDriver, Converter={StaticResource ShowWhenTrue}}" />
+          <ui:Button Margin="8,0,0,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Restart the app" Command="{Binding Restart}"
+                     Visibility="{Binding RestartRequired, Converter={StaticResource ShowWhenTrue}}" />
+        </StackPanel>
       </Grid>
 
       <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource CardSummary}" Text="{Binding Timing}"
                     Visibility="{Binding Timing, Converter={StaticResource ShowWhenPresent}}" />
 
-      <ItemsControl ItemsSource="{Binding Warnings}">
+      <ItemsControl ItemsSource="{Binding Warnings}" AutomationProperties.Name="Warnings">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
             <ui:InfoBar Style="{StaticResource Warning}" Message="{Binding}" />
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>
-
-      <ui:Button Margin="0,8,0,0" Appearance="Caution" Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Restart the app" Command="{Binding Restart}"
-                 Visibility="{Binding RestartRequired, Converter={StaticResource ShowWhenTrue}}" />
     </StackPanel>
   </ui:Card>
 </UserControl>

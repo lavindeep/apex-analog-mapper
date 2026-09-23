@@ -12,8 +12,8 @@ namespace ApexMapper.App;
 /// </summary>
 public sealed class SingleInstance : IDisposable
 {
-    private const string MutexName = @"Local\ApexAnalogMapper";
-    private const string ShowEventName = @"Local\ApexAnalogMapper.Show";
+    /// <summary>The app's names. Tests pass their own, so they never reach a running copy.</summary>
+    public const string AppName = "ApexAnalogMapper";
 
     private readonly Mutex _mutex;
     private readonly EventWaitHandle _show;
@@ -28,11 +28,13 @@ public sealed class SingleInstance : IDisposable
     /// <summary>
     /// Claims the app for this process, waiting up to <paramref name="wait"/> for a copy
     /// that is closing. Null when another copy runs: it has been asked to show its window.
+    /// Throws <see cref="UnauthorizedAccessException"/> when that copy runs as administrator
+    /// and this one does not, which may not open its names at all.
     /// </summary>
-    public static SingleInstance? TryClaim(TimeSpan wait)
+    public static SingleInstance? TryClaim(TimeSpan wait, string name = AppName)
     {
-        var mutex = new Mutex(false, MutexName);
-        var show = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
+        var mutex = new Mutex(false, $@"Local\{name}");
+        var show = new EventWaitHandle(false, EventResetMode.AutoReset, $@"Local\{name}.Show");
         bool owned;
         try
         {

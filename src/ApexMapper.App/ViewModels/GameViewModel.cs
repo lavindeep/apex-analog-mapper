@@ -13,13 +13,17 @@ public sealed record GameItem(string Title, string ImagePath, Elevation Elevatio
     public string FileName => Path.GetFileName(ImagePath);
 
     public string Detail => Running ? FileName : FileName + ", not running";
+
+    /// <summary>What a screen reader says for the item.</summary>
+    public override string ToString() => $"{Title}, {Detail}";
 }
 
 /// <summary>
 /// The game card: the programs with a window, and the remembered game, which stays
 /// listed and chosen while it is not running so Start works before the game is
-/// launched. Until the remembered game shows up it looks again every
-/// <see cref="RescanMs"/>, and the refresh button looks at once.
+/// launched. Until a chosen game is seen running it looks again every
+/// <see cref="RescanMs"/> and whenever the window comes back to the front, and the
+/// refresh button looks at once.
 /// </summary>
 public sealed class GameViewModel : ObservableObject
 {
@@ -58,6 +62,7 @@ public sealed class GameViewModel : ObservableObject
             }
             _selected = value;
             Raise(nameof(Selected));
+            Raise(nameof(Summary));
             Raise(nameof(Warning));
             if (!string.Equals(_workspace.GamePath, value.ImagePath, StringComparison.OrdinalIgnoreCase))
             {
@@ -69,22 +74,39 @@ public sealed class GameViewModel : ObservableObject
 
     public bool CanChoose => !_workspace.SessionActive;
 
-    public string? Hint => _selected is null ? "Start the game once so it shows up here, then choose it." : null;
+    /// <summary>The card header: the chosen game's title, or that there is none.</summary>
+    public string Summary => _selected switch
+    {
+        null => "Not chosen",
+        { Running: true } game => game.Title,
+        var game => game.Title + ", not running",
+    };
+
+    public string? Hint => _selected is null
+        ? "Start the game once so it shows up here, then choose it. The app remembers it, so next time you can press Start first."
+        : null;
 
     /// <summary>The hook cannot see an elevated game's input unless the mapper is elevated too (B10).</summary>
-    public string? Warning => _selected?.Elevation switch
-    {
-        Elevation.Elevated => $"{_selected.Title} runs as administrator, so the mapper cannot see its keys. Close the mapper and run it as administrator.",
-        Elevation.Unknown => $"Windows would not say whether {_selected.Title} runs as administrator. If the keys do not reach it, run the mapper as administrator.",
-        _ => null,
-    };
+    public string? Warning => _selected is { } game ? Wording.RunAsAdministrator(game.Elevation, game.Title) : null;
 
     public Command Refresh { get; }
 
-    /// <summary>Looks again while the remembered game has not been seen running.</summary>
+    /// <summary>No game is chosen, or the chosen one has not been seen running.</summary>
+    private bool Waiting => _selected is not { Running: true };
+
+    /// <summary>Looks again every <see cref="RescanMs"/> while waiting for the game.</summary>
     public void Tick(long nowMs)
     {
-        if (_selected is { Running: false } && nowMs - _lastScan >= RescanMs)
+        if (Waiting && nowMs - _lastScan >= RescanMs)
+        {
+            Rescan();
+        }
+    }
+
+    /// <summary>The window came back to the front, likely from starting the game. Looks again if still waiting for it.</summary>
+    public void OnActivated()
+    {
+        if (Waiting)
         {
             Rescan();
         }
@@ -114,6 +136,7 @@ public sealed class GameViewModel : ObservableObject
         Games = items;
         _selected = chosen;
         Raise(nameof(Selected));
+        Raise(nameof(Summary));
         Raise(nameof(Warning));
         Raise(nameof(Hint));
     }

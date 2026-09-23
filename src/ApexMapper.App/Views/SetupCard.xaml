@@ -7,11 +7,11 @@
              xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:SetupViewModel}">
-  <ui:CardExpander Icon="{ui:SymbolIcon Wrench24}">
+  <ui:CardExpander Icon="{ui:SymbolIcon Wrench24}" IsExpanded="{Binding IsOpen}" AutomationProperties.Name="Setup">
     <ui:CardExpander.Header>
       <StackPanel>
         <ui:TextBlock FontTypography="BodyStrong" Text="Setup" />
-        <ui:TextBlock Style="{StaticResource CardSummary}" Text="Controller driver, Steam, and where the app keeps its files" />
+        <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Summary}" />
       </StackPanel>
     </ui:CardExpander.Header>
     <StackPanel>
@@ -20,13 +20,13 @@
       <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Open24}" Content="Open the ViGEmBus release page" Command="{Binding OpenDriverPage}"
                  Visibility="{Binding DriverMissing, Converter={StaticResource ShowWhenTrue}}" />
 
-      <ui:TextBlock FontTypography="BodyStrong" Text="Steam" Margin="0,16,0,4" />
+      <ui:TextBlock FontTypography="BodyStrong" Text="Steam" Margin="0,8,0,4" />
       <ui:TextBlock Style="{StaticResource Paragraph}"
                     Text="If the game runs through Steam, turn off Steam Input for it in the game's controller settings. Otherwise Steam treats the virtual controller as one of its own and may remap or hide it." />
 
       <ui:TextBlock FontTypography="BodyStrong" Text="Before you play" Margin="0,8,0,4" />
       <ui:TextBlock Style="{StaticResource Paragraph}"
-                    Text="Press Start before you launch the game. Some games only look for controllers when they start, and the virtual controller appears when mapping starts. Mapping waits for the game if it is not running yet." />
+                    Text="Start works before or after the game launches, but some games only look for controllers when they start, and the virtual controller appears when mapping starts. Pressing Start first is safest: mapping waits for the game." />
 
       <ui:TextBlock FontTypography="BodyStrong" Text="Files" Margin="0,8,0,4" />
       <ui:TextBlock Style="{StaticResource Paragraph}" Text="Profiles, calibration, settings and the log are kept in one folder." />

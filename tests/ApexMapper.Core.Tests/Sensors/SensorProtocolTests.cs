@@ -93,6 +93,26 @@ public class SensorProtocolTests
     }
 
     [Fact]
+    public void A_rebuilt_group_reply_parses_back_to_both_halves()
+    {
+        var raw = new ushort[SensorProtocol.SensorsPerGroup];
+        var filtered = new ushort[SensorProtocol.SensorsPerGroup];
+        for (var i = 0; i < raw.Length; i++)
+        {
+            raw[i] = (ushort)(100 + i);
+            filtered[i] = (ushort)(4000 - i);
+        }
+
+        var reply = SensorProtocol.BuildGroupReply(raw, filtered);
+
+        var parsedRaw = new ushort[SensorProtocol.SensorsPerGroup];
+        var parsedFiltered = new ushort[SensorProtocol.SensorsPerGroup];
+        Assert.Null(SensorProtocol.ParseGroup(reply, parsedRaw, parsedFiltered));
+        Assert.Equal(raw, parsedRaw);
+        Assert.Equal(filtered, parsedFiltered);
+    }
+
+    [Fact]
     public void Only_two_commands_can_be_built()
     {
         var report = new byte[65];

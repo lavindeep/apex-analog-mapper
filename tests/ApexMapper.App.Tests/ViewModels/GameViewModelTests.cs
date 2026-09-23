@@ -29,6 +29,7 @@ public sealed class GameViewModelTests : IDisposable
 
         Assert.Equal(AppHarness.Game, game.Selected?.ImagePath);
         Assert.Equal("ForzaHorizon6.exe, not running", game.Selected?.Detail);
+        Assert.Equal("ForzaHorizon6, not running", game.Summary);
         Assert.Equal(AppHarness.Game, _h.Workspace.GamePath);
         Assert.Equal(2, game.Games.Count);
         Assert.Null(game.Hint);
@@ -50,7 +51,8 @@ public sealed class GameViewModelTests : IDisposable
 
         Assert.Equal(AppHarness.Game, _h.Workspace.GamePath);
         Assert.Equal(AppHarness.Game, _h.SavedSettings.GamePath);
-        Assert.Contains("runs as administrator", game.Warning);
+        Assert.Equal("Forza Horizon 6", game.Summary);
+        Assert.StartsWith("This app cannot see the keys of Forza Horizon 6, which runs as administrator.", game.Warning);
 
         game.Selected = game.Games[1];
         Assert.Null(game.Warning);
@@ -89,5 +91,22 @@ public sealed class GameViewModelTests : IDisposable
         game.Refresh.Execute(null);
         Assert.Equal(3, _h.WindowScans);
         Assert.Equal(AppHarness.Game, game.Selected?.ImagePath);
+
+        game.OnActivated();
+        Assert.Equal(3, _h.WindowScans);
+    }
+
+    [Fact]
+    public void With_no_game_chosen_the_list_is_scanned_again_and_when_the_window_comes_back()
+    {
+        var game = Create(null);
+
+        game.Tick(_h.Now + GameViewModel.RescanMs);
+        Assert.Equal(2, _h.WindowScans);
+
+        _h.Windows = [new GameWindow("Forza Horizon 6", AppHarness.Game, Elevation.Visible)];
+        game.OnActivated();
+        Assert.Equal(3, _h.WindowScans);
+        Assert.Single(game.Games);
     }
 }

@@ -14,6 +14,9 @@ public sealed record BoardItem(KeyboardInfo Info, string Detail)
     public Guid Id => Info.ContainerId;
 
     public string Name => Info.Name;
+
+    /// <summary>What a screen reader says for the item.</summary>
+    public override string ToString() => $"{Name}, {Detail}";
 }
 
 /// <summary>
@@ -28,11 +31,12 @@ public sealed class KeyboardViewModel : ObservableObject
 {
     public const int CheckTimeoutMs = 10_000;
 
+    public const string NewIssuePage = "https://github.com/lavindeep/apex-analog-mapper/issues/new";
+
     public const string ConsentText =
-        "The app has only been tested on the first Apex Pro and Apex Pro TKL. To read how far each key is pressed, it sends " +
-        "those boards' sensor request (command 0xD7). Nobody has checked what this model does with that request. Most likely " +
-        "it answers the same way, but it could misread it. If the keyboard acts oddly, unplug it and plug it back in. " +
-        "Continue only if you accept that risk.";
+        "To read how far each key is pressed, the app sends this keyboard the request that works on the Apex Pro and " +
+        "Apex Pro TKL. No one has checked how this model handles it. It will most likely answer the same way. If the " +
+        "keyboard acts oddly afterwards, unplug it and plug it back in.";
 
     private readonly AppServices _services;
     private readonly Workspace _workspace;
@@ -50,6 +54,7 @@ public sealed class KeyboardViewModel : ObservableObject
     private (ushort[] Raw, ushort[] Filtered)? _restCapture;
     private (ushort[] Raw, ushort[] Filtered)? _heldCapture;
     private string? _checkText;
+    private bool _exported;
 
     private enum CheckPhase
     {
@@ -67,6 +72,7 @@ public sealed class KeyboardViewModel : ObservableObject
         Consent = new Command(GiveConsent, () => NeedsConsent);
         Check = new Command(StartCheck, () => CanCheck);
         Export = new Command(ExportCapture, () => _selected is not null);
+        OpenIssue = new Command(() => _services.Open(NewIssuePage));
         _services.Keyboards.Changed += list => _services.Post(() => OnKeyboards(list));
         _workspace.PropertyChanged += OnWorkspaceChanged;
     }
@@ -91,15 +97,19 @@ public sealed class KeyboardViewModel : ObservableObject
             _workspace.Remember(_services.Settings, s => s with { Keyboard = value.Id });
             _selected = value;
             Raise(nameof(Selected));
+            Raise(nameof(Summary));
             Sync();
         }
     }
 
     public bool CanChoose => !_workspace.SessionActive;
 
-    /// <summary>Why no board is chosen, or null.</summary>
+    /// <summary>The card header: the chosen board, or why there is none.</summary>
+    public string Summary => _selected?.Name ?? (_boards.Count == 0 ? "Not plugged in" : "No keyboard chosen");
+
+    /// <summary>What to do while no board is chosen, or null.</summary>
     public string? Missing => _selected is not null ? null
-        : _boards.Count == 0 ? "No Apex Pro keyboard is plugged in."
+        : _boards.Count == 0 ? "Plug in your Apex Pro. It shows up here as soon as Windows finds it."
         : _remembered is not null ? "The keyboard chosen last time is not plugged in. Choose one of these."
         : "Choose your keyboard.";
 
@@ -108,9 +118,13 @@ public sealed class KeyboardViewModel : ObservableObject
         : board.Firmware.Version is { } version ? $"Firmware {version}"
         : "The firmware could not be read. " + board.Firmware.Problem;
 
-    /// <summary>The firmware is not one the app was tested on (H7). It warns and never refuses.</summary>
-    public string? FirmwareWarning => _workspace.Board is { Firmware.Version: { } version, FirmwareVerified: false }
-        ? $"The app has not been tested with firmware {version}. It will most likely work, and the sensor checks stop the mapping if the keyboard's replies look wrong."
+    /// <summary>
+    /// The firmware is not one the app was tested on (H7). It warns and never refuses.
+    /// An untested model says so in its own banner, so this stays quiet for one.
+    /// </summary>
+    public string? FirmwareWarning => _workspace.Board is { Verified: true, Firmware.Version: { } version, FirmwareVerified: false }
+        ? $"The app has not been tested with firmware {version}. It will most likely work. If the keyboard's replies look wrong, " +
+          "the analog keys switch to on and off and the status card says why."
         : null;
 
     /// <summary>The board is a model the app has not been verified on; the banner stays for as long as it is chosen (H6).</summary>
@@ -137,6 +151,15 @@ public sealed class KeyboardViewModel : ObservableObject
 
     public Command Export { get; }
 
+    /// <summary>A capture was saved this run, so the card offers the page to attach it to.</summary>
+    public bool Exported
+    {
+        get => _exported;
+        private set => Set(ref _exported, value);
+    }
+
+    public Command OpenIssue { get; }
+
     /// <summary>Takes a newer keyboard list. Raised off the UI thread by discovery and posted here.</summary>
     public void OnKeyboards(IReadOnlyList<KeyboardInfo> list)
     {
@@ -144,10 +167,11 @@ public sealed class KeyboardViewModel : ObservableObject
         if (_remembered is null && Boards.Count == 1)
         {
             _remembered = Boards[0].Id;
-            _workspace.Remember(_services.Settings, s => s with { Keyboard = _remembered });
+            _workspace.Remember(_services.Settings, s => s with { Keyboard = _remembered }, byUser: false);
         }
         _selected = Boards.FirstOrDefault(b => b.Id == _remembered);
         Raise(nameof(Selected));
+        Raise(nameof(Summary));
         Raise(nameof(Missing));
         Sync();
     }
@@ -171,6 +195,11 @@ public sealed class KeyboardViewModel : ObservableObject
         }
         if (_check == CheckPhase.Rest)
         {
+            // Enter may have clicked the button and still be on its way up.
+            if (nowMs - _checkSince < CalibrationViewModel.SettleMs)
+            {
+                return;
+            }
             _restCapture = ([.. _raw], [.. _filtered]);
             _checkStep = new LearnStep(_raw);
             _check = CheckPhase.Pressing;
@@ -192,10 +221,8 @@ public sealed class KeyboardViewModel : ObservableObject
     }
 
     /// <summary>What a GitHub issue needs to add this board to the tested list (H6).</summary>
-    internal CaptureExport BuildExport()
+    internal CaptureExport BuildExport(KeyboardInfo info, Board? board)
     {
-        var info = _selected!.Info;
-        var board = _workspace.Board is { } b && b.Id == info.ContainerId ? b : null;
         var replies = new List<CapturedReply>();
         if (board?.Firmware.Reply is { } firmware)
         {
@@ -215,7 +242,6 @@ public sealed class KeyboardViewModel : ObservableObject
                 }
             }
         }
-        var length = info.HasVendorInterface ? SensorProtocol.ReportLength : 0;
         return new CaptureExport(
             _services.AppVersion,
             DateTimeOffset.Now,
@@ -223,8 +249,8 @@ public sealed class KeyboardViewModel : ObservableObject
             info.Name,
             board?.Firmware.Version ?? board?.Firmware.Problem ?? "not read",
             info.ContainerId.ToString("D"),
-            length,
-            length,
+            info.VendorInputLength,
+            info.VendorOutputLength,
             replies);
     }
 
@@ -240,6 +266,11 @@ public sealed class KeyboardViewModel : ObservableObject
                 break;
             case nameof(Workspace.SessionActive):
                 Raise(nameof(CanChoose));
+                // The session takes the board, so the check would only time out.
+                if (_workspace.SessionActive && IsChecking)
+                {
+                    EndCheck("The check stopped when mapping started. Run it again once mapping stops.");
+                }
                 RefreshTryIt();
                 if (!_workspace.SessionActive)
                 {
@@ -309,6 +340,7 @@ public sealed class KeyboardViewModel : ObservableObject
     {
         if (Set(ref _reading, reading, nameof(FirmwareText)))
         {
+            _workspace.ReadingFirmware = reading;
             RefreshTryIt();
         }
     }
@@ -320,8 +352,8 @@ public sealed class KeyboardViewModel : ObservableObject
             return;
         }
         _consented.Add(board.Id);
-        var consented = _consented.ToArray();
-        _workspace.Remember(_services.Settings, s => s with { ConsentedKeyboards = consented });
+        // Added to what the file holds, which may know boards this run started without.
+        _workspace.Remember(_services.Settings, s => s with { ConsentedKeyboards = [.. (s.ConsentedKeyboards ?? []).Append(board.Id).Distinct()] });
         _services.Log($"Consent given to read the sensors of unverified keyboard {board.Info.Name} ({board.Info.ProductId:X4}).");
         _workspace.Board = board with { Consented = true };
         StartCheck();
@@ -355,14 +387,19 @@ public sealed class KeyboardViewModel : ObservableObject
 
     private void ExportCapture()
     {
-        var path = _services.Dialogs.AskSavePath($"apex-capture-{_selected!.Info.ProductId:x4}.json");
+        // Taken before the dialog: an unplug handled inside its modal loop clears the choice and the board.
+        var info = _selected!.Info;
+        var board = _workspace.Board is { } b && b.Id == info.ContainerId ? b : null;
+        var path = _services.Dialogs.AskSavePath($"apex-capture-{info.ProductId:x4}.json");
         if (path is null)
         {
             return;
         }
         try
         {
-            File.WriteAllText(path, BuildExport().ToJson());
+            File.WriteAllText(path, BuildExport(info, board).ToJson());
+            CheckText = "Saved. Attach the file to a new issue on GitHub.";
+            Exported = true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

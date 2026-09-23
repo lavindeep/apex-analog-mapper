@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ApexMapper.App.Storage;
 using ApexMapper.Core.Keys;
 using ApexMapper.Windows.Devices;
@@ -81,6 +82,9 @@ public sealed class AppServices
 
     /// <summary>Milliseconds on a monotonic clock, for sampling windows and rates.</summary>
     public Func<long> NowMs { get; init; } = () => Environment.TickCount64;
+
+    /// <summary>The clock Raw Input stamps key events with (<see cref="Stopwatch.GetTimestamp"/>).</summary>
+    public Func<long> Timestamp { get; init; } = Stopwatch.GetTimestamp;
 
     public string AppVersion { get; init; } = "0.0.0";
 

@@ -20,8 +20,8 @@ namespace ApexMapper.App;
 /// models and timer, and takes the parts down in reverse on exit, so the session stops
 /// and the game sees the controller at rest before anything it depends on goes. An
 /// error on the UI thread is logged, stops the session and closes the app with a
-/// message; one on another thread ends the process, and the session's crash guard puts
-/// the controller at rest first.
+/// message; one on another thread ends the process once the controller is at rest and
+/// the error is logged.
 /// </summary>
 public partial class App : Application
 {
@@ -88,18 +88,14 @@ public partial class App : Application
         var pump = Own(new RawInputPump());
         pump.Start();
         var keyboards = Own(new KeyboardDiscovery());
-        try
+        keyboards.Watch(pump);
+        if (keyboards.LastError is { } listing)
         {
-            keyboards.Watch(pump);
-        }
-        catch (Exception ex)
-        {
-            // Watching is set up before the first listing, so the next device change tries again.
-            log.Write("Listing the keyboards failed: " + ex.Message);
+            log.Write("Listing the keyboards failed, trying again: " + listing);
         }
         var power = Own(new PowerNotifier());
         _session = Own(new MappingSession(new SessionServices { Keyboards = keyboards, RawInput = pump, Power = power }));
-        var workspace = new Workspace { SettingsProblem = settingsProblem };
+        var workspace = new Workspace { SettingsProblem = settingsProblem, SettingsUnread = settingsStore.LastLoadUsedDefaults };
         var sensor = Own(new LiveSensor(workspace));
 
         var window = new MainWindow();
@@ -178,6 +174,9 @@ public partial class App : Application
 
     private void OnUnhandledElsewhere(object sender, UnhandledExceptionEventArgs e)
     {
+        // Subscribed before any session's crash guard, so this runs first: the controller
+        // goes to rest before the log's flush, which a stuck disk can hold for seconds.
+        _session?.CrashStop();
         _log?.Write("Unhandled error: " + e.ExceptionObject);
         _log?.Dispose();
     }

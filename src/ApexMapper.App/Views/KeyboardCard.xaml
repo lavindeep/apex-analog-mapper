@@ -7,19 +7,16 @@
              xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:KeyboardViewModel}">
-  <ui:CardExpander Icon="{ui:SymbolIcon Keyboard24}" IsExpanded="True">
+  <ui:CardExpander Icon="{ui:SymbolIcon Keyboard24}" IsExpanded="True" AutomationProperties.Name="Keyboard">
     <ui:CardExpander.Header>
       <StackPanel>
         <ui:TextBlock FontTypography="BodyStrong" Text="Keyboard" />
-        <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Selected.Name}"
-                      Visibility="{Binding Selected, Converter={StaticResource ShowWhenPresent}}" />
-        <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Missing}"
-                      Visibility="{Binding Missing, Converter={StaticResource ShowWhenPresent}}" />
+        <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Summary}" />
       </StackPanel>
     </ui:CardExpander.Header>
     <StackPanel>
       <ComboBox ItemsSource="{Binding Boards}" SelectedItem="{Binding Selected}" IsEnabled="{Binding CanChoose}"
-                MinWidth="320" HorizontalAlignment="Left"
+                MinWidth="320" HorizontalAlignment="Left" AutomationProperties.Name="Keyboard"
                 Visibility="{Binding Boards, Converter={StaticResource ShowWhenPresent}}">
         <ComboBox.ItemTemplate>
           <DataTemplate DataType="vm:BoardItem">
@@ -45,7 +42,7 @@
 
         <StackPanel Margin="0,12,0,0" Visibility="{Binding NeedsConsent, Converter={StaticResource ShowWhenTrue}}">
           <ui:TextBlock Style="{StaticResource Paragraph}" Text="{x:Static vm:KeyboardViewModel.ConsentText}" />
-          <ui:Button Appearance="Primary" Content="I accept the risk, read the sensors" Command="{Binding Consent}" />
+          <ui:Button Appearance="Primary" Content="Accept the risk and read the sensors" Command="{Binding Consent}" />
         </StackPanel>
 
         <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
@@ -56,6 +53,8 @@
         </StackPanel>
         <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Paragraph}" Text="{Binding CheckText}"
                       Visibility="{Binding CheckText, Converter={StaticResource ShowWhenPresent}}" />
+        <ui:Button Icon="{ui:SymbolIcon Open24}" Content="Open a new issue" Command="{Binding OpenIssue}"
+                   Visibility="{Binding Exported, Converter={StaticResource ShowWhenTrue}}" />
       </StackPanel>
     </StackPanel>
   </ui:CardExpander>

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime;
 using ApexMapper.Core.Bindings;
+using ApexMapper.Core.Calibration;
 using ApexMapper.Core.Engine;
 using ApexMapper.Core.Keys;
 using ApexMapper.Core.Profiles;
@@ -272,22 +273,45 @@ public sealed class MappingSessionTests : IDisposable
         Assert.True(float.IsNaN(_session.Status().CycleP99Ms));
     }
 
+    /// <summary>The held captures, which have W at 4095, one read a millisecond.</summary>
+    private static FakeVendorStream HeldStream() => new()
+    {
+        OnRead = (_, command, selector) =>
+        {
+            Thread.Sleep(1);
+            return command == SensorRequest.GroupCommand ? Fixtures.HeldGroup(selector) : FakeVendorStream.DefaultReply(command, selector);
+        },
+    };
+
     [Fact]
     public async Task A_key_calibrated_short_of_the_sensor_s_limit_is_reported_while_it_reads_at_it()
     {
-        // The held captures have W at 4095; the fixtures calibrate it 2000 counts above rest.
-        _openSensor = () => new FakeVendorStream
-        {
-            OnRead = (_, command, selector) =>
-            {
-                Thread.Sleep(1);
-                return command == SensorRequest.GroupCommand ? Fixtures.HeldGroup(selector) : FakeVendorStream.DefaultReply(command, selector);
-            },
-        };
+        // The fixtures calibrate W 2000 counts above rest.
+        _openSensor = HeldStream;
 
         await StartRunning();
 
         Eventually(() => _session.Status().KeysAtLimit is [var key] && key == DefaultProfiles.Key.W, "W to be reported at the sensor's limit");
+    }
+
+    [Fact]
+    public async Task A_key_calibrated_at_the_sensor_s_limit_is_not_reported_there()
+    {
+        _openSensor = HeldStream;
+        var calibrations = new Dictionary<ScanCode, KeyCalibration>(Calibrations());
+        var w = calibrations[W];
+        calibrations[W] = KeyCalibration.Create(w.Rest, KeyCalibration.MaxCount, w.NoiseBand, w.SensorIndex);
+        var profile = CompiledProfile.TryCompile(DefaultProfiles.Forza(), SensorMap.Default, calibrations, out _)!;
+
+        Assert.Null(await _session.StartAsync(new SessionRequest(KeyboardId, GamePath, profile, Fixtures.Signatures(2, 3))));
+        Assert.True(_session.Hook!.Detached, "a session hook in these tests must never reach the real keyboard");
+        Eventually(() => _session.Status() is { CycleP50Ms: > 0f }, "the sensor cycles to be timed");
+
+        for (var i = 0; i < 20; i++)
+        {
+            Assert.Empty(_session.Status().KeysAtLimit ?? []);
+            Thread.Sleep(5);
+        }
     }
 
     [Fact]
@@ -882,7 +906,11 @@ public sealed class MappingSessionTests : IDisposable
         Assert.Equal(EndReason.RestartRequired, (await _session.StartAsync(Request()))?.Reason);
     }
 
-    /// <summary>The session thread is held, so what happens is the guard's work, not a teardown the watchdog set off.</summary>
+    /// <summary>
+    /// The session thread is held, so what happens is the guard's work, not a teardown the
+    /// watchdog set off. The app's crash handler runs it first through CrashStop, then the
+    /// guard's own handler runs it again.
+    /// </summary>
     [Fact]
     public async Task The_crash_guard_zeros_and_unplugs_the_pad_removes_the_hook_and_restores_the_gc_mode()
     {
@@ -890,10 +918,12 @@ public sealed class MappingSessionTests : IDisposable
         var hook = _session.Hook!;
         HoldTheSessionThread();
 
+        _session.CrashStop();
         _session.CrashGuard!.Run();
 
         var log = _driver.Log;
         Assert.Equal(["submit neutral", "disconnect"], log.Skip(log.Count - 2));
+        Assert.Single(log, entry => entry == "disconnect");
         Assert.False(hook.IsInstalled);
         Assert.Equal(_latencyBefore, GCSettings.LatencyMode);
         Assert.Equal(SessionState.Running, _session.State);

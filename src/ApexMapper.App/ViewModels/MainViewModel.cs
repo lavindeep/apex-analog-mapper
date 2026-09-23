@@ -26,7 +26,7 @@ public sealed class MainViewModel
         Profile = new ProfileViewModel(services, workspace, settings.ActiveProfile);
         Calibration = new CalibrationViewModel(services, workspace);
         Status = new StatusViewModel(services, workspace);
-        Setup = new SetupViewModel(services);
+        Setup = new SetupViewModel(services, workspace);
         Status.CalibrationRequested += () =>
         {
             Calibration.IsOpen = true;
@@ -53,6 +53,13 @@ public sealed class MainViewModel
 
     public SetupViewModel Setup { get; }
 
+    /// <summary>The window came back to the front: the driver may be installed now, and the game may be running.</summary>
+    public void OnActivated()
+    {
+        Setup.Recheck();
+        Game.OnActivated();
+    }
+
     public int TickIntervalMs => Calibration.IsOpen || Profile.IsOpen || Profile.IsCapturing || Keyboard.IsChecking ? FastTickMs : SlowTickMs;
 
     public void Tick()
@@ -61,6 +68,7 @@ public sealed class MainViewModel
         while (_services.KeyEvents.TryRead(out var key))
         {
             Profile.OnKey(key);
+            Calibration.OnKey(key);
             Status.OnKey(key);
         }
         Keyboard.Tick(now);

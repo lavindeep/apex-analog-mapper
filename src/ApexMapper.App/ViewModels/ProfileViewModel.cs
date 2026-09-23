@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Media;
@@ -18,22 +19,33 @@ namespace ApexMapper.App.ViewModels;
 
 /// <summary>One profile in the list.</summary>
 /// <param name="Problem">Why the file could not be used, or what was done about it; null when it loaded cleanly.</param>
-public sealed record ProfileItem(string Id, string Name, string? Problem);
+public sealed record ProfileItem(string Id, string Name, string? Problem)
+{
+    /// <summary>What a screen reader says for the item.</summary>
+    public override string ToString() => Name;
+}
 
 /// <summary>
 /// The profile card. The chosen profile is the active one, the one Start maps, and the
 /// editor works on a copy of it until Save. Saving the active profile while a session
 /// runs stops the session when the saved text differs from what the session compiled;
 /// resetting or deleting it does too (E8). Keys are captured from Raw Input, which gives
-/// the exact scan code, and a reserved key is refused (B6). The preview draws the chosen
-/// binding's response and, from the live sensor, where its key is right now, in counts
-/// as well as depth (A18).
+/// the exact scan code; a reserved key, one the hook reports differently, and one another
+/// binding uses are refused (B6). The preview draws the chosen binding's response and,
+/// from the live sensor, where its key is right now, in counts as well as depth (A18).
 /// </summary>
 public sealed class ProfileViewModel : ObservableObject
 {
     public const double PreviewWidth = 200;
     public const double PreviewHeight = 120;
     private const ushort Escape = 0x01;
+
+    /// <summary>
+    /// Presses stamped this soon after a capture begins are not for it. Enter clicks a
+    /// focused button on its key down, and that press reaches Raw Input at about the
+    /// moment the capture starts.
+    /// </summary>
+    public static readonly long CaptureArmTicks = Stopwatch.Frequency / 10;
 
     private readonly AppServices _services;
     private readonly Workspace _workspace;
@@ -46,14 +58,17 @@ public sealed class ProfileViewModel : ObservableObject
     private bool _dirty;
     private string? _message;
     private Capture? _capture;
+    private string? _prompt;
+    private bool _busy;
+    private readonly HashSet<ScanCode> _held = [];
     private bool _isOpen;
     private PointCollection _curve = [];
     private string? _previewText;
     private Point? _marker;
     private string? _remembered;
 
-    /// <summary>What the next key press is for. <see cref="Row"/> is null while adding a binding.</summary>
-    private sealed record Capture(BindingRowViewModel? Row, bool Negative, bool Axis, ScanCode? First = null);
+    /// <summary>What the next key press is for, and the stamp a press must be at or after. <see cref="Row"/> is null while adding a binding.</summary>
+    private sealed record Capture(BindingRowViewModel? Row, bool Negative, bool Axis, ScanCode? First = null, long From = 0);
 
     public ProfileViewModel(AppServices services, Workspace workspace, string? remembered)
     {
@@ -62,8 +77,8 @@ public sealed class ProfileViewModel : ObservableObject
         Save = new Command(() => _ = SaveAsync(), () => CanEdit && _dirty);
         Discard = new Command(DiscardEdits, () => _dirty);
         New = new Command(CreateProfile, () => CanSwitch);
-        Delete = new Command(() => _ = DeleteAsync(), () => _selected is { Id: not DefaultProfiles.ForzaId } && !_dirty);
-        Reset = new Command(() => _ = ResetAsync(), () => _selected is not null && !_dirty);
+        Delete = new Command(() => _ = DeleteAsync(), () => _selected is { Id: not DefaultProfiles.ForzaId } && !_dirty && !_busy);
+        Reset = new Command(() => _ = ResetAsync(), () => _selected is not null && !_dirty && !_busy);
         AddKey = new Command(() => BeginCapture(new Capture(null, false, false)), () => CanEdit);
         AddAxis = new Command(() => BeginCapture(new Capture(null, true, true)), () => CanEdit);
         Remove = new Command(RemoveRow, () => CanEdit && _selectedRow is not null);
@@ -72,7 +87,7 @@ public sealed class ProfileViewModel : ObservableObject
         CancelCapture = new Command(() => EndCapture(null), () => _capture is not null);
         _workspace.PropertyChanged += OnWorkspaceChanged;
         _remembered = remembered;
-        Reload(remembered ?? DefaultProfiles.ForzaId);
+        Reload(remembered ?? DefaultProfiles.ForzaId, byUser: false);
     }
 
     public IReadOnlyList<ProfileItem> Profiles
@@ -96,10 +111,23 @@ public sealed class ProfileViewModel : ObservableObject
         }
     }
 
-    public bool CanSwitch => !_dirty && !_workspace.SessionActive && _capture is null;
+    public bool CanSwitch => !_dirty && !_workspace.SessionActive && _capture is null && !_busy;
 
-    /// <summary>The chosen profile loaded and can be edited.</summary>
-    public bool CanEdit => _saved is not null && _capture is null;
+    /// <summary>Why the profile list is locked, or null.</summary>
+    public string? SwitchHint => _workspace.SessionActive ? "Stop mapping to switch profiles."
+        : _dirty ? "Save or discard your changes to switch profiles."
+        : null;
+
+    /// <summary>Why Delete is unavailable for the Forza profile.</summary>
+    public string? DeleteHint => _selected?.Id == DefaultProfiles.ForzaId ? "The Forza profile cannot be deleted. Reset puts its defaults back." : null;
+
+    /// <summary>The chosen profile loaded and can be edited: no key capture, and no save waiting for the session to stop.</summary>
+    public bool CanEdit => _saved is not null && _capture is null && !_busy;
+
+    /// <summary>Beside Save: what saving now does.</summary>
+    public string? SaveNote => !_dirty ? null
+        : _workspace.RunningProfileText is not null ? "Saving stops mapping. Press Start again to use the changes."
+        : "Unsaved changes";
 
     public string? Problem => _selected?.Problem;
 
@@ -133,11 +161,18 @@ public sealed class ProfileViewModel : ObservableObject
 
     public bool IsDirty => _dirty;
 
-    /// <summary>A save error, a capture prompt, or why a key was refused.</summary>
+    /// <summary>Why a save, delete or reset failed, or what is wrong with the edits.</summary>
     public string? Message
     {
         get => _message;
         private set => Set(ref _message, value);
+    }
+
+    /// <summary>While capturing: which key to press, or why the last one was refused.</summary>
+    public string? Prompt
+    {
+        get => _prompt;
+        private set => Set(ref _prompt, value);
     }
 
     public bool IsCapturing => _capture is not null;
@@ -199,10 +234,23 @@ public sealed class ProfileViewModel : ObservableObject
     /// <summary>Stops waiting for a key: the card's button, and the window when it loses focus, since Raw Input keeps seeing keys typed elsewhere.</summary>
     public Command CancelCapture { get; }
 
-    /// <summary>A key event from Raw Input, drained on the UI thread. Only key downs while capturing count.</summary>
+    /// <summary>
+    /// A key event from Raw Input, drained on the UI thread. Every event keeps track of
+    /// which keys are down, so an auto-repeat is never taken for a new press. While
+    /// capturing, the first new press stamped after the capture began is the key.
+    /// </summary>
     public void OnKey(in RawKeyEvent key)
     {
-        if (_capture is not { } capture || !key.Down || key.Device == 0)
+        if (key.Device == 0)
+        {
+            return;
+        }
+        if (!key.Down)
+        {
+            _held.Remove(key.Code);
+            return;
+        }
+        if (!_held.Add(key.Code) || _capture is not { } capture || key.Ticks < capture.From)
         {
             return;
         }
@@ -211,9 +259,9 @@ public sealed class ProfileViewModel : ObservableObject
             EndCapture(null);
             return;
         }
-        if (key.Code.IsReserved)
+        if (Refusal(capture, key.Code) is { } refusal)
         {
-            Message = "Ctrl, Alt, Windows and F12 cannot be mapped. Press another key, or Esc to cancel.";
+            Prompt = refusal;
             return;
         }
         if (capture.Row is { } row)
@@ -231,7 +279,7 @@ public sealed class ProfileViewModel : ObservableObject
         else if (capture.Axis && capture.First is null)
         {
             _capture = capture with { First = key.Code };
-            Message = $"Now press the key for the other direction: right, or up. Esc cancels.";
+            Prompt = "Now press the key for the other direction: right, or up. Esc cancels.";
         }
         else
         {
@@ -296,7 +344,7 @@ public sealed class ProfileViewModel : ObservableObject
     }
 
     /// <summary>Lists the profiles again and makes <paramref name="id"/> the active one, falling back to Forza.</summary>
-    private void Reload(string id)
+    private void Reload(string id, bool byUser = true)
     {
         var entries = _services.Profiles.List();
         Profiles = [.. entries.Select(e => new ProfileItem(e.Id, e.Profile?.Name ?? e.Id, e.Problem))];
@@ -304,30 +352,36 @@ public sealed class ProfileViewModel : ObservableObject
         _selected = Profiles.First(p => p.Id == entry.Id);
         Raise(nameof(Selected));
         Raise(nameof(Problem));
+        Raise(nameof(DeleteHint));
         if (entry.Id != _remembered)
         {
             _remembered = entry.Id;
-            _workspace.Remember(_services.Settings, s => s with { ActiveProfile = entry.Id });
+            _workspace.Remember(_services.Settings, s => s with { ActiveProfile = entry.Id }, byUser);
         }
         _saved = entry.Profile;
         _workspace.ActiveProfile = entry.Profile;
         LoadEditor();
     }
 
+    /// <summary>Puts the saved profile in the editor, axes first since they are what most profiles are for.</summary>
     private void LoadEditor()
     {
+        if (_capture is not null)
+        {
+            EndCapture(null);
+        }
         _name = _saved?.Name ?? "";
         Raise(nameof(Name));
         Rows.Clear();
         if (_saved is not null)
         {
-            foreach (var key in _saved.Keys)
-            {
-                Rows.Add(BindingRowViewModel.From(key, _services.KeyName, OnRowChanged));
-            }
             foreach (var axis in _saved.Axes)
             {
                 Rows.Add(BindingRowViewModel.From(axis, _services.KeyName, OnRowChanged));
+            }
+            foreach (var key in _saved.Keys)
+            {
+                Rows.Add(BindingRowViewModel.From(key, _services.KeyName, OnRowChanged));
             }
         }
         SelectedRow = Rows.FirstOrDefault(r => r.ShapesOutput) ?? Rows.FirstOrDefault();
@@ -344,6 +398,11 @@ public sealed class ProfileViewModel : ObservableObject
     internal async Task SaveAsync()
     {
         var profile = BuildProfile();
+        if (EditProblem() is { } problem)
+        {
+            Message = problem;
+            return;
+        }
         if (profile.Validate() is { } invalid)
         {
             Message = invalid;
@@ -366,7 +425,7 @@ public sealed class ProfileViewModel : ObservableObject
     internal async Task DeleteAsync()
     {
         var item = _selected!;
-        if (!await _services.Dialogs.ConfirmAsync("Delete profile", $"Delete the profile \"{item.Name}\"? This cannot be undone.", "Delete"))
+        if (!await _services.Dialogs.ConfirmAsync("Delete profile", $"Delete the profile \"{item.Name}\"? This cannot be undone.{StopsMapping()}", "Delete"))
         {
             return;
         }
@@ -387,7 +446,7 @@ public sealed class ProfileViewModel : ObservableObject
     internal async Task ResetAsync()
     {
         var item = _selected!;
-        if (!await _services.Dialogs.ConfirmAsync("Reset profile", $"Replace the bindings of \"{item.Name}\" with the Forza defaults?", "Reset"))
+        if (!await _services.Dialogs.ConfirmAsync("Reset profile", $"Replace the bindings of \"{item.Name}\" with the Forza defaults?{StopsMapping()}", "Reset"))
         {
             return;
         }
@@ -406,13 +465,67 @@ public sealed class ProfileViewModel : ObservableObject
         Reload(item.Id);
     }
 
-    /// <summary>E8: a running session stops when the active profile it compiled is no longer what is saved. Null text means the profile is going away.</summary>
+    /// <summary>
+    /// E8: a running session stops when the active profile it compiled is no longer what
+    /// is saved. Null text means the profile is going away. The editor holds still until
+    /// the session has stopped, since the reload after would drop anything typed meanwhile.
+    /// </summary>
     private async Task StopIfTheRunningProfileChanged(string? savedText)
     {
-        if (_workspace.RunningProfileText is { } running && savedText != running)
+        if (_workspace.RunningProfileText is not { } running || savedText == running)
+        {
+            return;
+        }
+        SetBusy(true);
+        try
         {
             await _services.Session.StopAsync(EndReason.ProfileEdited);
         }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private string StopsMapping() => _workspace.RunningProfileText is null ? "" : " This stops mapping.";
+
+    /// <summary>What the edits would save wrongly, in the card's words. The profile's own check backs this up.</summary>
+    private string? EditProblem()
+    {
+        if (Rows.GroupBy(r => r.Target).FirstOrDefault(g => g.Count() > 1) is { } shared)
+        {
+            return $"{BindingRowViewModel.NameOf(shared.Key)} is used by more than one binding. Choose another for one of them.";
+        }
+        if (Rows.FirstOrDefault(r => r.ShapesOutput && r.Deadzone >= r.Saturation) is { } row)
+        {
+            return $"{row.KeysText}: the dead zone must be less than Full output at.";
+        }
+        return null;
+    }
+
+    /// <summary>Why a key cannot be taken for this capture, or null.</summary>
+    private string? Refusal(Capture capture, ScanCode key)
+    {
+        const string Again = " Press another key, or Esc to cancel.";
+        var name = _services.KeyName(key);
+        if (key.IsReserved)
+        {
+            return "Ctrl, Alt, Windows and F12 cannot be mapped." + Again;
+        }
+        if (!key.IsBindable)
+        {
+            return $"{name} cannot be mapped: the app cannot block it reliably." + Again;
+        }
+        var otherDirection = capture.Row is { IsAxis: true } axis ? (capture.Negative ? axis.Key : axis.NegativeKey) : capture.First;
+        if (otherDirection == key)
+        {
+            return "The two directions need different keys." + Again;
+        }
+        if (Rows.FirstOrDefault(r => r != capture.Row && r.Uses(key)) is { } other)
+        {
+            return $"{name} is already bound to {other.TargetText}." + Again;
+        }
+        return null;
     }
 
     private void CreateProfile()
@@ -465,8 +578,9 @@ public sealed class ProfileViewModel : ObservableObject
 
     private void BeginCapture(Capture capture)
     {
-        _capture = capture;
-        Message = capture switch
+        _capture = capture with { From = _services.Timestamp() + CaptureArmTicks };
+        Message = null;
+        Prompt = capture switch
         {
             { Row: null, Axis: true } => "Press the key for one direction: left, or down. Esc cancels.",
             { Row: null } => "Press the key to add. Esc cancels.",
@@ -481,7 +595,7 @@ public sealed class ProfileViewModel : ObservableObject
     private void EndCapture(BindingRowViewModel? added)
     {
         _capture = null;
-        Message = null;
+        Prompt = null;
         Raise(nameof(IsCapturing));
         if (added is not null)
         {
@@ -509,7 +623,16 @@ public sealed class ProfileViewModel : ObservableObject
         if (Set(ref _dirty, dirty, nameof(IsDirty)))
         {
             Raise(nameof(CanSwitch));
+            Raise(nameof(SwitchHint));
+            Raise(nameof(SaveNote));
         }
+        RefreshCommands();
+    }
+
+    private void SetBusy(bool busy)
+    {
+        _busy = busy;
+        Raise(nameof(CanSwitch));
         RefreshCommands();
     }
 
@@ -535,8 +658,13 @@ public sealed class ProfileViewModel : ObservableObject
         if (e.PropertyName == nameof(Workspace.SessionActive))
         {
             Raise(nameof(CanSwitch));
+            Raise(nameof(SwitchHint));
             RefreshCommands();
             WantSensor();
+        }
+        else if (e.PropertyName == nameof(Workspace.RunningProfileText))
+        {
+            Raise(nameof(SaveNote));
         }
     }
 
