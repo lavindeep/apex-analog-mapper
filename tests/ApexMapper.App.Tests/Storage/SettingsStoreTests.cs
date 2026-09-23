@@ -102,6 +102,41 @@ public class SettingsStoreTests
         Assert.False(File.Exists(path + ".corrupt"));
     }
 
+    [Fact]
+    public void An_update_lands_on_what_the_file_holds_and_is_saved()
+    {
+        using var dir = new TempDirectory();
+        var path = dir.File("settings.json");
+        var board = Guid.NewGuid();
+        new SettingsStore(path).Save(Chosen);
+        var store = new SettingsStore(path);
+
+        var updated = store.Update(s => s with { ConsentedKeyboards = [board] });
+
+        Assert.Equal(Chosen.GamePath, updated.GamePath);
+        Assert.Equal([board], new SettingsStore(path).Load().Settings.ConsentedKeyboards!);
+    }
+
+    /// <summary>Stage 4 ledger P5: a file held open at startup is read again by the first update, which then keeps its contents.</summary>
+    [Fact]
+    public void An_update_after_a_startup_the_file_was_held_reads_it_again_instead_of_saving_defaults()
+    {
+        using var dir = new TempDirectory();
+        var path = dir.File("settings.json");
+        new SettingsStore(path).Save(Chosen);
+        var store = new SettingsStore(path);
+        using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            Assert.Contains("could not be opened", store.Load().Problem);
+            Assert.Throws<IOException>(() => store.Update(s => s with { Prereleases = false }));
+        }
+
+        var updated = store.Update(s => s with { Prereleases = false });
+
+        Assert.Equal(Chosen with { Prereleases = false }, updated);
+        Assert.Equal(updated, new SettingsStore(path).Load().Settings);
+    }
+
     /// <summary>
     /// The way out the message gives has to work when the backup is the newer file, as
     /// behind a damaged file or after a newer version saved twice: moving only the file

@@ -8,11 +8,13 @@ namespace ApexMapper.App.Storage;
 /// <param name="GamePath">Executable path of the remembered game.</param>
 /// <param name="ActiveProfile">Id of the profile in use.</param>
 /// <param name="Prereleases">Offer prerelease updates.</param>
+/// <param name="ConsentedKeyboards">Unverified keyboards whose sensors the user agreed to read, by container id.</param>
 public sealed record AppSettings(
     Guid? Keyboard = null,
     string? GamePath = null,
     string? ActiveProfile = null,
-    bool Prereleases = false);
+    bool Prereleases = false,
+    IReadOnlyList<Guid>? ConsentedKeyboards = null);
 
 /// <summary>
 /// <c>settings.json</c>. A file of unreadable text loads as the defaults with a problem
@@ -31,6 +33,20 @@ public sealed class SettingsStore(string path)
         var result = JsonFile.Load(path, Parse);
         _unsafeToSave = result.Status is LoadStatus.Unavailable or LoadStatus.Newer ? result : null;
         return (result.Value ?? new AppSettings(), LoadProblem.Describe(result, "settings"));
+    }
+
+    /// <summary>
+    /// Reads the file, applies the change, saves the result and returns it. Reading first
+    /// means a file that could not be opened at startup (an antivirus or sync client held
+    /// it) is read again before it is written, and the change lands on what the file
+    /// holds rather than on defaults. Throws <see cref="IOException"/> when the file
+    /// cannot be read now, a newer version wrote it, or it cannot be written.
+    /// </summary>
+    public AppSettings Update(Func<AppSettings, AppSettings> change)
+    {
+        var next = change(Load().Settings);
+        Save(next);
+        return next;
     }
 
     /// <summary>Throws <see cref="IOException"/> when the file cannot be written, cannot be read now, or could not be read at the last load.</summary>
