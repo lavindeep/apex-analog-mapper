@@ -19,8 +19,20 @@ and how to report a vulnerability.
 
 ## Network posture
 
-The app makes one kind of network request: an update check against this repository's
-GitHub Releases on launch, which can be turned off. There is no telemetry.
+The app makes one kind of network request. It asks this repository's GitHub Releases
+whether there is a newer version, when it starts and at most once every six hours, and
+whenever you press Check for updates. The check on start can be turned off on the Setup
+card. A new version downloads only when you press Update, Velopack checks the download
+against the hash in the release's feed, and it installs only when you restart the app,
+never while mapping runs. There is no telemetry.
+
+## What the installer touches
+
+Setup.exe installs the app for the current user into `%LocalAppData%\ApexAnalogMapper`,
+adds Start menu and desktop shortcuts, and registers an uninstall entry for the current
+user. It needs no administrator rights and adds no service, driver or scheduled task.
+Uninstalling removes all of that. Profiles, calibration, settings and the log live in
+`%AppData%\ApexAnalogMapper` and stay after an uninstall.
 
 ## Third-party kernel driver (ViGEmBus)
 
@@ -38,7 +50,8 @@ and 64-bit Windows checks that signature every time the driver loads.
 ## Unsigned binaries
 
 Releases are unsigned. Windows SmartScreen will warn the first time you run the
-installer. Every release lists the SHA-256 of each asset; check it before running.
+installer. Every release lists the SHA-256 of each file in its notes and in
+`SHA256SUMS.txt`. Check the installer's hash before running it.
 
 ## What the app never does
 

@@ -9,7 +9,7 @@ requests are the only channels. I do not answer email about the project.
 Open an issue for a bug, a question, or a feature idea. Pick the matching template
 when there is one. A useful bug report has:
 
-- The app version (from the About card or the release you installed).
+- The app version, shown under Updates on the Setup card.
 - Your keyboard model and firmware version, and whether SteelSeries GG was running.
 - The game and how it was launched (Steam, Store, Game Pass), and whether it runs as
   administrator.
