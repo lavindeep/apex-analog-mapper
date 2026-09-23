@@ -9,8 +9,9 @@ public static class DefaultProfiles
     public const string ForzaId = "forza";
 
     /// <summary>
-    /// Forza's Default Layout 1 controller mapping with WASD driving. Steering and
-    /// throttle response defaults are provisional until they are tried in the game.
+    /// Forza's Default Layout 1 controller mapping with WASD driving. The Soft curve on
+    /// steering, throttle and brake was kept after driving Forza Horizon 6 with the
+    /// game's deadzone settings the README shows.
     /// </summary>
     public static Profile Forza()
     {

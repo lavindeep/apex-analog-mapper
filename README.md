@@ -104,6 +104,18 @@ If the keyboard stops answering mid-race, the analog keys fall back to on and of
 a short ramp, and the status card says so until the readings come back. That's there
 so a hiccup doesn't cut your throttle mid-corner. It isn't meant to be driven on.
 
+## Forza settings
+
+These are the deadzone settings I use in Forza Horizon 6's advanced controller
+settings:
+
+![Steering deadzone inside 10 and outside 90, steering linearity 50, acceleration deadzone inside 0 and outside 100, and deceleration, clutch and e-brake deadzones inside 0 and outside 20](docs/images/forza-deadzones.png)
+
+The ones that matter are the acceleration and deceleration inside deadzones at 0. A
+key's sensor barely changes over the first part of the press, so an inside deadzone
+on top of that leaves the start of the throttle and brake doing nothing. Steering is
+fine at the game's defaults.
+
 ## Updates
 
 The app looks for a newer version on GitHub when it starts, unless it had an answer in
