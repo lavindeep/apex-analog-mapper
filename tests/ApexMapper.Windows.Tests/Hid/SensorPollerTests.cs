@@ -133,6 +133,38 @@ public class SensorPollerTests
         Assert.True(fake.IsDisposed);
     }
 
+    /// <summary>A stop that lands while the poller reopens after a fault must not replace the fault with the waiting reason.</summary>
+    [Fact]
+    public void A_stop_during_the_reopen_keeps_the_fault_reason()
+    {
+        var fake = new FakeVendorStream
+        {
+            OnRead = (index, command, selector) => index == 4 ? Fixtures.Firmware : FakeVendorStream.DefaultReply(command, selector),
+        };
+        var opens = 0;
+        SensorPoller? poller = null;
+        IVendorStream? Open()
+        {
+            if (Interlocked.Increment(ref opens) == 1)
+            {
+                return fake;
+            }
+            // The reopen after the fault returns a stream only once Stop has begun.
+            SpinWait.SpinUntil(() => poller!.Stopping, 2000);
+            return new FakeVendorStream();
+        }
+
+        using (poller = new SensorPoller(Open, new SensorSnapshot(), Racing))
+        {
+            poller.Start();
+            Assert.True(WaitUntil(() => Volatile.Read(ref opens) == 2));
+            poller.Stop();
+
+            Assert.Contains("12-bit", poller.FaultReason);
+            Assert.Equal(1, poller.FaultCount);
+        }
+    }
+
     [Fact]
     public void Held_keys_do_not_fail_the_signature()
     {

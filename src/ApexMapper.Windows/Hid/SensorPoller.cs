@@ -210,7 +210,8 @@ public sealed class SensorPoller : IDisposable
         }
     }
 
-    private bool Stopping => Volatile.Read(ref _stop) != 0;
+    /// <summary><see cref="Stop"/> was called. Internal for tests.</summary>
+    internal bool Stopping => Volatile.Read(ref _stop) != 0;
 
     private void SetState(PollerState state) => Volatile.Write(ref _state, (int)state);
 
@@ -238,9 +239,13 @@ public sealed class SensorPoller : IDisposable
         var device = TryOpen();
         if (device is null)
         {
-            Volatile.Write(ref _faultReason, WaitingReason);
-            SetState(PollerState.Waiting);
-            Backoff();
+            // A stop during the open is not an absent keyboard: keep the last fault.
+            if (!Stopping)
+            {
+                Volatile.Write(ref _faultReason, WaitingReason);
+                SetState(PollerState.Waiting);
+                Backoff();
+            }
             return;
         }
         if (VerifyFirmware(device) is { } reason)
