@@ -49,6 +49,21 @@ public class ProfileJsonTests
         Assert.Contains("\"negative_key\": \"0xE04B\"", text);
     }
 
+    /// <summary>A number would parse to a value no name has, and fail later where the profile is used.</summary>
+    [Theory]
+    [InlineData("\"target\": \"right_trigger\"", "\"target\": 99")]
+    [InlineData("\"target\": \"right_trigger\"", "\"target\": \"99\"")]
+    [InlineData("\"target\": \"right_trigger\"", "\"target\": \"right_trigger, left_trigger\"")]
+    [InlineData("\"conflict\": \"last_input_wins\"", "\"conflict\": 7")]
+    public void Enums_are_read_only_by_name(string name, string other)
+    {
+        var text = ProfileJson.Serialize(DefaultProfiles.Forza());
+        Assert.Contains(name, text);
+
+        Assert.Null(ProfileJson.Deserialize(text.Replace(name, other), out var error));
+        Assert.NotNull(error);
+    }
+
     [Fact]
     public void Unknown_members_are_ignored_and_comments_tolerated()
     {

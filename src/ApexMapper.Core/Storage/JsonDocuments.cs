@@ -5,15 +5,16 @@ using ApexMapper.Core.Keys;
 namespace ApexMapper.Core.Storage;
 
 /// <summary>
-/// The one JSON dialect every file uses: snake_case names, enums as snake_case
-/// strings, scan codes as hex strings, indented, comments and trailing commas
+/// The one JSON dialect every file uses: snake_case names, enums as snake_case names
+/// and never numbers, scan codes as hex strings, indented, comments and trailing commas
 /// tolerated, unknown members ignored. Every document is wrapped in an envelope with a
 /// version integer so a newer file is refused rather than misread.
 ///
 /// Once a version has shipped, any change its reader would refuse or silently drop (a
 /// new member, a new enum value, a looser limit) raises the version, and the raised
 /// version is written under a new file name, so an older app keeps reading its own file
-/// and never meets a newer one.
+/// and never meets a newer one. A stricter check keeps the version: the reader repairs
+/// or drops what the check now forbids, and never refuses a file an older app wrote.
 /// </summary>
 public static class JsonDocuments
 {
@@ -24,7 +25,7 @@ public static class JsonDocuments
         WriteIndented = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
         AllowTrailingCommas = true,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower), new ScanCodeConverter() },
+        Converters = { new EnumNameConverter(), new ScanCodeConverter() },
     };
 
     private sealed record Envelope<T>(int Version, T Payload);
@@ -71,6 +72,39 @@ public static class JsonDocuments
         catch (JsonException e)
         {
             return new(null, "The file could not be read: " + e.Message);
+        }
+    }
+
+    /// <summary>
+    /// An enum by its snake_case name, in any case, and nothing else. The stock converter
+    /// also takes a number or a comma list, either of which can read as a value no name has.
+    /// </summary>
+    private sealed class EnumNameConverter : JsonConverterFactory
+    {
+        public override bool CanConvert(Type typeToConvert) => typeToConvert.IsEnum;
+
+        public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options) =>
+            (JsonConverter)Activator.CreateInstance(typeof(ByName<>).MakeGenericType(typeToConvert))!;
+
+        private sealed class ByName<T> : JsonConverter<T> where T : struct, Enum
+        {
+            private static readonly Dictionary<T, string> Names = Enum.GetValues<T>()
+                .ToDictionary(value => value, value => JsonNamingPolicy.SnakeCaseLower.ConvertName(value.ToString()));
+
+            private static readonly Dictionary<string, T> Values = Names
+                .ToDictionary(pair => pair.Value, pair => pair.Key, StringComparer.OrdinalIgnoreCase);
+
+            public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            {
+                if (reader.TokenType == JsonTokenType.String && Values.TryGetValue(reader.GetString()!, out var value))
+                {
+                    return value;
+                }
+                throw new JsonException($"Expected one of: {string.Join(", ", Names.Values)}.");
+            }
+
+            public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options) =>
+                writer.WriteStringValue(Names[value]);
         }
     }
 
