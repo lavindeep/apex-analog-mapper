@@ -1,5 +1,6 @@
 using ApexMapper.App.Model;
 using ApexMapper.App.Mvvm;
+using ApexMapper.App.Storage;
 using ApexMapper.Windows.Output;
 
 namespace ApexMapper.App.ViewModels;
@@ -7,7 +8,8 @@ namespace ApexMapper.App.ViewModels;
 /// <summary>
 /// The setup card: whether the ViGEmBus driver is installed and running, with a button
 /// to its official release page when it is missing, checked again whenever the window
-/// comes back to the front. The app never downloads or runs the installer (O11).
+/// comes back to the front. The app never downloads or runs the installer (O11). The
+/// card also holds the app's own updates.
 /// </summary>
 public sealed class SetupViewModel : ObservableObject
 {
@@ -19,10 +21,18 @@ public sealed class SetupViewModel : ObservableObject
     private DriverState _driver;
     private bool _isOpen;
 
-    public SetupViewModel(AppServices services, Workspace workspace)
+    public SetupViewModel(AppServices services, Workspace workspace, AppSettings settings)
     {
         _services = services;
         _workspace = workspace;
+        Updates = new UpdatesViewModel(services, workspace, settings);
+        Updates.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(UpdatesViewModel.Available))
+            {
+                Raise(nameof(Summary));
+            }
+        };
         OpenDriverPage = new Command(() => _services.Open(DriverPage));
         OpenDataFolder = new Command(() => _services.Open(_services.DataFolder));
         Recheck();
@@ -49,12 +59,13 @@ public sealed class SetupViewModel : ObservableObject
     {
         DriverState.Missing => "The controller driver is not installed",
         DriverState.NotStarted => "The controller driver is not running yet",
-        _ => "Controller driver, Steam, and where the app keeps its files",
+        _ when Updates.Available is { } version => $"Version {version} is available",
+        _ => "Controller driver, Steam, updates, and where the app keeps its files",
     };
 
-    public bool DriverReady => _driver == DriverState.Running;
+    public UpdatesViewModel Updates { get; }
 
-    public string VersionText => $"Apex Analog Mapper {_services.AppVersion}";
+    public bool DriverReady => _driver == DriverState.Running;
 
     public Command OpenDriverPage { get; }
 

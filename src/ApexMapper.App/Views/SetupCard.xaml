@@ -5,6 +5,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
+             xmlns:views="clr-namespace:ApexMapper.App.Views"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:SetupViewModel}">
   <ui:CardExpander Icon="{ui:SymbolIcon Wrench24}" IsExpanded="{Binding IsOpen}" AutomationProperties.Name="Setup">
@@ -31,7 +32,21 @@
       <ui:TextBlock FontTypography="BodyStrong" Text="Files" Margin="0,8,0,4" />
       <ui:TextBlock Style="{StaticResource Paragraph}" Text="Profiles, calibration, settings and the log are kept in one folder." />
       <ui:Button Icon="{ui:SymbolIcon FolderOpen24}" Content="Open the data folder" Command="{Binding OpenDataFolder}" />
-      <ui:TextBlock Margin="0,12,0,0" Style="{StaticResource CardSummary}" Text="{Binding VersionText}" />
+
+      <StackPanel DataContext="{Binding Updates}">
+        <ui:TextBlock FontTypography="BodyStrong" Text="Updates" Margin="0,16,0,4" />
+        <ui:TextBlock Style="{StaticResource Paragraph}" Text="{Binding VersionText}" />
+        <ui:TextBlock Style="{StaticResource Paragraph}" Text="{Binding Text}" views:Live.Text="{Binding Text}"
+                      Visibility="{Binding Text, Converter={StaticResource ShowWhenPresent}}" />
+        <ui:Button Icon="{ui:SymbolIcon ArrowSync24}" Content="{Binding ActText}" Command="{Binding Act}"
+                   Visibility="{Binding ActText, Converter={StaticResource ShowWhenPresent}}" />
+        <ui:ToggleSwitch Margin="0,12,0,0" Content="Look for updates when the app starts" IsChecked="{Binding CheckOnLaunch}"
+                         ToolTip="The app asks GitHub at most once every six hours. Nothing else goes over the network."
+                         Visibility="{Binding Installed, Converter={StaticResource ShowWhenTrue}}" />
+        <ui:ToggleSwitch Margin="0,8,0,0" Content="Offer test versions too" IsChecked="{Binding Prereleases}"
+                         ToolTip="Test versions come out before a release, to try changes early. They may have bugs a release would not."
+                         Visibility="{Binding CanChoosePrereleases, Converter={StaticResource ShowWhenTrue}}" />
+      </StackPanel>
     </StackPanel>
   </ui:CardExpander>
 </UserControl>

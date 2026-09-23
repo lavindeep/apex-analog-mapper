@@ -7,6 +7,7 @@ using System.Windows.Threading;
 using ApexMapper.App.Logging;
 using ApexMapper.App.Model;
 using ApexMapper.App.Storage;
+using ApexMapper.App.Update;
 using ApexMapper.App.ViewModels;
 using ApexMapper.Windows.Devices;
 using ApexMapper.Windows.Input;
@@ -110,9 +111,11 @@ public partial class App : Application
             Calibrations = new CalibrationStore(paths.Calibration),
             Settings = settingsStore,
             Dialogs = new WindowDialogs(window),
+            Updates = new VelopackUpdates(),
             Post = action => Dispatcher.BeginInvoke(action),
             Open = Open,
             Restart = Restart,
+            Close = () => Shutdown(),
             Log = log.Write,
             AppVersion = version,
             DataFolder = paths.Root,

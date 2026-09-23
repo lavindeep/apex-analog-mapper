@@ -1,5 +1,6 @@
 using ApexMapper.App.Model;
 using ApexMapper.App.Storage;
+using ApexMapper.App.Update;
 using ApexMapper.App.ViewModels;
 using ApexMapper.Core.Calibration;
 using ApexMapper.Core.Keys;
@@ -169,6 +170,47 @@ internal sealed class FakeDialogs : IDialogs
     }
 }
 
+/// <summary>GitHub Releases as the test sets them. A download can be held open to look at it half way.</summary>
+internal sealed class FakeUpdates : IUpdates
+{
+    public bool Installed { get; set; } = true;
+
+    /// <summary>What a check or a download finds.</summary>
+    public string? Newest { get; set; }
+
+    /// <summary>When set, checks and downloads throw it.</summary>
+    public Exception? Fault { get; set; }
+
+    /// <summary>Whether each check and download asked for test versions.</summary>
+    public List<bool> Asked { get; } = [];
+
+    /// <summary>When set, a download waits for it.</summary>
+    public TaskCompletionSource? Hold { get; set; }
+
+    public Action<int>? Progress { get; private set; }
+
+    public int Installs { get; private set; }
+
+    public Task<string?> FindAsync(bool prereleases)
+    {
+        Asked.Add(prereleases);
+        return Fault is { } fault ? Task.FromException<string?>(fault) : Task.FromResult(Newest);
+    }
+
+    public async Task<string?> DownloadAsync(bool prereleases, Action<int> progress)
+    {
+        Asked.Add(prereleases);
+        Progress = progress;
+        if (Hold is { } hold)
+        {
+            await hold.Task;
+        }
+        return Fault is { } fault ? throw fault : Newest;
+    }
+
+    public void InstallOnExit() => Installs++;
+}
+
 /// <summary>
 /// The services a card needs, with stores in a temp folder and fakes for everything
 /// that would touch the keyboard, the driver or the screen. Posting runs inline.
@@ -184,7 +226,7 @@ internal sealed class AppHarness : IDisposable
 
     private readonly TempDirectory _dir = new();
 
-    public AppHarness()
+    public AppHarness(string appVersion = "0.5.0")
     {
         Keyboards = new KeyboardDiscovery(() => [.. Boards]);
         Services = new AppServices
@@ -197,6 +239,7 @@ internal sealed class AppHarness : IDisposable
             Calibrations = new CalibrationStore(_dir.File("calibration")),
             Settings = new SettingsStore(_dir.File("settings.json")),
             Dialogs = Dialogs,
+            Updates = Updates,
             Post = action => action(),
             ReadFirmware = board => { FirmwareRequests.Add(board); return Task.FromResult(FirmwareOf(board)); },
             ListWindows = () => { WindowScans++; return Windows; },
@@ -208,6 +251,9 @@ internal sealed class AppHarness : IDisposable
             Timestamp = () => Stamp,
             Open = Opened.Add,
             Restart = () => Restarts++,
+            Close = () => Closes++,
+            UtcNow = () => Clock,
+            AppVersion = appVersion,
         };
     }
 
@@ -238,6 +284,8 @@ internal sealed class AppHarness : IDisposable
 
     public FakeDialogs Dialogs { get; } = new();
 
+    public FakeUpdates Updates { get; } = new();
+
     public KeyboardDiscovery Keyboards { get; }
 
     public List<KeyboardInfo> Boards { get; } = [TklInfo];
@@ -261,6 +309,10 @@ internal sealed class AppHarness : IDisposable
     public long Stamp { get; set; }
 
     public int Restarts { get; private set; }
+
+    public int Closes { get; private set; }
+
+    public DateTimeOffset Clock { get; set; } = new(2026, 9, 23, 12, 0, 0, TimeSpan.Zero);
 
     public AppServices Services { get; }
 

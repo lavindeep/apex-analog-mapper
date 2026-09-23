@@ -9,12 +9,18 @@ namespace ApexMapper.App.Storage;
 /// <param name="ActiveProfile">Id of the profile in use.</param>
 /// <param name="Prereleases">Offer prerelease updates.</param>
 /// <param name="ConsentedKeyboards">Unverified keyboards whose sensors the user agreed to read, by container id.</param>
+/// <param name="CheckForUpdates">Look for a newer version when the app starts.</param>
+/// <param name="UpdateCheckedAt">When the last update check got an answer from GitHub.</param>
+/// <param name="UpdateFound">The newer version that check found, or null when there was none.</param>
 public sealed record AppSettings(
     Guid? Keyboard = null,
     string? GamePath = null,
     string? ActiveProfile = null,
     bool Prereleases = false,
-    IReadOnlyList<Guid>? ConsentedKeyboards = null);
+    IReadOnlyList<Guid>? ConsentedKeyboards = null,
+    bool CheckForUpdates = true,
+    DateTimeOffset? UpdateCheckedAt = null,
+    string? UpdateFound = null);
 
 /// <summary>
 /// <c>settings.json</c>. A file of unreadable text loads as the defaults with a problem

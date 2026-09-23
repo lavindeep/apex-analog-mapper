@@ -26,7 +26,7 @@ public sealed class MainViewModel
         Profile = new ProfileViewModel(services, workspace, settings.ActiveProfile);
         Calibration = new CalibrationViewModel(services, workspace);
         Status = new StatusViewModel(services, workspace);
-        Setup = new SetupViewModel(services, workspace);
+        Setup = new SetupViewModel(services, workspace, settings);
         Status.CalibrationRequested += () =>
         {
             Calibration.IsOpen = true;
