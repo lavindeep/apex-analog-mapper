@@ -78,7 +78,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $pre = if ($env:PRERELEASE -eq 'true') { @('--pre') } else { @() }
+          # An if hands back a one-item array as a bare string, and splatting a string
+          # passes its characters one by one. The @() around the if keeps an array.
+          $pre = @(if ($env:PRERELEASE -eq 'true') { '--pre' })
           vpk download github --repoUrl $env:REPO_URL --token $env:GH_TOKEN --outputDir releases @pre
           if ($LASTEXITCODE -ne 0) { Write-Warning "No previous release was downloaded, so this one has no delta package." }
           exit 0
@@ -89,7 +91,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $pre = if ($env:PRERELEASE -eq 'true') { @('--pre') } else { @() }
+          $pre = @(if ($env:PRERELEASE -eq 'true') { '--pre' })
           vpk upload github --repoUrl $env:REPO_URL --token $env:GH_TOKEN --outputDir releases `
             --tag $env:GITHUB_REF_NAME --releaseName "Apex Analog Mapper $env:VERSION" @pre
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
