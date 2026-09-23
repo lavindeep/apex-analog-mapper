@@ -631,7 +631,7 @@ public sealed class MappingSession : IMappingSession, IDisposable
         var faults = hook?.HandlerFaults ?? 0;
         if (faults - parts.HookFaultsSeen >= HealthFaultLimit)
         {
-            DoStop(parts, new SessionEnd(EndReason.SafetyFault, SessionEnd.For(EndReason.SafetyFault).Message + " The keyboard hook's checks kept failing."));
+            DoStop(parts, new SessionEnd(EndReason.SafetyFault, SessionEnd.For(EndReason.SafetyFault).Message + " The checks that watch key blocking kept failing."));
             return;
         }
         parts.HookFaultsSeen = faults;
@@ -754,7 +754,7 @@ public sealed class MappingSession : IMappingSession, IDisposable
         Step(() =>
         {
             engineStopped = Volatile.Read(ref parts.Engine)?.Stop() ?? true;
-            return engineStopped ? null : "The engine thread did not stop.";
+            return engineStopped ? null : "Controller updates got stuck and could not be shut down.";
         });
         Step(() =>
         {
@@ -787,7 +787,7 @@ public sealed class MappingSession : IMappingSession, IDisposable
             {
                 hook.Dispose();
             }
-            return stopped ? null : "The keyboard hook thread did not stop.";
+            return stopped ? null : "Key blocking could not be shut down.";
         });
         Step(() =>
         {
@@ -800,7 +800,7 @@ public sealed class MappingSession : IMappingSession, IDisposable
             {
                 poller.Dispose();
             }
-            return stopped ? null : "The sensor thread did not stop.";
+            return stopped ? null : "Analog key reading could not be shut down.";
         });
         Step(() =>
         {
@@ -813,7 +813,7 @@ public sealed class MappingSession : IMappingSession, IDisposable
             {
                 foreground.Dispose();
             }
-            return stopped ? null : "The foreground tracker thread did not stop.";
+            return stopped ? null : "Focus tracking could not be shut down.";
         });
         Step(() =>
         {

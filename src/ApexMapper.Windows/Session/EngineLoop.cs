@@ -156,7 +156,7 @@ public sealed class EngineLoop
         }
         catch (Exception e)
         {
-            Fail("The engine timer could not be created: " + e.Message);
+            Fail("Stopped because Windows could not give the app a precise timer. " + e.Message);
             return;
         }
         lock (_timerLock)
@@ -179,7 +179,7 @@ public sealed class EngineLoop
         }
         catch (Exception e)
         {
-            Fail("The engine stopped on an unexpected error: " + e.Message);
+            Fail(SessionEnd.For(EndReason.EngineFault).Message + " " + e.Message);
         }
         finally
         {

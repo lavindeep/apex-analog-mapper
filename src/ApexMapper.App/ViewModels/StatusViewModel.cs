@@ -374,7 +374,7 @@ public sealed class StatusViewModel : ObservableObject
             }
             if (status.KeysAwaitingRelease)
             {
-                warnings.Add("A key held while the game came back to the front stays off until you release it once.");
+                warnings.Add("A key that was already down stays off until you release it once.");
             }
             if (status.HookReinstalls > 0)
             {

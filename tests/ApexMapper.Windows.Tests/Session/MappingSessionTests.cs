@@ -644,7 +644,7 @@ public sealed class MappingSessionTests : IDisposable
         // Under the sensor's 1 s backoff and its 2 s join: the stop woke it rather than outwaited it.
         Assert.True(clock.ElapsedMilliseconds < SensorPoller.BackoffMs - 100, $"Stop took {clock.ElapsedMilliseconds} ms with the sensor in a {wait}.");
         Assert.Equal(EndReason.Hotkey, _session.LastEnd!.Reason);
-        Assert.DoesNotContain("did not stop", _session.LastEnd.Message);
+        Assert.Equal(SessionEnd.For(EndReason.Hotkey).Message, _session.LastEnd.Message);
     }
 
     [Fact]
@@ -660,7 +660,7 @@ public sealed class MappingSessionTests : IDisposable
         Eventually(() => _session.State == SessionState.Idle, "stop");
         Assert.True(clock.ElapsedMilliseconds < 1000, $"Stop took {clock.ElapsedMilliseconds} ms.");
         Assert.Equal(EndReason.Hotkey, _session.LastEnd!.Reason);
-        Assert.DoesNotContain("did not stop", _session.LastEnd.Message);
+        Assert.Equal(SessionEnd.For(EndReason.Hotkey).Message, _session.LastEnd.Message);
         Assert.False(hook.IsInstalled);
     }
 
@@ -726,7 +726,7 @@ public sealed class MappingSessionTests : IDisposable
 
         Assert.InRange(unpluggedAfter, Watchdog.StallMs - 5, 1000);
         Assert.Equal(EndReason.EngineStalled, _session.LastEnd!.Reason);
-        Assert.Contains("engine thread did not stop", _session.LastEnd.Message);
+        Assert.Contains("Controller updates got stuck", _session.LastEnd.Message);
         Assert.Equal([.. log, FakePadDriver.Describe(PadReport.Neutral)], _driver.Log);
         Assert.False(hook.IsInstalled);
         Assert.Equal(_latencyBefore, GCSettings.LatencyMode);

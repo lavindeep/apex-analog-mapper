@@ -265,7 +265,7 @@ public sealed class StatusViewModelTests : IDisposable
         _h.Session.NextStatus = _h.Session.NextStatus with { GameRunning = true, KeysAwaitingRelease = true, HookReinstalls = 2 };
         status.Tick(_h.Now + StatusViewModel.RefreshMs);
         Assert.Equal("Mapping", status.StateText);
-        Assert.Contains("A key held while the game came back to the front stays off until you release it once.", status.Warnings);
+        Assert.Contains("A key that was already down stays off until you release it once.", status.Warnings);
         Assert.Contains("Windows turned off key blocking 2 times, and the app turned it back on each time.", status.Warnings);
     }
 
