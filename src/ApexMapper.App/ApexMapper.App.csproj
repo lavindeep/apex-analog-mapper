@@ -7,7 +7,11 @@
     <AssemblyName>ApexAnalogMapper</AssemblyName>
     <StartupObject>ApexMapper.App.Program</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets/app.ico" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ApexMapper.Windows\ApexMapper.Windows.csproj" />
   </ItemGroup>

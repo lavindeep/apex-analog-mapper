@@ -9,6 +9,7 @@
                  mc:Ignorable="d"
                  d:DataContext="{d:DesignInstance vm:MainViewModel}"
                  Title="Apex Analog Mapper"
+                 Icon="pack://application:,,,/ApexAnalogMapper;component/Assets/app.ico"
                  Width="900" Height="900" MinWidth="640" MinHeight="480"
                  WindowStartupLocation="CenterScreen"
                  ExtendsContentIntoTitleBar="True"
@@ -18,7 +19,11 @@
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
-    <ui:TitleBar Grid.Row="0" Title="Apex Analog Mapper" />
+    <ui:TitleBar Grid.Row="0" Title="Apex Analog Mapper">
+      <ui:TitleBar.Icon>
+        <ui:ImageIcon Source="pack://application:,,,/ApexAnalogMapper;component/Assets/app.ico" />
+      </ui:TitleBar.Icon>
+    </ui:TitleBar>
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="24,4,24,24" MaxWidth="920">
         <views:StatusCard DataContext="{Binding Status}" />
