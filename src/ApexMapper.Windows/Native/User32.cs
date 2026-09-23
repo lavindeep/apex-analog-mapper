@@ -219,4 +219,32 @@ internal static unsafe partial class User32
     /// <summary>The time, in ms since boot, the current message was posted; for WM_INPUT, when the input event happened.</summary>
     [LibraryImport("user32.dll")]
     public static partial int GetMessageTime();
+
+    public const int GWL_EXSTYLE = -20;
+    public const long WS_EX_TOOLWINDOW = 0x00000080;
+    public const uint GW_OWNER = 4;
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool EnumWindows(delegate* unmanaged[Stdcall]<nint, nint, int> lpEnumFunc, nint lParam);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsWindowVisible(nint hWnd);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial int GetWindowTextLengthW(nint hWnd);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial int GetWindowTextW(nint hWnd, char* lpString, int nMaxCount);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint GetWindowLongPtrW(nint hWnd, int nIndex);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint GetWindow(nint hWnd, uint uCmd);
+
+    /// <summary>The key's name on the current keyboard layout. The scan code goes in bits 16..23 and the extended flag in bit 24.</summary>
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial int GetKeyNameTextW(int lParam, char* lpString, int cchSize);
 }

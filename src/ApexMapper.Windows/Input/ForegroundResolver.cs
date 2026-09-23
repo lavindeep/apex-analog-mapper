@@ -64,33 +64,36 @@ public static class ForegroundResolver
         {
             return ForegroundInfo.None;
         }
+        var (pid, path, unwrapped) = OwnerOf(windows, window);
+        var isGame = gamePath is not null && path is not null && string.Equals(path, gamePath, StringComparison.OrdinalIgnoreCase);
+        var elevation = isGame ? ElevationOf(windows, pid) : Elevation.Visible;
+        return new ForegroundInfo(window, pid, path, isGame, elevation, unwrapped);
+    }
+
+    /// <summary>The process that owns a window and its executable, looking through a frame host to the app inside.</summary>
+    internal static (uint ProcessId, string? ImagePath, bool Unwrapped) OwnerOf(IWindowSystem windows, nint window)
+    {
         var pid = windows.ProcessIdOf(window);
         var path = pid == 0 ? null : windows.ImagePathOf(pid);
-        var unwrapped = false;
         if (path is not null && string.Equals(Path.GetFileName(path), FrameHostExecutable, StringComparison.OrdinalIgnoreCase))
         {
             var core = windows.CoreWindowChildOf(window);
             var corePid = core == 0 ? 0 : windows.ProcessIdOf(core);
             if (corePid != 0)
             {
-                pid = corePid;
-                path = windows.ImagePathOf(corePid);
-                unwrapped = true;
+                return (corePid, windows.ImagePathOf(corePid), true);
             }
         }
-        var isGame = gamePath is not null && path is not null && string.Equals(path, gamePath, StringComparison.OrdinalIgnoreCase);
-        var elevation = Elevation.Visible;
-        if (isGame)
-        {
-            elevation = windows.IsElevated(pid) switch
-            {
-                null => Elevation.Unknown,
-                true when windows.IsCurrentProcessElevated() != true => Elevation.Elevated,
-                _ => Elevation.Visible,
-            };
-        }
-        return new ForegroundInfo(window, pid, path, isGame, elevation, unwrapped);
+        return (pid, path, false);
     }
+
+    /// <summary>Whether this process's hook can see the input of the given process.</summary>
+    internal static Elevation ElevationOf(IWindowSystem windows, uint processId) => windows.IsElevated(processId) switch
+    {
+        null => Elevation.Unknown,
+        true when windows.IsCurrentProcessElevated() != true => Elevation.Elevated,
+        _ => Elevation.Visible,
+    };
 }
 
 /// <summary>The real window system.</summary>

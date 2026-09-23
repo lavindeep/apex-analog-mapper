@@ -39,7 +39,7 @@ namespace ApexMapper.Windows.Session;
 /// moment the hook is gone: a key still held then reaches the game as a keyboard key,
 /// which the maintainer chose over any delay (stage 3 ledger, Q1).
 /// </summary>
-public sealed class MappingSession : IDisposable
+public sealed class MappingSession : IMappingSession, IDisposable
 {
     /// <summary>How long <see cref="Dispose"/> waits for the session thread to finish the last stop.</summary>
     public const int DisposeTimeoutMs = 15_000;
@@ -187,6 +187,7 @@ public sealed class MappingSession : IDisposable
         return done.Task;
     }
 
+    /// <summary>A reading for the status card. Call it from one thread at a time: the cycle percentiles share a scratch buffer.</summary>
     public SessionStatus Status()
     {
         var parts = Volatile.Read(ref _parts);
@@ -196,11 +197,12 @@ public sealed class MappingSession : IDisposable
         }
         var focus = parts.Flag.IsGameForeground;
         var foreground = Volatile.Read(ref parts.Foreground)?.Current;
+        var poller = Volatile.Read(ref parts.Poller);
         var fallback = Volatile.Read(ref parts.Engine) is null ? 0 : parts.Mapper.FallbackCount;
         string? problem = null;
         if (fallback > 0)
         {
-            problem = parts.Poller is { State: not PollerState.Running, FaultReason: { } reason }
+            problem = poller is { State: not PollerState.Running, FaultReason: { } reason }
                 ? reason
                 : "The keyboard's analog readings are arriving late.";
         }
@@ -220,7 +222,9 @@ public sealed class MappingSession : IDisposable
             awaitingRelease,
             Volatile.Read(ref parts.Pad)?.SubmitCount ?? 0,
             Volatile.Read(ref parts.HookReinstalls),
-            RestartRequired);
+            RestartRequired,
+            poller?.Stats.P50 ?? float.NaN,
+            poller?.Stats.P99 ?? float.NaN);
     }
 
     /// <summary>Stops a running session (as the app closing) and ends the session thread.</summary>

@@ -259,6 +259,18 @@ public sealed class MappingSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task The_status_carries_the_sensor_cycle_period_while_a_session_runs()
+    {
+        Assert.True(float.IsNaN(_session.Status().CycleP50Ms));
+
+        await StartRunning();
+        Eventually(() => _session.Status() is { CycleP50Ms: > 0f, CycleP99Ms: > 0f }, "the sensor cycles to be timed");
+
+        await _session.StopAsync(EndReason.UserStop);
+        Assert.True(float.IsNaN(_session.Status().CycleP99Ms));
+    }
+
+    [Fact]
     public async Task Losing_focus_zeroes_the_pad_and_hands_held_keys_back_and_the_session_keeps_running()
     {
         await RunningWithSpaceHeld();

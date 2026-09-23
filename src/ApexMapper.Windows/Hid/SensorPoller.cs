@@ -359,7 +359,7 @@ public sealed class SensorPoller : IDisposable
         return true;
     }
 
-    private static string Describe(ExchangeStatus status) => status switch
+    internal static string Describe(ExchangeStatus status) => status switch
     {
         ExchangeStatus.Timeout => "The keyboard did not answer within 150 ms.",
         ExchangeStatus.ShortReply => "The keyboard sent a short reply.",

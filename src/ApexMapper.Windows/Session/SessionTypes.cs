@@ -85,6 +85,8 @@ public sealed record SessionRequest(
 /// <param name="SubmitCount">Reports the driver accepted this session, for the submit rate.</param>
 /// <param name="HookReinstalls">Times Windows removed the hook and the session put it back.</param>
 /// <param name="RestartRequired">A controller could not be removed; Start is refused until the app restarts.</param>
+/// <param name="CycleP50Ms">Median sensor cycle period over the last hundred cycles, or NaN before the first.</param>
+/// <param name="CycleP99Ms">99th percentile of the same, or NaN.</param>
 public sealed record SessionStatus(
     SessionState State,
     SessionEnd? LastEnd,
@@ -96,7 +98,31 @@ public sealed record SessionStatus(
     bool KeysAwaitingRelease,
     long SubmitCount,
     int HookReinstalls,
-    bool RestartRequired);
+    bool RestartRequired,
+    float CycleP50Ms = float.NaN,
+    float CycleP99Ms = float.NaN);
+
+/// <summary>What the window uses of a <see cref="MappingSession"/>, so its view models can be tested without one.</summary>
+public interface IMappingSession
+{
+    /// <inheritdoc cref="MappingSession.StateChanged"/>
+    event Action<SessionState>? StateChanged;
+
+    SessionState State { get; }
+
+    SessionEnd? LastEnd { get; }
+
+    bool RestartRequired { get; }
+
+    SessionEnd? WhyNotStartable(Guid keyboard);
+
+    Task<SessionEnd?> StartAsync(SessionRequest request);
+
+    Task StopAsync(EndReason reason);
+
+    /// <inheritdoc cref="MappingSession.Status"/>
+    SessionStatus Status();
+}
 
 /// <summary>
 /// The app-lifetime services a session uses, and the factories for its parts. The
