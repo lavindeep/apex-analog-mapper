@@ -24,6 +24,9 @@ public sealed class StatusViewModel : ObservableObject
 {
     public const int RefreshMs = 250;
 
+    /// <summary>How long a key must read the sensor's limit, past its calibrated full press, before the card warns (A16).</summary>
+    public const int AtLimitWarningMs = 3000;
+
     private readonly AppServices _services;
     private readonly Workspace _workspace;
     private SessionStatus _status;
@@ -37,6 +40,8 @@ public sealed class StatusViewModel : ObservableObject
     private (long Count, long AtMs)? _rateFrom;
     private double _rate;
     private SessionState _loggedState;
+    private readonly Dictionary<ScanCode, long> _atLimitSince = [];
+    private List<ScanCode> _stuckAtLimit = [];
 
     public StatusViewModel(AppServices services, Workspace workspace)
     {
@@ -154,7 +159,7 @@ public sealed class StatusViewModel : ObservableObject
     /// <summary>Reads the session's status again. Called by the window's timer every <see cref="RefreshMs"/>.</summary>
     public void Tick(long nowMs)
     {
-        Refresh();
+        Refresh(nowMs);
         if (_status.State == SessionState.Running)
         {
             if (_rateFrom is { } from && nowMs - from.AtMs >= 1000)
@@ -196,6 +201,8 @@ public sealed class StatusViewModel : ObservableObject
         {
             _workspace.RunningProfileText = null;
             _otherKeyboardSeen = false;
+            _atLimitSince.Clear();
+            _stuckAtLimit = [];
         }
         if (state != _loggedState)
         {
@@ -215,9 +222,14 @@ public sealed class StatusViewModel : ObservableObject
         }
     }
 
-    private void Refresh()
+    /// <summary>Reads the session's status and recomputes the card. Only the timer passes the time, which moves the at-limit clocks.</summary>
+    private void Refresh(long? nowMs = null)
     {
         _status = _services.Session.Status();
+        if (nowMs is { } now)
+        {
+            TrackKeysAtLimit(now);
+        }
         var (blocker, calibration) = _workspace.SessionActive ? (null, false) : FindBlocker();
         Blocker = blocker;
         BlockedByCalibration = calibration;
@@ -228,6 +240,21 @@ public sealed class StatusViewModel : ObservableObject
         }
         Start.Refresh();
         Stop.Refresh();
+    }
+
+    /// <summary>A16: keys that have read the sensor's limit for <see cref="AtLimitWarningMs"/>, restarting a key's clock whenever it leaves the limit.</summary>
+    private void TrackKeysAtLimit(long nowMs)
+    {
+        var atLimit = _status.KeysAtLimit ?? [];
+        foreach (var key in _atLimitSince.Keys.Except(atLimit).ToList())
+        {
+            _atLimitSince.Remove(key);
+        }
+        foreach (var key in atLimit)
+        {
+            _atLimitSince.TryAdd(key, nowMs);
+        }
+        _stuckAtLimit = [.. _atLimitSince.Where(k => nowMs - k.Value >= AtLimitWarningMs).Select(k => k.Key)];
     }
 
     private (string?, bool) FindBlocker()
@@ -258,9 +285,7 @@ public sealed class StatusViewModel : ObservableObject
         }
         if (Compile(out var uncalibrated) is null)
         {
-            var missing = uncalibrated.Select(_services.KeyName).ToList();
-            var names = missing.Count == 1 ? missing[0] : string.Join(", ", missing.Take(missing.Count - 1)) + " and " + missing[^1];
-            return ($"Calibrate {names} first.", true);
+            return ($"Calibrate {Wording.List([.. uncalibrated.Select(_services.KeyName)])} first.", true);
         }
         return (_services.Session.WhyNotStartable(board.Id)?.Message, false);
     }
@@ -287,6 +312,12 @@ public sealed class StatusViewModel : ObservableObject
             if (status.FallbackKeys > 0)
             {
                 warnings.Add($"{status.FallbackKeys} analog {(status.FallbackKeys == 1 ? "key follows" : "keys follow")} the keyboard's on and off state instead of its depth. {status.SensorProblem}");
+            }
+            if (_stuckAtLimit.Count > 0)
+            {
+                var one = _stuckAtLimit.Count == 1;
+                warnings.Add($"{Wording.List([.. _stuckAtLimit.Select(_services.KeyName)])} {(one ? "reads" : "read")} the sensor's maximum, past the full press {(one ? "it was" : "they were")} " +
+                    $"calibrated with, so {(one ? "it reaches" : "they reach")} full output early. Calibrate {(one ? "it" : "them")} again.");
             }
             if (!status.GameRunning)
             {

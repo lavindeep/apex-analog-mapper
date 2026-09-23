@@ -110,6 +110,28 @@ public sealed class StatusViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task A_key_that_stays_at_the_sensor_s_limit_warns_after_a_few_seconds()
+    {
+        const string Warning = "W reads the sensor's maximum, past the full press it was calibrated with, so it reaches full output early. Calibrate it again.";
+        _h.MakeReady();
+        var status = Create();
+        await status.StartAsync();
+        var atLimit = new SessionStatus(SessionState.Running, null, true, true, false, 0, null, false, 0, 0, false, KeysAtLimit: [DefaultProfiles.Key.W]);
+
+        _h.Session.NextStatus = atLimit;
+        status.Tick(_h.Now);
+        status.Tick(_h.Now + StatusViewModel.AtLimitWarningMs - 1);
+        Assert.DoesNotContain(Warning, status.Warnings);
+
+        status.Tick(_h.Now + StatusViewModel.AtLimitWarningMs);
+        Assert.Contains(Warning, status.Warnings);
+
+        _h.Session.NextStatus = atLimit with { KeysAtLimit = [] };
+        status.Tick(_h.Now + StatusViewModel.AtLimitWarningMs + 250);
+        Assert.DoesNotContain(Warning, status.Warnings);
+    }
+
+    [Fact]
     public async Task The_controller_update_rate_is_counted_over_a_second()
     {
         _h.MakeReady();

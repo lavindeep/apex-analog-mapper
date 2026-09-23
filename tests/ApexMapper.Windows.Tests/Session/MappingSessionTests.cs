@@ -3,6 +3,8 @@ using System.Runtime;
 using ApexMapper.Core.Bindings;
 using ApexMapper.Core.Engine;
 using ApexMapper.Core.Keys;
+using ApexMapper.Core.Profiles;
+using ApexMapper.Core.Sensors;
 using ApexMapper.Windows.Devices;
 using ApexMapper.Windows.Hid;
 using ApexMapper.Windows.Input;
@@ -268,6 +270,24 @@ public sealed class MappingSessionTests : IDisposable
 
         await _session.StopAsync(EndReason.UserStop);
         Assert.True(float.IsNaN(_session.Status().CycleP99Ms));
+    }
+
+    [Fact]
+    public async Task A_key_calibrated_short_of_the_sensor_s_limit_is_reported_while_it_reads_at_it()
+    {
+        // The held captures have W at 4095; the fixtures calibrate it 2000 counts above rest.
+        _openSensor = () => new FakeVendorStream
+        {
+            OnRead = (_, command, selector) =>
+            {
+                Thread.Sleep(1);
+                return command == SensorRequest.GroupCommand ? Fixtures.HeldGroup(selector) : FakeVendorStream.DefaultReply(command, selector);
+            },
+        };
+
+        await StartRunning();
+
+        Eventually(() => _session.Status().KeysAtLimit is [var key] && key == DefaultProfiles.Key.W, "W to be reported at the sensor's limit");
     }
 
     [Fact]

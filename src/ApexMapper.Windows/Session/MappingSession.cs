@@ -224,7 +224,40 @@ public sealed class MappingSession : IMappingSession, IDisposable
             Volatile.Read(ref parts.HookReinstalls),
             RestartRequired,
             poller?.Stats.P50 ?? float.NaN,
-            poller?.Stats.P99 ?? float.NaN);
+            poller?.Stats.P99 ?? float.NaN,
+            KeysAtLimit(parts));
+    }
+
+    /// <summary>Analog keys whose calibrated full press is short of the sensor's limit, reading at it in a fresh reading.</summary>
+    private static List<ScanCode>? KeysAtLimit(Parts parts)
+    {
+        if (Volatile.Read(ref parts.Snapshot) is not { } snapshot)
+        {
+            return null;
+        }
+        var keys = new List<ScanCode>();
+        for (var attempt = 0; attempt < SensorSnapshot.MaxReadAttempts; attempt++)
+        {
+            if (!snapshot.TryBeginRead(out var generation))
+            {
+                continue;
+            }
+            keys.Clear();
+            var fresh = snapshot.IsFresh(Stopwatch.GetTimestamp());
+            foreach (var key in parts.Request.Profile.AnalogKeys)
+            {
+                if (fresh && key.Calibration is { IsClipping: false } calibration && snapshot.WasRead(calibration.SensorIndex)
+                    && calibration.IsAtLimit(snapshot.Raw[calibration.SensorIndex]))
+                {
+                    keys.Add(key.Key);
+                }
+            }
+            if (snapshot.EndRead(generation))
+            {
+                return keys;
+            }
+        }
+        return null;
     }
 
     /// <summary>Stops a running session (as the app closing) and ends the session thread.</summary>

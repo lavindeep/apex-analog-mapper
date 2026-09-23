@@ -1,4 +1,5 @@
 using ApexMapper.Core.Engine;
+using ApexMapper.Core.Keys;
 using ApexMapper.Core.Sensors;
 using ApexMapper.Windows.Devices;
 using ApexMapper.Windows.Hid;
@@ -87,6 +88,7 @@ public sealed record SessionRequest(
 /// <param name="RestartRequired">A controller could not be removed; Start is refused until the app restarts.</param>
 /// <param name="CycleP50Ms">Median sensor cycle period over the last hundred cycles, or NaN before the first.</param>
 /// <param name="CycleP99Ms">99th percentile of the same, or NaN.</param>
+/// <param name="KeysAtLimit">Analog keys calibrated short of the sensor's limit that read at it now, or null. One that stays there is implausible (A16).</param>
 public sealed record SessionStatus(
     SessionState State,
     SessionEnd? LastEnd,
@@ -100,7 +102,8 @@ public sealed record SessionStatus(
     int HookReinstalls,
     bool RestartRequired,
     float CycleP50Ms = float.NaN,
-    float CycleP99Ms = float.NaN);
+    float CycleP99Ms = float.NaN,
+    IReadOnlyList<ScanCode>? KeysAtLimit = null);
 
 /// <summary>What the window uses of a <see cref="MappingSession"/>, so its view models can be tested without one.</summary>
 public interface IMappingSession

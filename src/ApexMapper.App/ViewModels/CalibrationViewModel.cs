@@ -199,7 +199,7 @@ public sealed class CalibrationViewModel : ObservableObject
             var calibration = _workspace.Calibration;
             var redo = _rows.Where(r => calibration?.FromOtherFirmware.Contains(r.Key) == true).Select(r => r.Name).ToList();
             var firmware = redo.Count == 0 ? null
-                : $"{Names(redo)} {(redo.Count == 1 ? "was" : "were")} calibrated on other firmware. The readings are kept; calibrate {(redo.Count == 1 ? "it" : "them")} again to be sure.";
+                : $"{Wording.List(redo)} {(redo.Count == 1 ? "was" : "were")} calibrated on other firmware. The readings are kept; calibrate {(redo.Count == 1 ? "it" : "them")} again to be sure.";
             return string.Join(" ", new[] { calibration?.Problem, firmware }.Where(t => t is not null)) is { Length: > 0 } text ? text : null;
         }
     }
@@ -537,7 +537,4 @@ public sealed class CalibrationViewModel : ObservableObject
             row.RefreshAll();
         }
     }
-
-    private static string Names(IReadOnlyList<string> names) =>
-        names.Count == 1 ? names[0] : string.Join(", ", names.Take(names.Count - 1)) + " and " + names[^1];
 }
