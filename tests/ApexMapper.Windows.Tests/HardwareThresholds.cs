@@ -4,7 +4,7 @@ namespace ApexMapper.Windows.Tests;
 
 /// <summary>
 /// Limits for the hardware tests: measured on the maintainer's PC (Apex Pro TKL gen 1,
-/// ViGEmBus 1.21) with the headroom stated per value.
+/// ViGEmBus 1.21.442) with the headroom stated per value.
 /// </summary>
 public static class HardwareThresholds
 {
@@ -21,9 +21,8 @@ public static class HardwareThresholds
     /// </summary>
     public const double ReadbackP99Ms = 1;
 
-    /// <summary>Distinct XInput packets per second while changing every tick; measured 473 to 487.</summary>
+    /// <summary>Distinct XInput packets per second while changing every tick; measured 473 to 487, and 486 to 490 in stage 3.</summary>
     public const int XInputPacketsPerSecondMin = 400;
-
 
     /// <summary>Pad gone after TerminateProcess; measured at the first poll, 4 to 5 ms.</summary>
     public const int KillPadGoneMs = 500;

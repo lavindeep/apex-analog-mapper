@@ -14,9 +14,6 @@ publish/
 releases/
 *.binlog
 
-## Spike measurements
-spike/out/
-
 ## OS
 .DS_Store
 Thumbs.db
