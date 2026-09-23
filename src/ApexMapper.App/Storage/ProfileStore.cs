@@ -11,43 +11,51 @@ public sealed record ProfileEntry(string Id, Profile? Profile, string? Problem);
 
 /// <summary>
 /// Profiles, one JSON file each in the profiles folder, named by id. The Forza profile
-/// always exists: it is written when missing or unreadable and cannot be deleted. Reset
-/// gives any profile the Forza bindings under its own id and name. Called from the UI
-/// thread only.
+/// always exists: when its file gives nothing the default stands in, and the default is
+/// written back when the file is missing or holds unreadable text. It cannot be deleted.
+/// Saving refuses to write over a file that could not be read or that a newer version
+/// of the app wrote. Called from the UI thread only.
 /// </summary>
 public sealed partial class ProfileStore(string directory)
 {
+    private static readonly HashSet<string> ReservedNames =
+    [
+        "con", "prn", "aux", "nul",
+        .. Enumerable.Range(0, 10).Select(i => $"com{i}"),
+        .. Enumerable.Range(0, 10).Select(i => $"lpt{i}"),
+    ];
+
     public IReadOnlyList<ProfileEntry> List()
     {
-        var entries = new List<ProfileEntry> { Load(DefaultProfiles.ForzaId)! };
-        foreach (var path in Directory.EnumerateFiles(directory))
+        // Forza first: on a first run, loading it writes it, and with it the folder.
+        var forza = Load(DefaultProfiles.ForzaId)!;
+        var others = new List<ProfileEntry>();
+        if (Directory.Exists(directory))
         {
-            var id = Path.GetFileNameWithoutExtension(path);
-            if (Path.GetExtension(path) == ".json" && IsValidId(id) && id != DefaultProfiles.ForzaId && Load(id) is { } entry)
+            foreach (var path in Directory.EnumerateFiles(directory))
             {
-                entries.Add(entry);
+                // Windows file names ignore case, so Drift.JSON is the file Load("drift") reads.
+                var id = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
+                if (string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase)
+                    && id != DefaultProfiles.ForzaId
+                    && IsValidId(id)
+                    && Load(id) is { } entry)
+                {
+                    others.Add(entry);
+                }
             }
         }
-        return
-        [
-            entries[0],
-            .. entries.Skip(1).OrderBy(e => e.Profile?.Name ?? e.Id, StringComparer.CurrentCultureIgnoreCase),
-        ];
+        return [forza, .. others.OrderBy(e => e.Profile?.Name ?? e.Id, StringComparer.CurrentCultureIgnoreCase)];
     }
 
-    /// <summary>The profile with this id, or null when there is no such file.</summary>
+    /// <summary>The profile with this id, or null when there is no such file. Never null for the Forza profile.</summary>
     public ProfileEntry? Load(string id)
     {
         RequireValidId(id);
-        var result = JsonFile.Load(PathOf(id), Parse);
-        if (id == DefaultProfiles.ForzaId && result.Value is null && result.Status != LoadStatus.Unavailable)
+        var result = JsonFile.Load(PathOf(id), ProfileJson.Parse);
+        if (id == DefaultProfiles.ForzaId && result.Value is null)
         {
-            var forza = DefaultProfiles.Forza();
-            JsonFile.Save(PathOf(id), ProfileJson.Serialize(forza));
-            var problem = result.Status == LoadStatus.Corrupt
-                ? $"The Forza profile could not be read and was reset to the default. {result.Error}"
-                : null;
-            return new ProfileEntry(id, forza, problem);
+            return new ProfileEntry(id, DefaultProfiles.Forza(), StandInForForza(result));
         }
         if (result.Status == LoadStatus.NotFound)
         {
@@ -60,7 +68,8 @@ public sealed partial class ProfileStore(string directory)
 
     /// <summary>
     /// Writes the profile unless the file already holds the same content. Returns whether
-    /// it changed, which is what decides that an edit stops a running session.
+    /// it changed. Throws <see cref="IOException"/> rather than write over a file that
+    /// could not be read or that a newer version wrote.
     /// </summary>
     public bool Save(Profile profile)
     {
@@ -71,7 +80,9 @@ public sealed partial class ProfileStore(string directory)
         }
         var text = ProfileJson.Serialize(profile);
         var path = PathOf(profile.Id);
-        if (JsonFile.Load(path, Parse).Value is { } current && ProfileJson.Serialize(current with { Id = profile.Id }) == text)
+        var current = JsonFile.Load(path, ProfileJson.Parse);
+        LoadProblem.ThrowIfUnsafeToSave(current, $"profile \"{profile.Id}\"");
+        if (current.Value is { } existing && ProfileJson.Serialize(existing with { Id = profile.Id }) == text)
         {
             return false;
         }
@@ -87,28 +98,49 @@ public sealed partial class ProfileStore(string directory)
         {
             return false;
         }
-        // The backup goes too, or the next load would restore the profile from it.
-        File.Delete(PathOf(id));
+        // The backup goes first: left behind, the next load would restore the profile from it.
         File.Delete(JsonFile.BackupPath(PathOf(id)));
+        File.Delete(PathOf(id));
         return true;
     }
 
-    /// <summary>Replaces the profile's bindings with Forza's, keeping its id and name.</summary>
-    public Profile Reset(string id)
+    /// <summary>
+    /// Replaces the profile's bindings with Forza's. A custom profile keeps its id and
+    /// name; the Forza profile gets its default name back. Returns whether the file changed.
+    /// </summary>
+    public (Profile Profile, bool Changed) Reset(string id)
     {
         var forza = DefaultProfiles.Forza();
         var name = id == DefaultProfiles.ForzaId ? forza.Name : Load(id)?.Profile?.Name ?? id;
         var reset = forza with { Id = id, Name = name };
-        Save(reset);
-        return reset;
+        return (reset, Save(reset));
     }
 
-    /// <summary>A plain file name: lowercase letters, digits, dashes and underscores, at most 64 characters.</summary>
-    public static bool IsValidId(string? id) => id is not null && IdPattern().IsMatch(id);
+    /// <summary>
+    /// A plain file name: lowercase letters, digits, dashes and underscores, at most 64
+    /// characters, and not a name Windows reserves for a device.
+    /// </summary>
+    public static bool IsValidId(string? id) => id is not null && IdPattern().IsMatch(id) && !ReservedNames.Contains(id);
+
+    /// <summary>Why the default stands in for Forza's file, writing it back when the file is missing or unreadable text.</summary>
+    private string? StandInForForza(LoadResult<Profile> result)
+    {
+        if (result.Status is LoadStatus.Unavailable or LoadStatus.Newer)
+        {
+            return $"{LoadProblem.Describe(result, "Forza profile")} The default Forza profile is used meanwhile.";
+        }
+        try
+        {
+            JsonFile.Save(PathOf(DefaultProfiles.ForzaId), ProfileJson.Serialize(DefaultProfiles.Forza()));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return $"The Forza profile could not be saved, so the default is used without being saved: {e.Message}";
+        }
+        return result.Status == LoadStatus.Corrupt ? $"The Forza profile could not be read and was reset to the default. {result.Error}" : null;
+    }
 
     private string PathOf(string id) => Path.Combine(directory, id + ".json");
-
-    private static (Profile? Value, string? Error) Parse(string text) => (ProfileJson.Deserialize(text, out var error), error);
 
     private static void RequireValidId(string id)
     {
@@ -118,6 +150,6 @@ public sealed partial class ProfileStore(string directory)
         }
     }
 
-    [GeneratedRegex("^[a-z0-9][a-z0-9_-]{0,63}$")]
+    [GeneratedRegex(@"\A[a-z0-9][a-z0-9_-]{0,63}\z")]
     private static partial Regex IdPattern();
 }

@@ -25,18 +25,45 @@ public class ProfileStoreTests
             })],
         };
 
+    /// <summary>The same profile as a newer version of the app would write it.</summary>
+    private static string Newer(Profile profile) => ProfileJson.Serialize(profile).Replace("\"version\": 1", "\"version\": 2");
+
     [Fact]
-    public void The_forza_profile_is_written_when_missing_and_listed_first()
+    public void On_a_first_run_the_folder_and_the_forza_profile_are_created()
+    {
+        using var dir = new TempDirectory();
+        var folder = Path.Combine(dir.Path, "profiles");
+
+        var entries = new ProfileStore(folder).List();
+
+        Assert.Equal(["forza"], entries.Select(e => e.Id));
+        Assert.Null(entries[0].Problem);
+        Assert.Equal(ForzaText, File.ReadAllText(Path.Combine(folder, "forza.json")));
+    }
+
+    [Fact]
+    public void Forza_is_listed_first_and_the_rest_by_name()
     {
         using var dir = new TempDirectory();
         var store = new ProfileStore(dir.Path);
-        store.Save(Custom("a-first", "Aardvark"));
+        store.Save(Custom("a", "zeta"));
+        store.Save(Custom("b", "Alpha"));
 
         var entries = store.List();
 
-        Assert.Equal(["forza", "a-first"], entries.Select(e => e.Id));
-        Assert.Equal(ForzaText, File.ReadAllText(dir.File("forza.json")));
+        Assert.Equal(["forza", "b", "a"], entries.Select(e => e.Id));
         Assert.All(entries, e => Assert.Null(e.Problem));
+    }
+
+    [Fact]
+    public void An_edited_forza_profile_is_kept()
+    {
+        using var dir = new TempDirectory();
+        var store = new ProfileStore(dir.Path);
+        store.Save(DefaultProfiles.Forza() with { Name = "My Forza" });
+
+        Assert.Equal("My Forza", store.Load("forza")!.Profile!.Name);
+        Assert.Equal("My Forza", store.List()[0].Profile!.Name);
     }
 
     [Fact]
@@ -75,7 +102,25 @@ public class ProfileStoreTests
     }
 
     [Fact]
-    public void Reset_gives_a_profile_the_forza_bindings_under_its_own_id_and_name()
+    public void A_delete_that_cannot_remove_the_backup_leaves_the_profile_whole()
+    {
+        using var dir = new TempDirectory();
+        var store = new ProfileStore(dir.Path);
+        store.Save(Custom());
+        store.Save(Custom() with { Name = "Renamed" });
+
+        using (new FileStream(dir.File("drift.json.bak"), FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            Assert.Throws<IOException>(() => store.Delete("drift"));
+        }
+
+        var drift = store.Load("drift")!;
+        Assert.Equal("Renamed", drift.Profile!.Name);
+        Assert.Null(drift.Problem);
+    }
+
+    [Fact]
+    public void Reset_gives_a_profile_the_forza_bindings_under_its_own_id_and_name_and_says_whether_it_changed()
     {
         using var dir = new TempDirectory();
         var store = new ProfileStore(dir.Path);
@@ -84,10 +129,16 @@ public class ProfileStoreTests
 
         var drift = store.Reset("drift");
         var forza = store.Reset("forza");
+        var again = store.Reset("forza");
+        var missing = store.Reset("nope");
 
-        Assert.Equal(ProfileJson.Serialize(DefaultProfiles.Forza() with { Id = "drift", Name = "Drift" }), ProfileJson.Serialize(drift));
-        Assert.Equal(ForzaText, ProfileJson.Serialize(forza));
+        Assert.True(drift.Changed);
+        Assert.Equal(ProfileJson.Serialize(DefaultProfiles.Forza() with { Id = "drift", Name = "Drift" }), ProfileJson.Serialize(drift.Profile));
+        Assert.True(forza.Changed);
+        Assert.Equal(ForzaText, ProfileJson.Serialize(forza.Profile));
         Assert.Equal(ForzaText, File.ReadAllText(dir.File("forza.json")));
+        Assert.False(again.Changed);
+        Assert.Equal("nope", missing.Profile.Name);
     }
 
     [Fact]
@@ -104,6 +155,63 @@ public class ProfileStoreTests
     }
 
     [Fact]
+    public void A_locked_forza_profile_is_stood_in_for_by_the_default_and_left_alone()
+    {
+        using var dir = new TempDirectory();
+        var store = new ProfileStore(dir.Path);
+        store.Save(DefaultProfiles.Forza() with { Name = "My Forza" });
+        var before = File.ReadAllText(dir.File("forza.json"));
+
+        using (new FileStream(dir.File("forza.json"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            var forza = store.List()[0];
+            Assert.Equal("Forza", forza.Profile!.Name);
+            Assert.Contains("could not be opened", forza.Problem);
+            Assert.Throws<IOException>(() => store.Save(DefaultProfiles.Forza() with { Name = "Other" }));
+        }
+
+        Assert.Equal(before, File.ReadAllText(dir.File("forza.json")));
+    }
+
+    [Fact]
+    public void A_forza_profile_that_cannot_be_written_is_still_listed_from_the_default()
+    {
+        using var dir = new TempDirectory();
+        // A file where the folder should be: nothing can be written under it.
+        File.WriteAllText(dir.File("profiles"), "");
+
+        var entries = new ProfileStore(dir.File("profiles")).List();
+
+        var forza = Assert.Single(entries);
+        Assert.Equal(ForzaText, ProfileJson.Serialize(forza.Profile!));
+        Assert.Contains("could not be saved", forza.Problem);
+    }
+
+    [Fact]
+    public void Files_from_a_newer_version_are_listed_with_the_reason_and_never_written_over()
+    {
+        using var dir = new TempDirectory();
+        var store = new ProfileStore(dir.Path);
+        File.WriteAllText(dir.File("drift.json"), Newer(Custom()));
+        File.WriteAllText(dir.File("forza.json"), Newer(DefaultProfiles.Forza() with { Name = "Newer Forza" }));
+
+        var entries = store.List();
+
+        Assert.Equal("Forza", entries[0].Profile!.Name);
+        Assert.Contains("newer version", entries[0].Problem);
+        var drift = Assert.Single(entries, e => e.Id == "drift");
+        Assert.Null(drift.Profile);
+        Assert.Contains("newer version", drift.Problem);
+        Assert.Throws<IOException>(() => store.Save(Custom()));
+        Assert.Throws<IOException>(() => store.Save(DefaultProfiles.Forza()));
+        Assert.Throws<IOException>(() => store.Reset("drift"));
+        Assert.Equal(Newer(Custom()), File.ReadAllText(dir.File("drift.json")));
+        Assert.Contains("Newer Forza", File.ReadAllText(dir.File("forza.json")));
+        Assert.Empty(Directory.GetFiles(dir.Path, "*.corrupt"));
+        Assert.Equal(2, store.List().Count);
+    }
+
+    [Fact]
     public void An_unreadable_custom_profile_is_listed_without_a_profile_and_with_the_reason()
     {
         using var dir = new TempDirectory();
@@ -114,22 +222,49 @@ public class ProfileStoreTests
 
         Assert.Null(broken.Profile);
         Assert.Contains("could not be read", broken.Problem);
+        Assert.Contains("not valid JSON", broken.Problem);
     }
 
     [Fact]
-    public void The_file_name_is_the_id_and_names_that_are_not_plain_ids_are_left_alone()
+    public void The_file_name_is_the_id_whatever_its_case_and_other_names_are_left_alone()
     {
         using var dir = new TempDirectory();
         var store = new ProfileStore(dir.Path);
         File.WriteAllText(dir.File("copied.json"), ProfileJson.Serialize(Custom("drift", "Copied")));
+        File.WriteAllText(dir.File("Shared.JSON"), ProfileJson.Serialize(Custom("shared", "Shared")));
         File.WriteAllText(dir.File("Not An Id.json"), ProfileJson.Serialize(Custom("other", "Other")));
         store.Save(Custom());
 
-        Assert.Equal(["forza", "copied", "drift"], store.List().Select(e => e.Id));
-        Assert.Equal("copied", store.Load("copied")!.Profile!.Id);
+        Assert.Equal(["forza", "copied", "drift", "shared"], store.List().Select(e => e.Id));
+        var copied = store.Load("copied")!.Profile!;
+        Assert.Equal("copied", copied.Id);
+        Assert.False(store.Save(copied), "saving a copied file unchanged is not an edit");
         Assert.Throws<ArgumentException>(() => store.Load(@"..\settings"));
         Assert.Throws<ArgumentException>(() => store.Save(Custom(@"..\escape")));
         Assert.Throws<ArgumentException>(() => store.Delete("C:"));
+    }
+
+    [Theory]
+    [InlineData("drift", true)]
+    [InlineData("rally-2_wet", true)]
+    [InlineData("console", true)]
+    [InlineData("drift\n", false)]
+    [InlineData("Drift", false)]
+    [InlineData("-drift", false)]
+    [InlineData("drift.v2", false)]
+    [InlineData("con", false)]
+    [InlineData("nul", false)]
+    [InlineData("com1", false)]
+    [InlineData("lpt9", false)]
+    [InlineData("", false)]
+    public void Ids_are_plain_file_names_windows_does_not_reserve(string id, bool valid) =>
+        Assert.Equal(valid, ProfileStore.IsValidId(id));
+
+    [Fact]
+    public void Ids_are_at_most_sixty_four_characters()
+    {
+        Assert.True(ProfileStore.IsValidId(new string('a', 64)));
+        Assert.False(ProfileStore.IsValidId(new string('a', 65)));
     }
 
     [Fact]
@@ -155,7 +290,7 @@ public class ProfileStoreTests
         var drift = store.Load("drift")!;
 
         Assert.Equal("Drift", drift.Profile!.Name);
-        Assert.Contains("restored from its backup", drift.Problem);
+        Assert.Equal("The profile \"drift\" file was missing or damaged, so its backup was used.", drift.Problem);
         Assert.True(File.Exists(JsonFile.CorruptPath(dir.File("drift.json"))));
     }
 }

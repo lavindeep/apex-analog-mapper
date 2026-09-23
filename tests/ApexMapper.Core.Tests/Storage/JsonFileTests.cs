@@ -8,8 +8,11 @@ public class JsonFileTests : IDisposable
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "apex-jsonfile-" + Guid.NewGuid().ToString("N"));
     private string PathOf(string name) => Path.Combine(_dir, name);
 
-    private static (string? Value, string? Error) Parse(string text) =>
-        text.StartsWith('{') ? (text, null) : (null, "not an object");
+    /// <summary>Objects parse, other text is unreadable, and anything mentioning version 9 is from a newer app.</summary>
+    private static Parsed<string> Parse(string text) =>
+        text.Contains("\"v\":9") ? new(null, "newer", Newer: true)
+        : text.StartsWith('{') ? new(text, null)
+        : new(null, "not an object");
 
     public void Dispose()
     {
@@ -70,7 +73,7 @@ public class JsonFileTests : IDisposable
         Assert.Equal("{\"v\":1}", result.Value);
         Assert.Equal("{\"v\":1}", File.ReadAllText(path));
         Assert.Equal("garbage", File.ReadAllText(JsonFile.CorruptPath(path)));
-        Assert.NotNull(result.Error);
+        Assert.Null(result.Error);
     }
 
     [Fact]
@@ -115,6 +118,7 @@ public class JsonFileTests : IDisposable
         var result = JsonFile.Load(path, Parse);
         Assert.Equal(LoadStatus.Corrupt, result.Status);
         Assert.Contains("backup is unreadable", result.Error);
+        Assert.Contains("kept as e.json.corrupt", result.Error);
         Assert.True(File.Exists(JsonFile.CorruptPath(path)));
     }
 
@@ -124,10 +128,43 @@ public class JsonFileTests : IDisposable
         var path = PathOf("f.json");
         JsonFile.Save(path, "{\"v\":1}");
         JsonFile.Save(path, "{\"v\":2}");
-        var result = JsonFile.Load<string>(path, text => text.Contains("2") ? throw new NullReferenceException("bad") : (text, null));
+        var result = JsonFile.Load<string>(path, text => text.Contains('2') ? throw new NullReferenceException("bad") : new(text, null));
         Assert.Equal(LoadStatus.Recovered, result.Status);
         Assert.Equal("{\"v\":1}", result.Value);
-        Assert.Contains("bad", result.Error);
+        Assert.Equal("{\"v\":2}", File.ReadAllText(JsonFile.CorruptPath(path)));
+    }
+
+    [Fact]
+    public void A_newer_file_is_left_exactly_as_it_is_and_its_older_backup_is_not_restored()
+    {
+        var path = PathOf("h.json");
+        JsonFile.Save(path, "{\"v\":1}");
+        JsonFile.Save(path, "{\"v\":9}");
+
+        var result = JsonFile.Load(path, Parse);
+
+        Assert.Equal(LoadStatus.Newer, result.Status);
+        Assert.Null(result.Value);
+        Assert.Equal("newer", result.Error);
+        Assert.Equal("{\"v\":9}", File.ReadAllText(path));
+        Assert.Equal("{\"v\":1}", File.ReadAllText(JsonFile.BackupPath(path)));
+        Assert.False(File.Exists(JsonFile.CorruptPath(path)));
+    }
+
+    [Fact]
+    public void A_newer_backup_is_not_restored_over_a_missing_or_corrupt_primary()
+    {
+        var path = PathOf("i.json");
+        JsonFile.Save(path, "{\"v\":9}");
+        JsonFile.Save(path, "{\"v\":1}");
+        File.Delete(path);
+
+        Assert.Equal(LoadStatus.Newer, JsonFile.Load(path, Parse).Status);
+        Assert.False(File.Exists(path));
+
+        File.WriteAllText(path, "garbage");
+        Assert.Equal(LoadStatus.Newer, JsonFile.Load(path, Parse).Status);
+        Assert.Equal("{\"v\":9}", File.ReadAllText(JsonFile.BackupPath(path)));
     }
 
     [Fact]

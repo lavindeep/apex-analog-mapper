@@ -65,6 +65,8 @@ public class ProfileJsonTests
         var text = ProfileJson.Serialize(DefaultProfiles.Forza()).Replace("\"version\": 1", "\"version\": 2");
         Assert.Null(ProfileJson.Deserialize(text, out var error));
         Assert.Contains("newer version", error);
+        Assert.True(ProfileJson.Parse(text).Newer, "marked newer, so storage leaves the file alone");
+        Assert.False(ProfileJson.Parse("{ not json").Newer);
 
         var older = ProfileJson.Serialize(DefaultProfiles.Forza()).Replace("\"version\": 1", "\"version\": 0");
         Assert.NotNull(ProfileJson.Deserialize(older, out error));

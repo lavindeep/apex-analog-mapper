@@ -30,7 +30,14 @@ public static class JsonDocuments
     /// <summary>Returns null and sets the error for a malformed or newer document.</summary>
     public static T? Deserialize<T>(string text, int currentVersion, out string? error) where T : class
     {
-        error = null;
+        var parsed = Parse<T>(text, currentVersion);
+        error = parsed.Error;
+        return parsed.Value;
+    }
+
+    /// <summary>The payload, or why the document cannot be used. A newer format is refused and marked, never misread.</summary>
+    public static Parsed<T> Parse<T>(string text, int currentVersion) where T : class
+    {
         int version;
         try
         {
@@ -40,34 +47,25 @@ public static class JsonDocuments
                 || versionElement.ValueKind != JsonValueKind.Number
                 || !versionElement.TryGetInt32(out version))
             {
-                error = "The file has no version number.";
-                return null;
+                return new(null, "The file has no version number.");
             }
         }
         catch (JsonException e)
         {
-            error = "The file is not valid JSON: " + e.Message;
-            return null;
+            return new(null, "The file is not valid JSON: " + e.Message);
         }
         if (version > currentVersion)
         {
-            error = $"The file was written by a newer version of the app (format {version}, this app reads up to {currentVersion}).";
-            return null;
+            return new(null, $"The file was written by a newer version of the app (format {version}, this app reads up to {currentVersion}).", Newer: true);
         }
         try
         {
             var envelope = JsonSerializer.Deserialize<Envelope<T>>(text, Options);
-            if (envelope?.Payload is null)
-            {
-                error = "The file has no content.";
-                return null;
-            }
-            return envelope.Payload;
+            return envelope?.Payload is { } payload ? new(payload, null) : new(null, "The file has no content.");
         }
         catch (JsonException e)
         {
-            error = "The file could not be read: " + e.Message;
-            return null;
+            return new(null, "The file could not be read: " + e.Message);
         }
     }
 

@@ -12,16 +12,15 @@ public static class ProfileJson
     /// <summary>Returns null and sets the error for malformed, newer, or invalid profiles.</summary>
     public static Profile? Deserialize(string text, out string? error)
     {
-        var profile = JsonDocuments.Deserialize<Profile>(text, CurrentVersion, out error);
-        if (profile is null)
-        {
-            return null;
-        }
-        if (profile.Validate() is { } invalid)
-        {
-            error = invalid;
-            return null;
-        }
-        return profile;
+        var parsed = Parse(text);
+        error = parsed.Error;
+        return parsed.Value;
+    }
+
+    /// <summary>The profile, or why it cannot be used, with a newer format marked.</summary>
+    public static Parsed<Profile> Parse(string text)
+    {
+        var parsed = JsonDocuments.Parse<Profile>(text, CurrentVersion);
+        return parsed.Value?.Validate() is { } invalid ? new(null, invalid) : parsed;
     }
 }
