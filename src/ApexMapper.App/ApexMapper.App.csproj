@@ -15,6 +15,11 @@
     <InternalsVisibleTo Include="ApexMapper.App.Tests" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Program.Main starts the app after Velopack and the single-instance check, so App.xaml must not generate a Main of its own. -->
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="WPF-UI" />
     <PackageReference Include="Velopack" />
   </ItemGroup>
