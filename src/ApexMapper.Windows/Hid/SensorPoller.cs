@@ -128,7 +128,6 @@ public sealed class SensorPoller : IDisposable
     private int _state;
     private string? _faultReason;
     private string _firmware = string.Empty;
-    private string? _firstFirmware;
     private int _faultCount;
     private int _consecutiveFaults;
     private int _signatureFaultsBeforeSuccess;
@@ -156,12 +155,6 @@ public sealed class SensorPoller : IDisposable
 
     /// <summary>Firmware string read when the device was last opened.</summary>
     public string Firmware => Volatile.Read(ref _firmware);
-
-    /// <summary>The firmware read at the first open of this poller, for the change warning.</summary>
-    public string? FirstFirmware => Volatile.Read(ref _firstFirmware);
-
-    /// <summary>The firmware string changed between opens (a reflash while running).</summary>
-    public bool FirmwareChanged => FirstFirmware is { } first && first != Firmware;
 
     public int FaultCount => Volatile.Read(ref _faultCount);
 
@@ -411,7 +404,6 @@ public sealed class SensorPoller : IDisposable
         _firmwareLength = text.IndexOf((byte)0) is var end and >= 0 ? end : text.Length;
         text[.._firmwareLength].CopyTo(_firmwareBytes);
         Volatile.Write(ref _firmware, version);
-        Interlocked.CompareExchange(ref _firstFirmware, version, null);
         return null;
     }
 

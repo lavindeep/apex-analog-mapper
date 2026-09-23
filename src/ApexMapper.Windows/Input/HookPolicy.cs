@@ -51,7 +51,7 @@ public sealed class HookPolicy
     /// <summary>Test mode: injected events are treated like physical ones so a synthetic press can prove the hook.</summary>
     public bool SwallowInjected { get; set; }
 
-    /// <summary>Events swallowed so far, for the hardware test and the status card.</summary>
+    /// <summary>Events swallowed so far, for the tests.</summary>
     public int SwallowedCount => Volatile.Read(ref _swallowed);
 
     public int Modifiers => Volatile.Read(ref _modifiers);

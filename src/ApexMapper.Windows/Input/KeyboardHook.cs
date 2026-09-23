@@ -18,7 +18,7 @@ public readonly record struct CallbackStats(int Count, double P50Ms, double P99M
 /// <c>CallNextHookEx</c>, which is why the whole callback is timed. Durations go into a
 /// ring for off-thread analysis. A 50 ms timer on the same thread resynchronises the
 /// policy's modifier bits from the asynchronous key state and then runs
-/// <see cref="Timer"/> (the watchdog and controller-presence checks in stage 3).
+/// <see cref="Timer"/>, where the session runs its watchdog.
 /// Ctrl+Alt+F12 raises <see cref="StopRequested"/> on this thread. One hook per process.
 ///
 /// A mapped key whose down passes through (a chord, a key held at install, a press
@@ -29,9 +29,8 @@ public readonly record struct CallbackStats(int Count, double P50Ms, double P99M
 /// Exceptions never leave the hook thread: a throwing <see cref="StopRequested"/> or
 /// <see cref="Timer"/> handler, or anything thrown on the callback path, is counted in
 /// <see cref="HandlerFaults"/> and the event passes through. Windows removes a
-/// low-level hook silently when a callback overruns its timeout; <see cref="EventCount"/>
-/// and <see cref="LastEventTicks"/> exist so the session can compare them against the
-/// Raw Input pump and notice.
+/// low-level hook silently when a callback overruns its timeout; the watchdog compares
+/// <see cref="LastEventTime"/> with Raw Input's to notice.
 /// </summary>
 public sealed unsafe class KeyboardHook : IDisposable
 {
@@ -57,7 +56,6 @@ public sealed unsafe class KeyboardHook : IDisposable
     private readonly ManualResetEventSlim _ready = new(false);
     private readonly ScanCode[] _mapped;
     private long _eventCount;
-    private long _lastEventTicks;
     private int _lastEventTime;
     private int _handlerFaults;
     private Thread? _thread;
@@ -93,9 +91,6 @@ public sealed unsafe class KeyboardHook : IDisposable
 
     /// <summary>Callbacks seen since install, whether swallowed or passed.</summary>
     public long EventCount => Volatile.Read(ref _eventCount);
-
-    /// <summary>Stopwatch timestamp of the last callback, or zero.</summary>
-    public long LastEventTicks => Volatile.Read(ref _lastEventTicks);
 
     /// <summary>The OS time (ms since boot, <c>KBDLLHOOKSTRUCT.time</c>) of the last event the callback saw, or zero. Compared with Raw Input's to notice a lost hook.</summary>
     public uint LastEventTime => (uint)Volatile.Read(ref _lastEventTime);
@@ -392,7 +387,6 @@ public sealed unsafe class KeyboardHook : IDisposable
         var end = Stopwatch.GetTimestamp();
         var index = self._eventCount;
         self._durations[index & (DurationRing - 1)] = end - start;
-        Volatile.Write(ref self._lastEventTicks, end);
         Volatile.Write(ref self._eventCount, index + 1);
         return result;
     }
