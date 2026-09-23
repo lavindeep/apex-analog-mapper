@@ -101,4 +101,25 @@ public class SettingsStoreTests
         Assert.Equal(newer, File.ReadAllText(path));
         Assert.False(File.Exists(path + ".corrupt"));
     }
+
+    /// <summary>
+    /// The way out the message gives has to work when the backup is the newer file, as
+    /// behind a damaged file or after a newer version saved twice: moving only the file
+    /// leaves the newer backup in charge.
+    /// </summary>
+    [Fact]
+    public void The_way_out_of_a_newer_file_names_its_backup()
+    {
+        using var dir = new TempDirectory();
+        var path = dir.File("settings.json");
+        File.WriteAllText(path, "{ not json");
+        File.WriteAllText(path + ".bak", """{ "version": 2, "payload": {} }""");
+
+        var (_, problem) = new SettingsStore(path).Load();
+        File.Delete(path);
+        var (_, withoutTheFile) = new SettingsStore(path).Load();
+
+        Assert.Contains("move the file and its .bak copy", problem);
+        Assert.Contains("newer version", withoutTheFile);
+    }
 }

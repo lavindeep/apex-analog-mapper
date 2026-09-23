@@ -13,7 +13,7 @@ internal static class LoadProblem
         LoadStatus.Recovered => $"The {what} file was missing or damaged, so its backup was used. {result.Error}",
         LoadStatus.Corrupt => $"The {what} file could not be read. {result.Error}",
         LoadStatus.Unavailable => $"The {what} file could not be opened: {result.Error}",
-        LoadStatus.Newer => $"The {what} file was written by a newer version of the app, so this version leaves it alone and cannot save changes to it. Update the app to use it, or move the file out of the folder to start over.",
+        LoadStatus.Newer => $"The {what} file was written by a newer version of the app, so this version leaves it alone and cannot save changes to it. Update the app to use it, or move the file and its .bak copy out of the folder to start over.",
         _ => null,
     };
 
