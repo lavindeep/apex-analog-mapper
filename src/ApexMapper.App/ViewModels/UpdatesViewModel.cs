@@ -9,10 +9,10 @@ namespace ApexMapper.App.ViewModels;
 /// <summary>
 /// The setup card's updates (U1, E7). At launch it asks GitHub for a newer version unless
 /// it asked in the last six hours, whose answer the settings keep, or the user turned the
-/// launch check off; a launch check that fails is only logged. Test versions are offered
-/// while this copy is one, or when the user asks for them. Nothing downloads until the
-/// user presses Update, and the new version installs on a restart the user starts, never
-/// while mapping.
+/// launch check off, or the settings that would say so could not be read; a launch check
+/// that fails is only logged. Test versions are offered while this copy is one, or when
+/// the user asks for them. Nothing downloads until the user presses Update, and the new
+/// version installs on a restart the user starts, never while mapping.
 /// </summary>
 public sealed class UpdatesViewModel : ObservableObject
 {
@@ -35,6 +35,7 @@ public sealed class UpdatesViewModel : ObservableObject
         Checking,
         Downloading,
         Ready,
+        Installing,
     }
 
     public UpdatesViewModel(AppServices services, Workspace workspace, AppSettings settings)
@@ -51,7 +52,7 @@ public sealed class UpdatesViewModel : ObservableObject
             _ => false,
         });
         workspace.PropertyChanged += OnWorkspaceChanged;
-        if (!services.Updates.Installed || !_checkOnLaunch)
+        if (!services.Updates.Installed || !_checkOnLaunch || workspace.SettingsUnread)
         {
             return;
         }
@@ -78,11 +79,15 @@ public sealed class UpdatesViewModel : ObservableObject
         Step.Downloading => $"Downloading version {_found}: {_percent}%.",
         Step.Ready => $"Version {_found} is downloaded. Restart the app to install it, or it installs the next time the app starts."
             + (_workspace.SessionActive ? " Stop mapping first." : ""),
+        Step.Installing => $"Closing to install version {_found}.",
         _ when !_services.Updates.Installed => "This copy was not installed with Setup.exe, so it cannot update itself.",
         _ when _found is not null => $"Version {_found} is available." + (_workspace.SessionActive ? " Stop mapping to update." : ""),
         _ when _checked => "This is the newest version.",
         _ => null,
     };
+
+    /// <summary>What a screen reader announces: the text without the percent, which changes all through a download.</summary>
+    public string? Spoken => _step is Step.Downloading ? $"Downloading version {_found}." : Text;
 
     /// <summary>The button's label, or null when it is hidden.</summary>
     public string? ActText => _step switch
@@ -155,7 +160,15 @@ public sealed class UpdatesViewModel : ObservableObject
         Move(Step.Checking);
         try
         {
-            var found = await _services.Updates.FindAsync(OfferPrereleases);
+            // When the test versions switch moves while GitHub answers, the answer is for the old setting.
+            string? found;
+            bool asked;
+            do
+            {
+                asked = OfferPrereleases;
+                found = await _services.Updates.FindAsync(asked);
+            }
+            while (asked != OfferPrereleases);
             _found = Newer(found);
             _checked = true;
             _workspace.Remember(_services.Settings, s => s with { UpdateCheckedAt = _services.UtcNow(), UpdateFound = found }, byUser: false);
@@ -213,9 +226,12 @@ public sealed class UpdatesViewModel : ObservableObject
             _services.Log("Starting the updater failed: " + e);
             _problem = "The update could not start: " + e.Message;
             Raise(nameof(Text));
+            Raise(nameof(Spoken));
             return;
         }
         _services.Log($"Closing to install version {_found}.");
+        // The updater is on its way, so a second press must not start another.
+        Move(Step.Installing);
         _services.Close();
     }
 
@@ -227,6 +243,7 @@ public sealed class UpdatesViewModel : ObservableObject
     {
         _step = step;
         Raise(nameof(Text));
+        Raise(nameof(Spoken));
         Raise(nameof(ActText));
         Raise(nameof(Available));
         Act.Refresh();
@@ -237,6 +254,7 @@ public sealed class UpdatesViewModel : ObservableObject
         if (e.PropertyName == nameof(Workspace.SessionActive))
         {
             Raise(nameof(Text));
+            Raise(nameof(Spoken));
             Act.Refresh();
         }
     }

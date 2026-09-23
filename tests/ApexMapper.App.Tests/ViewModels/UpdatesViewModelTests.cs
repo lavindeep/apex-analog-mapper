@@ -1,4 +1,5 @@
 using System.Net.Http;
+using ApexMapper.App.Model;
 using ApexMapper.App.Storage;
 using ApexMapper.App.ViewModels;
 using ApexMapper.Windows.Session;
@@ -81,6 +82,7 @@ public sealed class UpdatesViewModelTests : IDisposable
         updates.Act.Execute(null);
         _h.Updates.Progress!(42);
         Assert.Equal("Downloading version 0.5.1: 42%.", updates.Text);
+        Assert.Equal("Downloading version 0.5.1.", updates.Spoken);
         Assert.Null(updates.ActText);
         _h.Workspace.Session = SessionState.Running;
         _h.Updates.Hold.SetResult();
@@ -92,6 +94,8 @@ public sealed class UpdatesViewModelTests : IDisposable
         _h.Workspace.Session = SessionState.Idle;
         updates.Act.Execute(null);
         Assert.Equal((1, 1), (_h.Updates.Installs, _h.Closes));
+        Assert.Equal("Closing to install version 0.5.1.", updates.Text);
+        Assert.False(updates.Act.CanExecute(null));
     }
 
     [Fact]
@@ -123,10 +127,27 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.True(_h.SavedSettings.Prereleases);
         Assert.Equal([false, true], _h.Updates.Asked);
 
-        using var alpha = new AppHarness("0.5.0-alpha.1");
+        using var alpha = new AppHarness("0.5.0-alpha");
         var test = Create(alpha);
         Assert.False(test.CanChoosePrereleases);
         Assert.Equal([true], alpha.Updates.Asked);
+    }
+
+    [Fact]
+    public void Turning_test_versions_off_while_github_answers_asks_again()
+    {
+        _h.Services.Settings.Save(new AppSettings(Prereleases: true));
+        _h.Updates.NewestTest = "0.5.1-beta.1";
+        var answer = _h.Updates.Hold = new TaskCompletionSource();
+        var updates = Create();
+
+        updates.Prereleases = false;
+        _h.Updates.Hold = null;
+        answer.SetResult();
+
+        Assert.Equal([true, false], _h.Updates.Asked);
+        Assert.Equal("This is the newest version.", updates.Text);
+        Assert.Null(_h.SavedSettings.UpdateFound);
     }
 
     [Fact]
@@ -144,6 +165,17 @@ public sealed class UpdatesViewModelTests : IDisposable
 
         updates.Act.Execute(null);
         Assert.Equal("Version 0.5.1 is available.", updates.Text);
+    }
+
+    [Fact]
+    public void Settings_that_could_not_be_read_hold_back_the_launch_check()
+    {
+        var updates = new UpdatesViewModel(_h.Services, new Workspace { SettingsUnread = true }, new AppSettings());
+
+        Assert.Empty(_h.Updates.Asked);
+
+        updates.Act.Execute(null);
+        Assert.Single(_h.Updates.Asked);
     }
 
     [Fact]

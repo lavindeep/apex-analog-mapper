@@ -55,7 +55,9 @@ public static class Live
         }
         element.Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
         {
-            if (element.IsVisible && AutomationPeer.ListenerExists(AutomationEvents.LiveRegionChanged) && PeerFor(element, text) is { } peer)
+            // A text that changed again before this ran is announced by its own callback.
+            if (GetText(element) == text && element.IsVisible && AutomationPeer.ListenerExists(AutomationEvents.LiveRegionChanged)
+                && PeerFor(element, text) is { } peer)
             {
                 peer.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
             }

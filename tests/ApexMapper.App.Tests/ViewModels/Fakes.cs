@@ -178,23 +178,30 @@ internal sealed class FakeUpdates : IUpdates
     /// <summary>What a check or a download finds.</summary>
     public string? Newest { get; set; }
 
+    /// <summary>What a check or a download that asks for test versions finds, when it differs.</summary>
+    public string? NewestTest { get; set; }
+
     /// <summary>When set, checks and downloads throw it.</summary>
     public Exception? Fault { get; set; }
 
     /// <summary>Whether each check and download asked for test versions.</summary>
     public List<bool> Asked { get; } = [];
 
-    /// <summary>When set, a download waits for it.</summary>
+    /// <summary>When set, checks and downloads wait for it.</summary>
     public TaskCompletionSource? Hold { get; set; }
 
     public Action<int>? Progress { get; private set; }
 
     public int Installs { get; private set; }
 
-    public Task<string?> FindAsync(bool prereleases)
+    public async Task<string?> FindAsync(bool prereleases)
     {
         Asked.Add(prereleases);
-        return Fault is { } fault ? Task.FromException<string?>(fault) : Task.FromResult(Newest);
+        if (Hold is { } hold)
+        {
+            await hold.Task;
+        }
+        return Answer(prereleases);
     }
 
     public async Task<string?> DownloadAsync(bool prereleases, Action<int> progress)
@@ -205,8 +212,10 @@ internal sealed class FakeUpdates : IUpdates
         {
             await hold.Task;
         }
-        return Fault is { } fault ? throw fault : Newest;
+        return Answer(prereleases);
     }
+
+    private string? Answer(bool prereleases) => Fault is { } fault ? throw fault : prereleases && NewestTest is { } test ? test : Newest;
 
     public void InstallOnExit() => Installs++;
 }

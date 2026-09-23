@@ -36,12 +36,12 @@
       <StackPanel DataContext="{Binding Updates}">
         <ui:TextBlock FontTypography="BodyStrong" Text="Updates" Margin="0,16,0,4" />
         <ui:TextBlock Style="{StaticResource Paragraph}" Text="{Binding VersionText}" />
-        <ui:TextBlock Style="{StaticResource Paragraph}" Text="{Binding Text}" views:Live.Text="{Binding Text}"
+        <ui:TextBlock Style="{StaticResource Paragraph}" Text="{Binding Text}" views:Live.Text="{Binding Spoken}"
                       Visibility="{Binding Text, Converter={StaticResource ShowWhenPresent}}" />
         <ui:Button Icon="{ui:SymbolIcon ArrowSync24}" Content="{Binding ActText}" Command="{Binding Act}"
                    Visibility="{Binding ActText, Converter={StaticResource ShowWhenPresent}}" />
         <ui:ToggleSwitch Margin="0,12,0,0" Content="Look for updates when the app starts" IsChecked="{Binding CheckOnLaunch}"
-                         ToolTip="The app asks GitHub at most once every six hours. Nothing else goes over the network."
+                         ToolTip="The app asks GitHub unless it had an answer in the last six hours. Nothing else goes over the network."
                          Visibility="{Binding Installed, Converter={StaticResource ShowWhenTrue}}" />
         <ui:ToggleSwitch Margin="0,8,0,0" Content="Offer test versions too" IsChecked="{Binding Prereleases}"
                          ToolTip="Test versions come out before a release, to try changes early. They may have bugs a release would not."
