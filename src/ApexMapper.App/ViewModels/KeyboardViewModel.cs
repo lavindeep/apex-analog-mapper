@@ -301,7 +301,7 @@ public sealed class KeyboardViewModel : ObservableObject
         }
         else if (_workspace.Board?.Info != _selected.Info && !_reading)
         {
-            _ = ReadFirmwareAsync(_selected);
+            Background.Run(ReadFirmwareAsync(_selected));
         }
     }
 

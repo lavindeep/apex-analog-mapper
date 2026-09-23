@@ -53,8 +53,8 @@ public sealed class StatusViewModel : ObservableObject
         _services = services;
         _workspace = workspace;
         _status = services.Session.Status();
-        Start = new Command(() => _ = StartAsync(), () => CanStart);
-        Stop = new Command(() => _ = StopAsync(), () => _workspace.SessionActive);
+        Start = new Command(() => Background.Run(StartAsync()), () => CanStart);
+        Stop = new Command(() => Background.Run(StopAsync()), () => _workspace.SessionActive);
         GoToCalibration = new Command(() => CalibrationRequested?.Invoke());
         OpenDriverPage = new Command(() => _services.Open(SetupViewModel.DriverPage));
         Restart = new Command(() => _services.Restart());

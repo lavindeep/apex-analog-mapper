@@ -74,11 +74,11 @@ public sealed class ProfileViewModel : ObservableObject
     {
         _services = services;
         _workspace = workspace;
-        Save = new Command(() => _ = SaveAsync(), () => CanEdit && _dirty);
+        Save = new Command(() => Background.Run(SaveAsync()), () => CanEdit && _dirty);
         Discard = new Command(DiscardEdits, () => _dirty && !_busy);
         New = new Command(CreateProfile, () => CanSwitch);
-        Delete = new Command(() => _ = DeleteAsync(), () => _selected is { Id: not DefaultProfiles.ForzaId } && !_dirty && !_busy);
-        Reset = new Command(() => _ = ResetAsync(), () => _selected is not null && !_dirty && !_busy);
+        Delete = new Command(() => Background.Run(DeleteAsync()), () => _selected is { Id: not DefaultProfiles.ForzaId } && !_dirty && !_busy);
+        Reset = new Command(() => Background.Run(ResetAsync()), () => _selected is not null && !_dirty && !_busy);
         AddKey = new Command(() => BeginCapture(new Capture(null, false, false)), () => CanEdit);
         AddAxis = new Command(() => BeginCapture(new Capture(null, true, true)), () => CanEdit);
         Remove = new Command(RemoveRow, () => CanEdit && _selectedRow is not null);

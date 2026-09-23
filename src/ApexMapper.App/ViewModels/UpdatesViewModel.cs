@@ -64,7 +64,7 @@ public sealed class UpdatesViewModel : ObservableObject
         }
         else
         {
-            _ = CheckAsync(byUser: false);
+            Background.Run(CheckAsync(byUser: false));
         }
     }
 
@@ -130,7 +130,7 @@ public sealed class UpdatesViewModel : ObservableObject
                 if (_step is Step.Idle)
                 {
                     _found = null;
-                    _ = CheckAsync(byUser: true);
+                    Background.Run(CheckAsync(byUser: true));
                 }
             }
         }
@@ -143,10 +143,10 @@ public sealed class UpdatesViewModel : ObservableObject
         switch (_step)
         {
             case Step.Idle when _found is null:
-                _ = CheckAsync(byUser: true);
+                Background.Run(CheckAsync(byUser: true));
                 break;
             case Step.Idle:
-                _ = DownloadAsync();
+                Background.Run(DownloadAsync());
                 break;
             case Step.Ready:
                 InstallAndRestart();
