@@ -60,7 +60,9 @@ Start mapping before launching the game, then drive for at least 30 minutes.
 - [ ] Back in the game while holding W: no throttle until W is released and pressed again.
 - [ ] Ctrl+Left Alt+F12 stops mapping at once, from inside the game.
 - [ ] Unplugging the keyboard mid-race pauses mapping with the controller at rest.
-      Plugging it back in resumes, and held keys wait for a release first.
+      While paused, the status card shows no warning about keys that are only on or off
+      and no read timing. Plugging it back in resumes, and held keys wait for a release
+      first.
 - [ ] Closing the game ends the session and says why.
 - [ ] Closing the app while mapping removes the controller and the keyboard works
       normally at once.
