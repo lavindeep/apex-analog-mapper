@@ -1,6 +1,9 @@
 using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Data;
 using System.Windows.Input;
 using ApexMapper.App.ViewModels;
+using ApexMapper.App.Views;
 using Wpf.Ui.Controls;
 
 namespace ApexMapper.App;
@@ -19,6 +22,27 @@ public partial class MainWindow : FluentWindow
     public MainWindow()
     {
         InitializeComponent();
+        Loaded += (_, _) => NameTemplateButtons();
+    }
+
+    /// <summary>
+    /// WPF-UI's templates leave some buttons without a name for a screen reader: each
+    /// card's expand button takes its card's name, and the title bar's buttons say what
+    /// they do.
+    /// </summary>
+    private void NameTemplateButtons()
+    {
+        foreach (var element in VisualTree.Descendants(this))
+        {
+            if (element is CardExpander card && card.Template?.FindName("ExpanderToggleButton", card) is DependencyObject toggle)
+            {
+                AutomationProperties.SetName(toggle, AutomationProperties.GetName(card));
+            }
+            else if (element is TitleBarButton button)
+            {
+                BindingOperations.SetBinding(button, AutomationProperties.NameProperty, new Binding(nameof(TitleBarButton.ButtonType)) { Source = button });
+            }
+        }
     }
 
     public void Show(MainViewModel main)

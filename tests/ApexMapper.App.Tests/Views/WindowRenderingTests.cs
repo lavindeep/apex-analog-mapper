@@ -2,12 +2,14 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.ExceptionServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using ApexMapper.App.Storage;
 using ApexMapper.App.Tests.ViewModels;
 using ApexMapper.App.ViewModels;
+using ApexMapper.App.Views;
 using ApexMapper.Core.Calibration;
 using ApexMapper.Core.Profiles;
 using ApexMapper.Windows.Hid;
@@ -165,6 +167,17 @@ public sealed class WindowRenderingTests
                 Assert.Contains(row.ChangeKeyText, labels);
                 Assert.True(!row.IsAxis || labels.Contains(row.ChangeNegativeKeyText), $"{scenario.Name}: no button says {row.ChangeNegativeKeyText}");
             }
+            // A screen reader reads each live text by the name it gives its element: the state at least, and the capture prompt while it shows.
+            var live = Descendants<FrameworkElement>(window).Where(e => !string.IsNullOrEmpty(Live.GetText(e))).ToList();
+            Assert.All(live, e => Assert.Equal((Live.GetText(e), AutomationLiveSetting.Polite), (AutomationProperties.GetName(e), AutomationProperties.GetLiveSetting(e))));
+            Assert.All(live.Where(e => e.IsVisible), e => Assert.NotNull(Live.PeerFor(e, Live.GetText(e)!)));
+            Assert.Contains(live, e => Live.GetText(e) == main.Status.StateText);
+            Assert.True(main.Profile.Prompt is null || live.Any(e => Live.GetText(e) == main.Profile.Prompt), $"{scenario.Name}: the capture prompt is not live");
+            // The window names the buttons WPF-UI's templates leave unnamed.
+            Assert.All(Descendants<CardExpander>(window), card =>
+                Assert.Equal(AutomationProperties.GetName(card), AutomationProperties.GetName((DependencyObject)card.Template.FindName("ExpanderToggleButton", card))));
+            Assert.All(Descendants<TitleBarButton>(window).Where(button => button.IsVisible), button =>
+                Assert.Equal(button.ButtonType.ToString(), AutomationProperties.GetName(button)));
             if (folder is not null)
             {
                 Directory.CreateDirectory(folder);

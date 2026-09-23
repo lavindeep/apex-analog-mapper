@@ -5,6 +5,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
+             xmlns:views="clr-namespace:ApexMapper.App.Views"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:ProfileViewModel}"
              x:Name="Root">
@@ -96,7 +97,7 @@
         <!-- The chosen binding, with the key capture prompt above it where the buttons that start one are. -->
         <StackPanel Grid.Column="2">
           <StackPanel Margin="0,0,0,12" Visibility="{Binding IsCapturing, Converter={StaticResource ShowWhenTrue}}">
-            <ui:InfoBar Style="{StaticResource Warning}" Margin="0" Severity="Informational" Message="{Binding Prompt}" />
+            <ui:InfoBar Style="{StaticResource Warning}" Margin="0" Severity="Informational" Message="{Binding Prompt}" views:Live.Text="{Binding Prompt}" />
             <ui:Button Margin="0,8,0,0" Content="Cancel" Command="{Binding CancelCapture}" />
           </StackPanel>
           <ContentControl Content="{Binding SelectedRow}" IsEnabled="{Binding CanEdit}">
@@ -203,7 +204,7 @@
       </Grid>
 
       <!-- Why a save, delete or reset failed, beside the buttons that do them. -->
-      <ui:InfoBar Style="{StaticResource Warning}" Severity="Error" Message="{Binding Message}"
+      <ui:InfoBar Style="{StaticResource Warning}" Severity="Error" Message="{Binding Message}" views:Live.Text="{Binding Message}"
                   Visibility="{Binding Message, Converter={StaticResource ShowWhenPresent}}" />
 
       <StackPanel Margin="0,16,0,0" Orientation="Horizontal">

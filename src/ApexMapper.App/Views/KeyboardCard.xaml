@@ -5,6 +5,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
+             xmlns:views="clr-namespace:ApexMapper.App.Views"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:KeyboardViewModel}">
   <ui:CardExpander Icon="{ui:SymbolIcon Keyboard24}" IsExpanded="True" AutomationProperties.Name="Keyboard">
@@ -51,7 +52,7 @@
           <ui:ProgressRing Margin="12,0,0,0" Width="20" Height="20" IsIndeterminate="True"
                            Visibility="{Binding IsChecking, Converter={StaticResource ShowWhenTrue}}" />
         </StackPanel>
-        <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Paragraph}" Text="{Binding CheckText}"
+        <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Paragraph}" Text="{Binding CheckText}" views:Live.Text="{Binding CheckText}"
                       Visibility="{Binding CheckText, Converter={StaticResource ShowWhenPresent}}" />
         <ui:Button Icon="{ui:SymbolIcon Open24}" Content="Open a new issue" Command="{Binding OpenIssue}"
                    Visibility="{Binding Exported, Converter={StaticResource ShowWhenTrue}}" />

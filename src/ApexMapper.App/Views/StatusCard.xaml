@@ -5,6 +5,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
+             xmlns:views="clr-namespace:ApexMapper.App.Views"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:StatusViewModel}">
   <ui:Card Padding="20,16">
@@ -15,8 +16,8 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel VerticalAlignment="Center">
-          <ui:TextBlock FontTypography="Subtitle" Text="{Binding StateText}" />
-          <ui:TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Text="{Binding Reason}"
+          <ui:TextBlock FontTypography="Subtitle" Text="{Binding StateText}" views:Live.Text="{Binding StateText}" />
+          <ui:TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Text="{Binding Reason}" views:Live.Text="{Binding Reason}"
                         Visibility="{Binding Reason, Converter={StaticResource ShowWhenPresent}}" />
         </StackPanel>
         <!-- Whichever of Start and Stop can be pressed is the prominent one. -->
@@ -59,7 +60,7 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <ui:SymbolIcon Symbol="Info24" Margin="0,0,8,0" VerticalAlignment="Center" />
-        <ui:TextBlock Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding Blocker}" />
+        <ui:TextBlock Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding Blocker}" views:Live.Text="{Binding Blocker}" />
         <StackPanel Grid.Column="2" Orientation="Horizontal">
           <ui:Button Margin="8,0,0,0" Content="Go to calibration" Command="{Binding GoToCalibration}"
                      Visibility="{Binding BlockedByCalibration, Converter={StaticResource ShowWhenTrue}}" />
