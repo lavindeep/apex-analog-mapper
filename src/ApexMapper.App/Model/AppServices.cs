@@ -84,7 +84,7 @@ public sealed class AppServices
     /// <summary>Closes the app, as its window's close button does.</summary>
     public required Action Close { get; init; }
 
-    /// <summary>Writes a line to the app log: session events and faults, never key presses.</summary>
+    /// <summary>Writes a line to the app log: session events, calibrations and faults, never typing.</summary>
     public required Action<string> Log { get; init; }
 
     /// <summary>Milliseconds on a monotonic clock, for sampling windows and rates.</summary>

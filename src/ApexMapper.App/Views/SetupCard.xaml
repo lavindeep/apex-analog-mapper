@@ -41,7 +41,7 @@
         <ui:Button Icon="{ui:SymbolIcon ArrowSync24}" Content="{Binding ActText}" Command="{Binding Act}"
                    Visibility="{Binding ActText, Converter={StaticResource ShowWhenPresent}}" />
         <ui:ToggleSwitch Margin="0,12,0,0" Content="Look for updates when the app starts" IsChecked="{Binding CheckOnLaunch}"
-                         ToolTip="The app asks GitHub unless it had an answer in the last six hours. Nothing else goes over the network."
+                         ToolTip="The app asks GitHub when it starts, unless it had an answer in the last six hours."
                          Visibility="{Binding Installed, Converter={StaticResource ShowWhenTrue}}" />
         <ui:ToggleSwitch Margin="0,8,0,0" Content="Offer test versions too" IsChecked="{Binding Prereleases}"
                          ToolTip="Test versions come out before a release, to try changes early. They may have bugs a release would not."

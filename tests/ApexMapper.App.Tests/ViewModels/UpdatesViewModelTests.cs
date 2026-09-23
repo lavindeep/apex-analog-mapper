@@ -60,6 +60,7 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.Equal("Version 0.5.1 is available", setup.Summary);
         Assert.Equal("Update", updates.ActText);
         Assert.Contains(nameof(setup.Summary), raised);
+        Assert.Contains(nameof(updates.Text), raised);
         Assert.Contains(nameof(updates.Spoken), raised);
         Assert.Contains(nameof(updates.ActText), raised);
         Assert.Contains(nameof(updates.Act), raised);
@@ -149,6 +150,7 @@ public sealed class UpdatesViewModelTests : IDisposable
         updates.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
         updates.Act.CanExecuteChanged += (_, _) => raised.Add(nameof(updates.Act));
         _h.Workspace.Session = SessionState.Idle;
+        Assert.Contains(nameof(updates.Text), raised);
         Assert.Contains(nameof(updates.Spoken), raised);
         Assert.Contains(nameof(updates.Act), raised);
 
@@ -176,9 +178,15 @@ public sealed class UpdatesViewModelTests : IDisposable
         updates.Act.Execute(null);
 
         Assert.Equal("The update could not start: Update.exe was not found.", updates.Text);
+        Assert.Contains(nameof(updates.Text), raised);
         Assert.Contains(nameof(updates.Spoken), raised);
         Assert.Equal("Restart and update", updates.ActText);
         Assert.Equal((0, 0), (_h.Updates.Installs, _h.Closes));
+
+        _h.Updates.Fault = null;
+        updates.Act.Execute(null);
+        Assert.Equal("Closing to install version 0.5.1.", updates.Text);
+        Assert.Equal((1, 1), (_h.Updates.Installs, _h.Closes));
     }
 
     [Fact]

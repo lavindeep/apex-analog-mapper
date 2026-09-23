@@ -8,7 +8,7 @@ namespace ApexMapper.App.ViewModels;
 
 /// <summary>
 /// The setup card's updates (U1, E7). At launch it asks GitHub for a newer version unless
-/// it asked in the last six hours, whose answer the settings keep, or the user turned the
+/// it had an answer in the last six hours, which the settings keep, or the user turned the
 /// launch check off, or the settings that would say so could not be read; a launch check
 /// that fails is only logged. Test versions are offered while this copy is one, or when
 /// the user asks for them. Nothing downloads until the user presses Update, and the new
@@ -231,6 +231,7 @@ public sealed class UpdatesViewModel : ObservableObject
         }
         _services.Log($"Closing to install version {_found}.");
         // The updater is on its way, so a second press must not start another.
+        _problem = null;
         Move(Step.Installing);
         _services.Close();
     }
