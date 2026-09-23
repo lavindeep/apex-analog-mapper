@@ -200,7 +200,7 @@ public sealed class StatusViewModel : ObservableObject
             _rateFrom = null;
             _rate = 0;
         }
-        Timing = IsMapping && float.IsFinite(_status.CycleP50Ms)
+        Timing = _status.State == SessionState.Running && float.IsFinite(_status.CycleP50Ms)
             ? string.Create(CultureInfo.CurrentCulture, $"Keyboard read every {_status.CycleP50Ms:0.0} ms ({_status.CycleP99Ms:0.0} ms for the slowest 1%). Controller updated {_rate:0} times a second.")
             : null;
     }

@@ -205,7 +205,9 @@ public sealed class MappingSession : IMappingSession, IDisposable
         var focus = parts.Flag.IsGameForeground;
         var foreground = Volatile.Read(ref parts.Foreground)?.Current;
         var poller = Volatile.Read(ref parts.Poller);
-        var fallback = Volatile.Read(ref parts.Engine) is null ? 0 : parts.Mapper.FallbackCount;
+        var engine = Volatile.Read(ref parts.Engine);
+        // A paused engine holds the pad at rest, so no key is falling back, whatever its last tick counted.
+        var fallback = engine is null || engine.Paused ? 0 : parts.Mapper.FallbackCount;
         string? problem = null;
         if (fallback > 0)
         {

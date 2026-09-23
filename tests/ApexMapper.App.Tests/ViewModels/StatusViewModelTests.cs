@@ -311,7 +311,7 @@ public sealed class StatusViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task The_controller_update_rate_is_counted_over_a_second()
+    public async Task The_controller_update_rate_is_counted_over_a_second_and_hidden_while_paused()
     {
         _h.MakeReady();
         var status = Create();
@@ -324,6 +324,10 @@ public sealed class StatusViewModelTests : IDisposable
         status.Tick(_h.Now + 1000);
 
         Assert.Equal($"Keyboard read every {1.2:0.0} ms ({2.5:0.0} ms for the slowest 1%). Controller updated 1000 times a second.", status.Timing);
+
+        _h.Session.Move(SessionState.Paused);
+        status.Tick(_h.Now + 1250);
+        Assert.Null(status.Timing);
     }
 
     [Fact]

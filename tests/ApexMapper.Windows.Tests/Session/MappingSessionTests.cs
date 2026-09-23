@@ -376,15 +376,31 @@ public sealed class MappingSessionTests : IDisposable
     [Fact]
     public async Task Unplugging_the_keyboard_pauses_with_the_pad_neutral_and_keys_still_blocked_and_replugging_resumes()
     {
+        var answering = true;
+        _openSensor = () => new FakeVendorStream
+        {
+            OnRead = (_, command, selector) =>
+            {
+                Thread.Sleep(1);
+                return Volatile.Read(ref answering) ? FakeVendorStream.DefaultReply(command, selector) : null;
+            },
+        };
         await RunningWithSpaceHeld();
 
+        // As on a real unplug, the sensor goes quiet before the keyboard list drops the board.
+        Volatile.Write(ref answering, false);
+        Eventually(() => _session.Status().FallbackKeys > 0, "the silent sensor to show");
         _boards.Clear();
         _keyboards.Refresh();
 
         Eventually(() => _session.State == SessionState.Paused, "pause on unplug");
         WaitForPad(PadReport.Neutral);
         Assert.True(Press(Space, down: true), "a mapped key is still swallowed while paused");
+        // The pad is at rest, so no key is falling back and the card has no sensor problem to show.
+        var paused = _session.Status();
+        Assert.Equal((0, null), (paused.FallbackKeys, paused.SensorProblem));
 
+        Volatile.Write(ref answering, true);
         _boards.Add(Board);
         _keyboards.Refresh();
 
