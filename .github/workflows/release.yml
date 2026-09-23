@@ -1,6 +1,6 @@
 name: Release
 
-# A tag like v0.5.0 or v0.5.0-alpha.1 builds, tests and packs that version, then
+# A tag like v0.5.0 or v0.5.0-alpha builds, tests and packs that version, then
 # publishes it as a GitHub release with SHA-256 hashes in the notes. The annotated
 # tag's message becomes the release notes. A version with a hyphen is a prerelease.
 on:
