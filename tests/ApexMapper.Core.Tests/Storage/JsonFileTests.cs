@@ -73,7 +73,7 @@ public class JsonFileTests : IDisposable
         Assert.Equal("{\"v\":1}", result.Value);
         Assert.Equal("{\"v\":1}", File.ReadAllText(path));
         Assert.Equal("garbage", File.ReadAllText(JsonFile.CorruptPath(path)));
-        Assert.Null(result.Error);
+        Assert.Equal("The damaged file was kept as c.json.corrupt.", result.Error);
     }
 
     [Fact]
@@ -165,6 +165,58 @@ public class JsonFileTests : IDisposable
         File.WriteAllText(path, "garbage");
         Assert.Equal(LoadStatus.Newer, JsonFile.Load(path, Parse).Status);
         Assert.Equal("{\"v\":9}", File.ReadAllText(JsonFile.BackupPath(path)));
+    }
+
+    [Fact]
+    public void A_newer_backup_behind_a_corrupt_primary_leaves_both_where_they_are()
+    {
+        var path = PathOf("j.json");
+        JsonFile.Save(path, "{\"v\":9}");
+        JsonFile.Save(path, "{\"v\":1}");
+        File.WriteAllText(path, "garbage");
+
+        Assert.Equal(LoadStatus.Newer, JsonFile.Load(path, Parse).Status);
+        Assert.Equal("garbage", File.ReadAllText(path));
+        Assert.False(File.Exists(JsonFile.CorruptPath(path)));
+    }
+
+    [Fact]
+    public void A_backup_that_cannot_be_opened_makes_a_corrupt_primary_unavailable_and_moves_nothing()
+    {
+        var path = PathOf("k.json");
+        JsonFile.Save(path, "{\"v\":1}");
+        JsonFile.Save(path, "{\"v\":2}");
+        File.WriteAllText(path, "garbage");
+
+        using (new FileStream(JsonFile.BackupPath(path), FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            Assert.Equal(LoadStatus.Unavailable, JsonFile.Load(path, Parse).Status);
+            File.Delete(path);
+            Assert.Equal(LoadStatus.Unavailable, JsonFile.Load(path, Parse).Status);
+        }
+        Assert.Equal("{\"v\":1}", File.ReadAllText(JsonFile.BackupPath(path)));
+        Assert.False(File.Exists(JsonFile.CorruptPath(path)));
+    }
+
+    [Fact]
+    public void Restoring_over_a_corrupt_primary_held_open_never_overwrites_the_good_backup()
+    {
+        var path = PathOf("l.json");
+        JsonFile.Save(path, "{\"v\":1}");
+        JsonFile.Save(path, "{\"v\":2}");
+        File.WriteAllText(path, "garbage");
+
+        // Readable by others, but neither movable nor replaceable while held.
+        using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            var result = JsonFile.Load(path, Parse);
+            Assert.Equal(LoadStatus.Recovered, result.Status);
+            Assert.Equal("{\"v\":1}", result.Value);
+            Assert.Contains("could not be moved aside", result.Error);
+            Assert.Contains("could not be rewritten from its backup", result.Error);
+        }
+        Assert.Equal("{\"v\":1}", File.ReadAllText(JsonFile.BackupPath(path)));
+        Assert.Equal("{\"v\":1}", JsonFile.Load(path, Parse).Value);
     }
 
     [Fact]

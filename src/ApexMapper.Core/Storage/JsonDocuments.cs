@@ -9,6 +9,11 @@ namespace ApexMapper.Core.Storage;
 /// strings, scan codes as hex strings, indented, comments and trailing commas
 /// tolerated, unknown members ignored. Every document is wrapped in an envelope with a
 /// version integer so a newer file is refused rather than misread.
+///
+/// Once a version has shipped, any change its reader would refuse or silently drop (a
+/// new member, a new enum value, a looser limit) raises the version, and the raised
+/// version is written under a new file name, so an older app keeps reading its own file
+/// and never meets a newer one.
 /// </summary>
 public static class JsonDocuments
 {

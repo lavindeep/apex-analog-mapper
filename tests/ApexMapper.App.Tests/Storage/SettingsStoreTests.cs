@@ -97,6 +97,7 @@ public class SettingsStoreTests
         Assert.Equal(new AppSettings(), settings);
         Assert.Contains("newer version", problem);
         Assert.Throws<IOException>(() => store.Save(settings));
+        Assert.Throws<IOException>(() => new SettingsStore(path).Save(settings));
         Assert.Equal(newer, File.ReadAllText(path));
         Assert.False(File.Exists(path + ".corrupt"));
     }

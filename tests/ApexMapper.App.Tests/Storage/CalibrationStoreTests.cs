@@ -85,6 +85,47 @@ public class CalibrationStoreTests
     }
 
     [Fact]
+    public void Signatures_recorded_before_the_keys_survive_the_key_saves_at_both_ends_of_the_group_range()
+    {
+        using var dir = new TempDirectory();
+        var store = new CalibrationStore(dir.Path);
+        store.PutSignature(Tkl, "4.16.8", 1, new GroupSignature(0b01));
+        store.PutSignature(Tkl, "4.16.8", SensorRequest.GroupCount, new GroupSignature(0b10));
+
+        store.Put(Tkl, "4.16.8", DefaultProfiles.Key.W, WCal);
+
+        Assert.Equal(new Dictionary<int, GroupSignature> { [1] = new(0b01), [SensorRequest.GroupCount] = new(0b10) }, store.Load(Tkl, "4.16.8").Signatures);
+    }
+
+    [Fact]
+    public void Signature_entries_outside_the_groups_or_empty_are_left_out()
+    {
+        using var dir = new TempDirectory();
+        File.WriteAllText(FileOf(dir, Tkl), """
+            { "version": 1, "payload": { "keys": {}, "signatures": {
+              "0": { "absent_mask": 1, "firmware": "4.16.8" },
+              "2": null,
+              "3": { "absent_mask": 4, "firmware": "4.16.8" },
+              "6": { "absent_mask": 8, "firmware": "4.16.8" }
+            } } }
+            """);
+
+        Assert.Equal(new Dictionary<int, GroupSignature> { [3] = new(4) }, new CalibrationStore(dir.Path).Load(Tkl, "4.16.8").Signatures);
+    }
+
+    [Fact]
+    public void A_file_of_unreadable_text_is_set_aside_by_the_next_save_without_a_load_first()
+    {
+        using var dir = new TempDirectory();
+        File.WriteAllText(FileOf(dir, Tkl), "{ not json");
+
+        new CalibrationStore(dir.Path).Put(Tkl, "4.16.8", DefaultProfiles.Key.W, WCal);
+
+        Assert.Equal("{ not json", File.ReadAllText(FileOf(dir, Tkl) + ".corrupt"));
+        Assert.Equal([DefaultProfiles.Key.W], new CalibrationStore(dir.Path).Load(Tkl, "4.16.8").Keys.Keys);
+    }
+
+    [Fact]
     public void A_file_from_before_signatures_loads_with_none()
     {
         using var dir = new TempDirectory();

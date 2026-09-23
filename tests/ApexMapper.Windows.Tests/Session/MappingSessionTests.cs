@@ -19,9 +19,10 @@ namespace ApexMapper.Windows.Tests.Session;
 
 /// <summary>
 /// The design's session table, one test per row, plus the orderings the plan names and
-/// the stage 3 ledger's findings. The hook is real (installed in this process, and it
-/// swallows mapped physical keys while a test holds the game in front, so do not type
-/// while these run); the pad, foreground, game, power, Raw Input, keyboard list and
+/// the stage 3 ledger's findings. The hook runs its real thread, timer and callback body
+/// but detached: nothing is installed into Windows and the real keyboard is never read,
+/// so these tests neither swallow nor see anyone's keys. Key events arrive through the
+/// callback body by hand. The pad, foreground, game, power, Raw Input, keyboard list and
 /// vendor stream are fakes the test moves by hand.
 /// </summary>
 [Collection(ProcessSingletons.Name)]
@@ -101,6 +102,7 @@ public sealed class MappingSessionTests : IDisposable
     {
         Assert.Null(await _session.StartAsync(Request()));
         Assert.Equal(SessionState.Running, _session.State);
+        Assert.True(_session.Hook!.Detached, "a session hook in these tests must never reach the real keyboard");
     }
 
     /// <summary>A key event through the real hook's callback body, as Windows would deliver it. True when swallowed.</summary>
@@ -725,6 +727,11 @@ public sealed class MappingSessionTests : IDisposable
         Thread.Sleep(3 * KeyboardHook.TimerMs);
         _rawInput.LastEventTime = FutureEventTime(120_000);
         Eventually(() => _session.Status().HookReinstalls == 2 && !ReferenceEquals(_session.Hook, second), "a second reinstall");
+
+        // A reinstalled hook still carries the stop hotkey.
+        _session.Hook!.StopRequested!();
+        Eventually(() => _session.State == SessionState.Idle, "the hotkey to stop the session");
+        Assert.Equal(EndReason.Hotkey, _session.LastEnd!.Reason);
     }
 
     [Fact]

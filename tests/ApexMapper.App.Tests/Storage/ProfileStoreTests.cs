@@ -46,8 +46,9 @@ public class ProfileStoreTests
     {
         using var dir = new TempDirectory();
         var store = new ProfileStore(dir.Path);
-        store.Save(Custom("a", "zeta"));
-        store.Save(Custom("b", "Alpha"));
+        // Ordinal order would put "Zeta" first: names sort the way a person reads them.
+        store.Save(Custom("a", "Zeta"));
+        store.Save(Custom("b", "alpha"));
 
         var entries = store.List();
 
@@ -151,6 +152,7 @@ public class ProfileStoreTests
 
         Assert.Equal(ForzaText, ProfileJson.Serialize(forza.Profile!));
         Assert.Contains("reset to the default", forza.Problem);
+        Assert.Contains("not valid JSON", forza.Problem);
         Assert.Equal("{ not json", File.ReadAllText(dir.File("forza.json.corrupt")));
     }
 
@@ -170,7 +172,27 @@ public class ProfileStoreTests
             Assert.Throws<IOException>(() => store.Save(DefaultProfiles.Forza() with { Name = "Other" }));
         }
 
+        // The lock is gone, but what the window holds is the stand-in: saving it would replace the user's Forza.
+        Assert.Throws<IOException>(() => store.Save(DefaultProfiles.Forza() with { Name = "Other" }));
         Assert.Equal(before, File.ReadAllText(dir.File("forza.json")));
+        Assert.Equal("My Forza", store.Load("forza")!.Profile!.Name);
+        Assert.True(store.Save(DefaultProfiles.Forza() with { Name = "Other" }));
+    }
+
+    [Fact]
+    public void A_profile_that_cannot_be_read_now_is_not_saved_over_even_where_the_lock_allows_it()
+    {
+        using var dir = new TempDirectory();
+        new ProfileStore(dir.Path).Save(Custom());
+        var before = File.ReadAllText(dir.File("drift.json"));
+
+        // Unreadable, yet replaceable: a store that never loaded it must still refuse.
+        using (new FileStream(dir.File("drift.json"), FileMode.Open, FileAccess.ReadWrite, FileShare.Delete))
+        {
+            Assert.Throws<IOException>(() => new ProfileStore(dir.Path).Save(Custom() with { Name = "Other" }));
+        }
+
+        Assert.Equal(before, File.ReadAllText(dir.File("drift.json")));
     }
 
     [Fact]
@@ -290,7 +312,7 @@ public class ProfileStoreTests
         var drift = store.Load("drift")!;
 
         Assert.Equal("Drift", drift.Profile!.Name);
-        Assert.Equal("The profile \"drift\" file was missing or damaged, so its backup was used.", drift.Problem);
+        Assert.Equal("The profile \"drift\" file was missing or damaged, so its backup was used. The damaged file was kept as drift.json.corrupt.", drift.Problem);
         Assert.True(File.Exists(JsonFile.CorruptPath(dir.File("drift.json"))));
     }
 }

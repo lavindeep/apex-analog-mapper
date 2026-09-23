@@ -14,7 +14,7 @@ public enum LoadStatus
     /// <summary>Neither the primary nor the backup parsed; the primary was set aside as .corrupt.</summary>
     Corrupt,
 
-    /// <summary>The primary file could not be read (locked or access denied). Nothing was moved or written.</summary>
+    /// <summary>The primary file, or the backup it would be recovered from, could not be read (locked or access denied). Nothing was moved or written.</summary>
     Unavailable,
 
     /// <summary>
@@ -26,9 +26,9 @@ public enum LoadStatus
 }
 
 /// <param name="Error">
-/// For <see cref="LoadStatus.Recovered"/>, why the primary could not be rewritten from
-/// the backup, or null when it was. Otherwise why the file could not be used, including
-/// what happened to an unreadable one.
+/// For <see cref="LoadStatus.Recovered"/>, what happened to a damaged primary and whether
+/// it could be rewritten from the backup, or null when a missing primary was restored.
+/// Otherwise why the file could not be used, including what happened to an unreadable one.
 /// </param>
 public sealed record LoadResult<T>(T? Value, LoadStatus Status, string? Error);
 
@@ -68,12 +68,18 @@ public static class JsonFile
         }
         catch (IOException)
         {
-            // Replace can refuse (volume quirks, an odd backup file). Two steps still
-            // never leave a partial primary; only the backup can lag by a crash.
-            File.Copy(path, BackupPath(path), overwrite: true);
+            // Replace can refuse (volume quirks, an odd backup file, a primary held open).
+            // The new file goes in before the old one becomes the backup, so a failure
+            // leaves the backup as it was. None of the steps leaves a partial primary; a
+            // crash between them leaves the old primary in the side file.
+            var previous = PreviousPath(path);
+            File.Copy(path, previous, overwrite: true);
             File.Move(temp, path, overwrite: true);
+            File.Move(previous, BackupPath(path), overwrite: true);
         }
     }
+
+    private static string PreviousPath(string path) => path + ".old";
 
     /// <summary>
     /// Loads the primary file, or recovers from the backup. Anything
@@ -83,16 +89,21 @@ public static class JsonFile
     public static LoadResult<T> Load<T>(string path, Func<string, Parsed<T>> parse) where T : class
     {
         var backup = BackupPath(path);
+        var hasBackup = File.Exists(backup);
         if (!File.Exists(path))
         {
-            var lone = File.Exists(backup) ? TryRead(backup, parse).Parsed : default;
-            if (lone.Newer)
+            if (!hasBackup)
             {
-                return new LoadResult<T>(null, LoadStatus.Newer, lone.Error);
+                return new LoadResult<T>(null, LoadStatus.NotFound, null);
             }
-            return lone.Value is { } fromBackup
-                ? new LoadResult<T>(fromBackup, LoadStatus.Recovered, TryRestore(path, backup))
-                : new LoadResult<T>(null, LoadStatus.NotFound, null);
+            var (lone, loneUnreadable) = TryRead(backup, parse);
+            return lone switch
+            {
+                _ when loneUnreadable => new LoadResult<T>(null, LoadStatus.Unavailable, lone.Error),
+                { Newer: true } => new LoadResult<T>(null, LoadStatus.Newer, lone.Error),
+                { Value: { } restored } => new LoadResult<T>(restored, LoadStatus.Recovered, Restore(path, backup, null)),
+                _ => new LoadResult<T>(null, LoadStatus.NotFound, null),
+            };
         }
 
         var (primary, unreadable) = TryRead(path, parse);
@@ -109,22 +120,26 @@ public static class JsonFile
             return new LoadResult<T>(null, LoadStatus.Newer, primary.Error);
         }
 
-        // Keep the unreadable file for the user; never delete it.
-        var error = $"{primary.Error} {SetAside(path)}";
-        if (File.Exists(backup))
+        // The primary holds text no version can read. Look at the backup before moving
+        // anything: a backup that cannot be opened, or a newer one, leaves both alone.
+        var (secondary, backupUnreadable) = hasBackup ? TryRead(backup, parse) : default;
+        if (backupUnreadable)
         {
-            var (recovered, _) = TryRead(backup, parse);
-            if (recovered.Newer)
-            {
-                return new LoadResult<T>(null, LoadStatus.Newer, recovered.Error);
-            }
-            if (recovered.Value is { } fromBackup)
-            {
-                return new LoadResult<T>(fromBackup, LoadStatus.Recovered, TryRestore(path, backup));
-            }
-            error = $"{error} The backup is unreadable too: {recovered.Error}";
+            return new LoadResult<T>(null, LoadStatus.Unavailable, secondary.Error);
         }
-        return new LoadResult<T>(null, LoadStatus.Corrupt, error);
+        if (secondary.Newer)
+        {
+            return new LoadResult<T>(null, LoadStatus.Newer, secondary.Error);
+        }
+
+        // Keep the unreadable file for the user; never delete it.
+        var aside = SetAside(path);
+        if (secondary.Value is { } fromBackup)
+        {
+            return new LoadResult<T>(fromBackup, LoadStatus.Recovered, Restore(path, backup, aside));
+        }
+        var error = $"{primary.Error} {aside}";
+        return new LoadResult<T>(null, LoadStatus.Corrupt, hasBackup ? $"{error} The backup is unreadable too: {secondary.Error}" : error);
     }
 
     private static string SetAside(string path)
@@ -132,24 +147,25 @@ public static class JsonFile
         try
         {
             File.Move(path, CorruptPath(path), overwrite: true);
-            return $"It was kept as {Path.GetFileName(CorruptPath(path))}.";
+            return $"The damaged file was kept as {Path.GetFileName(CorruptPath(path))}.";
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return $"It could not be moved aside: {e.Message}";
+            return $"The damaged file could not be moved aside: {e.Message}";
         }
     }
 
-    private static string? TryRestore(string path, string backup)
+    /// <summary>Rewrites the primary from the backup. Returns what the user should know, or null when there is nothing to add.</summary>
+    private static string? Restore(string path, string backup, string? aside)
     {
         try
         {
             Save(path, File.ReadAllText(backup));
-            return null;
+            return aside;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            return e.Message;
+            return $"{aside} The file could not be rewritten from its backup: {e.Message}".TrimStart();
         }
     }
 

@@ -10,10 +10,10 @@ internal static class LoadProblem
     public static string? Describe<T>(LoadResult<T> result, string what) => result.Status switch
     {
         LoadStatus.Recovered when result.Error is null => $"The {what} file was missing or damaged, so its backup was used.",
-        LoadStatus.Recovered => $"The {what} file was missing or damaged, so its backup was used, but the file could not be rewritten: {result.Error}",
+        LoadStatus.Recovered => $"The {what} file was missing or damaged, so its backup was used. {result.Error}",
         LoadStatus.Corrupt => $"The {what} file could not be read. {result.Error}",
         LoadStatus.Unavailable => $"The {what} file could not be opened: {result.Error}",
-        LoadStatus.Newer => $"The {what} file was written by a newer version of the app, so this version leaves it alone and cannot save changes to it.",
+        LoadStatus.Newer => $"The {what} file was written by a newer version of the app, so this version leaves it alone and cannot save changes to it. Update the app to use it, or move the file out of the folder to start over.",
         _ => null,
     };
 

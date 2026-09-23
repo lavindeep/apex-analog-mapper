@@ -23,9 +23,9 @@ public sealed class FileLog : IDisposable
     public const int QueueCapacity = 1024;
     public const int DisposeWaitMs = 2000;
 
-    private readonly record struct Entry(string Stamp, string Text)
+    private readonly record struct Entry(DateTimeOffset At, string Text)
     {
-        public string Line => $"{Stamp} {Text}";
+        public string Line => $"{Format(At)} {Text}";
     }
 
     private readonly BlockingCollection<Entry> _queue = new(QueueCapacity);
@@ -36,7 +36,8 @@ public sealed class FileLog : IDisposable
     private readonly Func<DateTimeOffset> _now;
     private readonly Thread _thread;
     private int _dropped;
-    private string? _droppedSince;
+    private DateTimeOffset? _droppedSince;
+    private DateTimeOffset? _droppedSincePeek;
     private int _failures;
     private int _disposed;
 
@@ -62,12 +63,15 @@ public sealed class FileLog : IDisposable
     /// <summary>Lines lost and not yet noted in the file, for tests.</summary>
     internal int UnnotedDrops => PendingDrops().Count;
 
+    /// <summary>For tests: after <see cref="Dispose"/>, waits for the log thread to finish, however long it has been held up.</summary>
+    internal bool WaitForWriter(int timeoutMs) => _thread.Join(timeoutMs);
+
     public static string RolledPath(string path) => Path.ChangeExtension(path, ".1.txt");
 
     /// <summary>Queues one line, stamped now. Never waits on the disk and never throws, including after <see cref="Dispose"/>.</summary>
     public void Write(string message)
     {
-        var entry = new Entry(Stamp(), message);
+        var entry = new Entry(_now(), message);
         try
         {
             if (_queue.TryAdd(entry))
@@ -80,7 +84,7 @@ public sealed class FileLog : IDisposable
             // Disposed: the writer has stopped taking lines.
             return;
         }
-        Dropped(1, entry.Stamp);
+        Dropped(1, entry.At);
     }
 
     /// <summary>Writes what is queued and stops the writer, waiting at most <see cref="DisposeWaitMs"/>.</summary>
@@ -121,7 +125,7 @@ public sealed class FileLog : IDisposable
         var rollFailed = false;
         var next = 0;
         var lost = 0;
-        string? firstLost = null;
+        DateTimeOffset? firstLost = null;
 
         // Appends one line, rolling first when it would pass half the limit. False when
         // the line was left out because log.txt is at the whole limit and cannot roll.
@@ -149,7 +153,10 @@ public sealed class FileLog : IDisposable
                 return false;
             }
             stream ??= _open(_path);
+            // Flushed line by line: a line counts as written only once it left the buffer,
+            // so a full disk loses, and counts, the line it fails on.
             stream.Write(bytes);
+            stream.Flush();
             size += bytes.Length;
             return true;
         }
@@ -164,11 +171,11 @@ public sealed class FileLog : IDisposable
                 if (!Append(entries[next].Line))
                 {
                     lost++;
-                    firstLost ??= entries[next].Stamp;
+                    firstLost ??= entries[next].At;
                 }
             }
             var (dropped, since) = PendingDrops();
-            if (dropped > 0 && Append($"{Stamp()} ({dropped} {(dropped == 1 ? "line" : "lines")} dropped from {since} on, while the log was behind)"))
+            if (dropped > 0 && Append($"{Format(_now())} ({dropped} {(dropped == 1 ? "line" : "lines")} could not be written, the first at {Format(since!.Value)})"))
             {
                 DropsNoted(dropped);
             }
@@ -179,7 +186,7 @@ public sealed class FileLog : IDisposable
             for (; next < entries.Count; next++)
             {
                 lost++;
-                firstLost ??= entries[next].Stamp;
+                firstLost ??= entries[next].At;
             }
         }
         try
@@ -193,39 +200,41 @@ public sealed class FileLog : IDisposable
         }
         if (lost > 0)
         {
-            Dropped(lost, firstLost!);
+            Dropped(lost, firstLost!.Value);
         }
     }
 
-    private void Dropped(int count, string since)
+    private void Dropped(int count, DateTimeOffset at)
     {
         lock (_dropLock)
         {
             _dropped += count;
-            _droppedSince ??= since;
+            _droppedSince = Earliest(_droppedSince, at);
+            _droppedSincePeek = Earliest(_droppedSincePeek, at);
         }
     }
 
-    private (int Count, string? Since) PendingDrops()
+    /// <summary>Lost lines not yet noted and when the earliest was stamped. Drops recorded from now on are tracked apart, for after the note.</summary>
+    private (int Count, DateTimeOffset? Since) PendingDrops()
     {
         lock (_dropLock)
         {
+            _droppedSincePeek = null;
             return (_dropped, _droppedSince);
         }
     }
 
-    /// <summary>The note for these drops is in the file; later drops wait for the next one.</summary>
+    /// <summary>The note for these drops is in the file; the ones recorded since it was drafted wait for the next.</summary>
     private void DropsNoted(int count)
     {
         lock (_dropLock)
         {
             _dropped -= count;
-            if (_dropped == 0)
-            {
-                _droppedSince = null;
-            }
+            _droppedSince = _dropped == 0 ? null : _droppedSincePeek;
         }
     }
 
-    private string Stamp() => _now().ToString("yyyy-MM-dd HH:mm:ss.fff zzz", CultureInfo.InvariantCulture);
+    private static DateTimeOffset Earliest(DateTimeOffset? current, DateTimeOffset at) => current is { } c && c <= at ? c : at;
+
+    private static string Format(DateTimeOffset at) => at.ToString("yyyy-MM-dd HH:mm:ss.fff zzz", CultureInfo.InvariantCulture);
 }

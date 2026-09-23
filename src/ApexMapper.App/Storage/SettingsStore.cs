@@ -28,18 +28,21 @@ public sealed class SettingsStore(string path)
 
     public (AppSettings Settings, string? Problem) Load()
     {
-        var result = JsonFile.Load(path, text => JsonDocuments.Parse<AppSettings>(text, CurrentVersion));
+        var result = JsonFile.Load(path, Parse);
         _unsafeToSave = result.Status is LoadStatus.Unavailable or LoadStatus.Newer ? result : null;
         return (result.Value ?? new AppSettings(), LoadProblem.Describe(result, "settings"));
     }
 
-    /// <summary>Throws <see cref="IOException"/> when the file cannot be written, or after a load that could not read it.</summary>
+    /// <summary>Throws <see cref="IOException"/> when the file cannot be written, cannot be read now, or could not be read at the last load.</summary>
     public void Save(AppSettings settings)
     {
         if (_unsafeToSave is { } blocked)
         {
             LoadProblem.ThrowIfUnsafeToSave(blocked, "settings");
         }
+        LoadProblem.ThrowIfUnsafeToSave(JsonFile.Load(path, Parse), "settings");
         JsonFile.Save(path, JsonDocuments.Serialize(CurrentVersion, settings));
     }
+
+    private static Parsed<AppSettings> Parse(string text) => JsonDocuments.Parse<AppSettings>(text, CurrentVersion);
 }

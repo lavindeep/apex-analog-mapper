@@ -14,7 +14,9 @@ public sealed record ProfileEntry(string Id, Profile? Profile, string? Problem);
 /// always exists: when its file gives nothing the default stands in, and the default is
 /// written back when the file is missing or holds unreadable text. It cannot be deleted.
 /// Saving refuses to write over a file that could not be read or that a newer version
-/// of the app wrote. Called from the UI thread only.
+/// of the app wrote, including one that could not be read when it was last loaded: what
+/// the window holds for it is a stand-in, not the user's profile. Called from the UI
+/// thread only.
 /// </summary>
 public sealed partial class ProfileStore(string directory)
 {
@@ -24,6 +26,8 @@ public sealed partial class ProfileStore(string directory)
         .. Enumerable.Range(0, 10).Select(i => $"com{i}"),
         .. Enumerable.Range(0, 10).Select(i => $"lpt{i}"),
     ];
+
+    private readonly HashSet<string> _unreadAtLastLoad = [];
 
     public IReadOnlyList<ProfileEntry> List()
     {
@@ -53,6 +57,14 @@ public sealed partial class ProfileStore(string directory)
     {
         RequireValidId(id);
         var result = JsonFile.Load(PathOf(id), ProfileJson.Parse);
+        if (result.Status is LoadStatus.Unavailable or LoadStatus.Newer)
+        {
+            _unreadAtLastLoad.Add(id);
+        }
+        else
+        {
+            _unreadAtLastLoad.Remove(id);
+        }
         if (id == DefaultProfiles.ForzaId && result.Value is null)
         {
             return new ProfileEntry(id, DefaultProfiles.Forza(), StandInForForza(result));
@@ -69,11 +81,15 @@ public sealed partial class ProfileStore(string directory)
     /// <summary>
     /// Writes the profile unless the file already holds the same content. Returns whether
     /// it changed. Throws <see cref="IOException"/> rather than write over a file that
-    /// could not be read or that a newer version wrote.
+    /// could not be read or that a newer version wrote, now or at its last load.
     /// </summary>
     public bool Save(Profile profile)
     {
         RequireValidId(profile.Id);
+        if (_unreadAtLastLoad.Contains(profile.Id))
+        {
+            throw new IOException($"The profile \"{profile.Id}\" could not be read when it was loaded, so it is not saved over. Load it again first.");
+        }
         if (profile.Validate() is { } invalid)
         {
             throw new ArgumentException(invalid, nameof(profile));
@@ -101,6 +117,7 @@ public sealed partial class ProfileStore(string directory)
         // The backup goes first: left behind, the next load would restore the profile from it.
         File.Delete(JsonFile.BackupPath(PathOf(id)));
         File.Delete(PathOf(id));
+        _unreadAtLastLoad.Remove(id);
         return true;
     }
 

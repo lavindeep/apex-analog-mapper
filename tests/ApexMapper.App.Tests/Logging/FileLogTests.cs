@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using ApexMapper.App.Logging;
 using Xunit;
@@ -11,6 +12,22 @@ public class FileLogTests
     private const string NoonStamp = "2026-09-22 12:00:00.000 -07:00";
 
     private static Stream Append(string path) => new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+
+    private static string Format(DateTimeOffset at) => at.ToString("yyyy-MM-dd HH:mm:ss.fff zzz", CultureInfo.InvariantCulture);
+
+    /// <summary>A clock one second later on every read, from 12:00:01.</summary>
+    private static Func<DateTimeOffset> Ticking()
+    {
+        var tick = 0;
+        return () => Noon.AddSeconds(Interlocked.Increment(ref tick));
+    }
+
+    /// <summary>Disposes and waits for the log thread: on a starved machine Dispose may give up on it before it has written everything.</summary>
+    private static void Close(FileLog log)
+    {
+        log.Dispose();
+        Assert.True(log.WaitForWriter(30_000), "the log thread to finish");
+    }
 
     /// <summary>Reads while sharing, so a writer that is still closing its handle cannot fail the read.</summary>
     private static string[] ReadLines(string path)
@@ -58,7 +75,7 @@ public class FileLogTests
         {
             writer.Join();
         }
-        log.Dispose();
+        Close(log);
         log.Dispose();
         log.Write("after dispose");
 
@@ -80,14 +97,12 @@ public class FileLogTests
         using var dir = new TempDirectory();
         var path = Path.Combine(dir.Path, "new", "folder", "log.txt");
 
-        using (var first = new FileLog(path))
-        {
-            first.Write("first run");
-        }
-        using (var second = new FileLog(path))
-        {
-            second.Write("second run");
-        }
+        var first = new FileLog(path);
+        first.Write("first run");
+        Close(first);
+        var second = new FileLog(path);
+        second.Write("second run");
+        Close(second);
 
         var lines = ReadLines(path);
         Assert.Equal(2, lines.Length);
@@ -103,13 +118,12 @@ public class FileLogTests
         var path = dir.File("log.txt");
         const int limit = 1000;
 
-        using (var log = new FileLog(path, limit, Append, () => Noon))
+        var log = new FileLog(path, limit, Append, () => Noon);
+        for (var i = 0; i < 100; i++)
         {
-            for (var i = 0; i < 100; i++)
-            {
-                log.Write($"line {i:D3}");
-            }
+            log.Write($"line {i:D3}");
         }
+        Close(log);
 
         // 41 bytes a line, 12 to a 500-byte file: the last two files hold the last 16 lines.
         var rolled = FileLog.RolledPath(path);
@@ -126,10 +140,9 @@ public class FileLogTests
         var path = dir.File("log.txt");
         File.WriteAllText(path, new string('x', 480) + Environment.NewLine);
 
-        using (var log = new FileLog(path, 1000, Append, () => Noon))
-        {
-            log.Write("next run");
-        }
+        var log = new FileLog(path, 1000, Append, () => Noon);
+        log.Write("next run");
+        Close(log);
         Assert.Equal([new string('x', 480)], ReadLines(FileLog.RolledPath(path)));
         Assert.Equal([$"{NoonStamp} next run"], ReadLines(path));
 
@@ -138,7 +151,7 @@ public class FileLogTests
         var oversized = new string('y', 200);
         var small = new FileLog(path, 100, Append, () => Noon);
         small.Write(oversized);
-        small.Dispose();
+        Close(small);
         Assert.Equal(0, small.Failures);
         Assert.Equal([$"{NoonStamp} {oversized}"], ReadLines(path));
     }
@@ -150,7 +163,7 @@ public class FileLogTests
         var path = dir.File("log.txt");
         var rolled = FileLog.RolledPath(path);
         File.WriteAllText(rolled, "held by a viewer" + Environment.NewLine);
-        var log = new FileLog(path, 1000, Append, () => Noon);
+        var log = new FileLog(path, 1000, Append, Ticking());
 
         // Held with every sharing mode, as a tail that followed the last roll holds it.
         using (new FileStream(rolled, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
@@ -161,15 +174,23 @@ public class FileLogTests
             }
             // 24 lines of 41 bytes fill the 1000-byte limit; the other 16 are lost. Every line
             // must be handled before the hold ends, or a later batch would roll and write them.
-            Assert.True(SpinWait.SpinUntil(() => log.UnnotedDrops == 16, 2000), "every line to be written or counted");
+            Assert.True(SpinWait.SpinUntil(() => log.UnnotedDrops == 16, 10_000), "every line to be written or counted");
             Assert.Equal(24, ReadLines(path).Length);
+
+            // Still held and still full: this line is lost too, and so is the note's first
+            // chance, which must not cost the count.
+            log.Write("line 040");
+            Assert.True(SpinWait.SpinUntil(() => log.UnnotedDrops == 17, 10_000), "the next loss to be counted with the rest");
         }
         log.Write("after");
-        log.Dispose();
+        Close(log);
 
         Assert.True(log.Failures > 0);
-        Assert.Equal(Enumerable.Range(0, 24).Select(i => $"{NoonStamp} line {i:D3}"), ReadLines(rolled));
-        Assert.Equal([$"{NoonStamp} after", $"{NoonStamp} (16 lines dropped from {NoonStamp} on, while the log was behind)"], ReadLines(path));
+        Assert.Equal(Enumerable.Range(0, 24).Select(i => $"{Format(Noon.AddSeconds(i + 1))} line {i:D3}"), ReadLines(rolled));
+        var lines = ReadLines(path);
+        Assert.Equal(2, lines.Length);
+        Assert.EndsWith(" after", lines[0]);
+        Assert.EndsWith($"(17 lines could not be written, the first at {Format(Noon.AddSeconds(25))})", lines[1]);
     }
 
     [Fact]
@@ -187,7 +208,7 @@ public class FileLogTests
         }, () => Noon);
 
         log.Write("first");
-        Assert.True(stuck.Wait(2000, TestContext.Current.CancellationToken));
+        Assert.True(stuck.Wait(10_000, TestContext.Current.CancellationToken));
         // The writer is inside the open: every one of these must queue or drop, never wait.
         var writes = Task.Run(() =>
         {
@@ -199,20 +220,20 @@ public class FileLogTests
         Assert.True(writes == await Task.WhenAny(writes, Task.Delay(2000, TestContext.Current.CancellationToken)), "a write waited on the stuck disk");
         disk.Set();
         // First, the note, and the 1024 that queued: only then is there room for another line.
-        Assert.True(SpinWait.SpinUntil(() => File.Exists(path) && ReadLines(path).Length == FileLog.QueueCapacity + 2, 2000), "the backlog to drain");
+        Assert.True(SpinWait.SpinUntil(() => File.Exists(path) && ReadLines(path).Length == FileLog.QueueCapacity + 2, 10_000), "the backlog to drain");
         log.Write("later");
-        log.Dispose();
+        Close(log);
 
         var lines = ReadLines(path);
         Assert.EndsWith("first", lines[0]);
-        Assert.Single(lines, l => l.EndsWith($"(50 lines dropped from {NoonStamp} on, while the log was behind)", StringComparison.Ordinal));
+        Assert.Single(lines, l => l.EndsWith($"(50 lines could not be written, the first at {NoonStamp})", StringComparison.Ordinal));
         Assert.EndsWith("later", lines[^1]);
         Assert.Equal(FileLog.QueueCapacity + 3, lines.Length);
         Assert.Equal(0, log.Failures);
     }
 
     [Fact]
-    public void A_file_it_cannot_open_costs_its_batch_and_the_loss_is_noted_later()
+    public void A_file_it_cannot_open_costs_its_batch_and_each_loss_is_noted_from_its_own_start()
     {
         using var dir = new TempDirectory();
         var path = dir.File("log.txt");
@@ -223,16 +244,84 @@ public class FileLogTests
             var failing = Volatile.Read(ref fail);
             opened.Release();
             return failing ? throw new UnauthorizedAccessException("denied") : Append(p);
-        }, () => Noon);
+        }, Ticking());
 
+        // 12:00:01 is lost; 12:00:02 lands and the note, stamped 12:00:03, follows it.
         log.Write("lost");
-        Assert.True(opened.Wait(2000, TestContext.Current.CancellationToken));
+        Assert.True(opened.Wait(10_000, TestContext.Current.CancellationToken));
         Volatile.Write(ref fail, false);
         log.Write("kept");
-        log.Dispose();
+        Assert.True(SpinWait.SpinUntil(() => File.Exists(path) && ReadLines(path).Length == 2, 10_000), "the first note");
 
-        Assert.Equal(1, log.Failures);
-        Assert.Equal([$"{NoonStamp} kept", $"{NoonStamp} (1 line dropped from {NoonStamp} on, while the log was behind)"], ReadLines(path));
+        // A second loss, at 12:00:04, is dated from itself, not from the first.
+        Volatile.Write(ref fail, true);
+        log.Write("lost again");
+        Assert.True(opened.Wait(10_000, TestContext.Current.CancellationToken));
+        Assert.True(opened.Wait(10_000, TestContext.Current.CancellationToken));
+        Volatile.Write(ref fail, false);
+        log.Write("kept again");
+        Close(log);
+
+        Assert.Equal(2, log.Failures);
+        Assert.Equal(
+            [
+                $"{Format(Noon.AddSeconds(2))} kept",
+                $"{Format(Noon.AddSeconds(3))} (1 line could not be written, the first at {Format(Noon.AddSeconds(1))})",
+                $"{Format(Noon.AddSeconds(5))} kept again",
+                $"{Format(Noon.AddSeconds(6))} (1 line could not be written, the first at {Format(Noon.AddSeconds(4))})",
+            ],
+            ReadLines(path));
+    }
+
+    [Fact]
+    public void A_full_disk_loses_the_line_it_fails_on_and_the_loss_is_noted_later()
+    {
+        using var dir = new TempDirectory();
+        var path = dir.File("log.txt");
+        using var failed = new SemaphoreSlim(0);
+        var opens = 0;
+        var log = new FileLog(path, FileLog.MaxBytes, p =>
+            Interlocked.Increment(ref opens) == 1 ? new DiskFull(failed) : Append(p), () => Noon);
+
+        log.Write("lost");
+        Assert.True(failed.Wait(10_000, TestContext.Current.CancellationToken));
+        log.Write("kept");
+        Close(log);
+
+        Assert.Equal([$"{NoonStamp} kept", $"{NoonStamp} (1 line could not be written, the first at {NoonStamp})"], ReadLines(path));
+    }
+
+    [Fact]
+    public void The_note_names_the_earliest_lost_line_whatever_order_the_losses_were_counted_in()
+    {
+        using var dir = new TempDirectory();
+        var path = dir.File("log.txt");
+        using var disk = new ManualResetEventSlim(false);
+        using var stuck = new ManualResetEventSlim(false);
+        var tick = 0;
+        var opens = 0;
+        var log = new FileLog(path, FileLog.MaxBytes, p =>
+        {
+            if (Interlocked.Increment(ref opens) > 1)
+            {
+                return Append(p);
+            }
+            stuck.Set();
+            disk.Wait(TestContext.Current.CancellationToken);
+            throw new IOException("the disk went away");
+        }, () => Noon.AddSeconds(Interlocked.Increment(ref tick)));
+
+        // Stamped 12:00:01, then lost with its batch, after the queue-full drops below were counted.
+        log.Write("first");
+        Assert.True(stuck.Wait(10_000, TestContext.Current.CancellationToken));
+        for (var i = 0; i < FileLog.QueueCapacity + 5; i++)
+        {
+            log.Write($"line {i}");
+        }
+        disk.Set();
+        Close(log);
+
+        Assert.Single(ReadLines(path), l => l.EndsWith("(6 lines could not be written, the first at 2026-09-22 12:00:01.000 -07:00)", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -246,9 +335,9 @@ public class FileLogTests
             Interlocked.Increment(ref opens) == 1 ? new FailingClose(Append(p), closed) : Append(p), () => Noon);
 
         log.Write("one");
-        Assert.True(closed.Wait(2000, TestContext.Current.CancellationToken));
+        Assert.True(closed.Wait(10_000, TestContext.Current.CancellationToken));
         log.Write("two");
-        log.Dispose();
+        Close(log);
 
         Assert.Equal(1, log.Failures);
         Assert.Equal(2, opens);
@@ -269,7 +358,7 @@ public class FileLogTests
             return Append(p);
         }, () => Noon);
         log.Write("slow");
-        Assert.True(stuck.Wait(2000, TestContext.Current.CancellationToken));
+        Assert.True(stuck.Wait(10_000, TestContext.Current.CancellationToken));
 
         var clock = Stopwatch.StartNew();
         var disposing = Task.Run(log.Dispose, TestContext.Current.CancellationToken);
@@ -277,10 +366,32 @@ public class FileLogTests
         Assert.InRange(clock.ElapsedMilliseconds, FileLog.DisposeWaitMs - 100, FileLog.DisposeWaitMs + 2000);
 
         disk.Set();
-        Assert.True(SpinWait.SpinUntil(() => File.Exists(path) && ReadLines(path).Length == 1, 2000), "the writer to finish once the disk came back");
+        Assert.True(SpinWait.SpinUntil(() => File.Exists(path) && ReadLines(path).Length == 1, 10_000), "the writer to finish once the disk came back");
     }
 
-    /// <summary>A stream whose close throws after closing, as a flush to a full disk would.</summary>
+    /// <summary>A disk with no room: writes go nowhere and the flush that would put them on disk fails.</summary>
+    private sealed class DiskFull(SemaphoreSlim failed) : Stream
+    {
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => 0;
+        public override long Position { get => 0; set => throw new NotSupportedException(); }
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+        }
+
+        public override void Flush()
+        {
+            failed.Release();
+            throw new IOException("There is not enough space on the disk.");
+        }
+    }
+
+    /// <summary>A stream whose close throws after closing.</summary>
     private sealed class FailingClose(Stream inner, SemaphoreSlim closed) : Stream
     {
         public override bool CanRead => false;
