@@ -110,6 +110,18 @@ public static class SensorProtocol
         return null;
     }
 
+    /// <summary>A group reply as the keyboard sends it, rebuilt from fourteen raw and fourteen filtered samples: the inverse of <see cref="ParseGroup"/>.</summary>
+    public static byte[] BuildGroupReply(ReadOnlySpan<ushort> raw, ReadOnlySpan<ushort> filtered)
+    {
+        var reply = new byte[ReportLength];
+        for (var i = 0; i < SensorsPerGroup; i++)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(reply.AsSpan(RawOffset + 2 * i), raw[i]);
+            BinaryPrimitives.WriteUInt16LittleEndian(reply.AsSpan(FilteredOffset + 2 * i), filtered[i]);
+        }
+        return reply;
+    }
+
     /// <summary>A group whose samples are all zero or all identical is not sensor data.</summary>
     public static bool IsPlausibleGroup(ReadOnlySpan<ushort> raw)
     {
