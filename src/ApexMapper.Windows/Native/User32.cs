@@ -244,6 +244,12 @@ internal static unsafe partial class User32
     [LibraryImport("user32.dll", SetLastError = true)]
     public static partial nint GetWindow(nint hWnd, uint uCmd);
 
+    public const uint ASFW_ANY = uint.MaxValue;
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AllowSetForegroundWindow(uint dwProcessId);
+
     /// <summary>The key's name on the current keyboard layout. The scan code goes in bits 16..23 and the extended flag in bit 24.</summary>
     [LibraryImport("user32.dll", SetLastError = true)]
     public static partial int GetKeyNameTextW(int lParam, char* lpString, int cchSize);
