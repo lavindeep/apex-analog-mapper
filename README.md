@@ -116,6 +116,25 @@ key's sensor barely changes over the first part of the press, so an inside deadz
 on top of that leaves the start of the throttle and brake doing nothing. Steering is
 fine at the game's defaults.
 
+## Sharing setups
+
+Each profile is one small file in `%AppData%\ApexAnalogMapper\profiles`. To share
+yours, post it in
+[Show and tell](https://github.com/lavindeep/apex-analog-mapper/discussions/categories/show-and-tell)
+with the game settings you drive it with. The form asks for the file's contents, so
+open it in Notepad and paste all of it.
+
+To use someone else's:
+
+1. In Notepad, paste the text they posted and save it in that folder under a new name
+   like `forza-alex.json`. Set "Save as type" to All files so the name doesn't end in
+   `.txt`. Use letters, numbers, `-` and `_`, and don't call it `forza.json`, or it
+   replaces your own Forza profile.
+2. Restart the app. The profile shows up on the profile card under the name its author
+   gave it.
+
+If a setup works well for a game, I may ship it with the app as a built-in profile.
+
 ## Updates
 
 The app looks for a newer version on GitHub when it starts, unless it had an answer in

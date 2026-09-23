@@ -1,0 +1,38 @@
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share a profile and the game settings you drive it with. Profiles are in
+        `%AppData%\ApexAnalogMapper\profiles`, one `.json` file each.
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      placeholder: Forza Horizon 6
+    validations:
+      required: true
+  - type: input
+    id: keyboard
+    attributes:
+      label: Keyboard and app version
+      placeholder: Apex Pro TKL, 0.5.0-alpha
+    validations:
+      required: true
+  - type: textarea
+    id: profile
+    attributes:
+      label: Profile
+      description: Open the profile's file in Notepad and paste all of it here.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Game settings
+      description: A screenshot of the game's controller or deadzone settings, if you changed them.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: What you changed from the defaults, and how it drives.
