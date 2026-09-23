@@ -34,5 +34,5 @@ body:
     id: log
     attributes:
       label: Log
-      description: Paste the session log if the app produced one. It never records which keys were pressed.
+      description: Paste the session log if the app produced one. It never records your typing.
       render: text
