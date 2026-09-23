@@ -1,243 +1,212 @@
 using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
-using ApexMapper.App.Composition;
-using ApexMapper.App.Services;
-using ApexMapper.App.SingleInstance;
-using ApexMapper.App.ViewModels.Profiles;
-using ApexMapper.Core.Engine;
-using ApexMapper.Input.Abstractions.Devices;
-using ApexMapper.Input.Abstractions.Hosting;
-using H.NotifyIcon;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+using ApexMapper.App.Logging;
+using ApexMapper.App.Model;
+using ApexMapper.App.Storage;
+using ApexMapper.App.Update;
+using ApexMapper.App.ViewModels;
+using ApexMapper.Windows.Devices;
+using ApexMapper.Windows.Input;
+using ApexMapper.Windows.Session;
+using Wpf.Ui.Appearance;
 
 namespace ApexMapper.App;
 
+/// <summary>
+/// Composition. Builds the app's long-lived parts in order, gives the window its view
+/// models and timer, and takes the parts down in reverse on exit, so the session stops
+/// and the game sees the controller at rest before anything it depends on goes. An
+/// error on the UI thread is logged, stops the session and closes the app with a
+/// message; one on another thread ends the process once the controller is at rest and
+/// the error is logged.
+/// </summary>
 public partial class App : Application
 {
-    private IHost? _host;
-    private SingleInstanceGuard? _guard;
+    private readonly SingleInstance _instance;
+    private readonly List<IDisposable> _parts = [];
+    private AppPaths? _paths;
+    private FileLog? _log;
+    private MappingSession? _session;
+    private DispatcherTimer? _timer;
+    private bool _failed;
+
+    public App(SingleInstance instance) => _instance = instance;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-
-        // ------------------------------------------------------------------
-        // 1. Single-instance guard
-        // ------------------------------------------------------------------
-        _guard = new SingleInstanceGuard();
-        if (!_guard.IsPrimary)
+        ApplicationThemeManager.ApplySystemTheme();
+        DispatcherUnhandledException += OnUnhandled;
+        AppDomain.CurrentDomain.UnhandledException += OnUnhandledElsewhere;
+        try
         {
-            MessageBox.Show(
-                "Apex Mapper is already running.",
-                "Apex Mapper",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            Shutdown(0);
-            return;
+            Compose();
         }
-
-        // ------------------------------------------------------------------
-        // 2. Unhandled exception handlers
-        // ------------------------------------------------------------------
-        AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;
-        Current.DispatcherUnhandledException += OnDispatcherUnhandledException;
-
-        // ------------------------------------------------------------------
-        // 3. Build the TaskbarIcon from the XAML resource dictionary.
-        //    This must happen before building the host so the live TrayService
-        //    can be injected via TrayServiceHolder.
-        // ------------------------------------------------------------------
-        var trayIcon    = (TaskbarIcon)Resources["ApexMapperTrayIcon"];
-        var trayService = new TrayService(trayIcon);
-
-        // ------------------------------------------------------------------
-        // 4. Build host / DI container
-        // ------------------------------------------------------------------
-        // Pre-create the holder so the composition root's ITrayService factory
-        // sees the live TrayService when the container is first built.
-        var trayHolder = new TrayServiceHolder { Value = trayService };
-
-        _host = Host.CreateDefaultBuilder()
-            .ConfigureServices((_, svc) =>
-            {
-                AppCompositionRoot.ConfigureServices(svc);
-
-                // Replace the holder registered by ConfigureServices with our
-                // pre-populated instance so ITrayService resolves the real service.
-                svc.AddSingleton(trayHolder);
-            })
-            .Build();
-
-        // Bind the tray context menu VM to the icon.
-        var trayMenuVm = _host.Services.GetRequiredService<ViewModels.Tray.TrayMenuViewModel>();
-        trayIcon.DataContext = trayMenuVm;
-
-        // Start the global panic hotkey (Ctrl+Alt+F12 by default).
-        var coordinator = _host.Services.GetRequiredService<PanicCoordinator>();
-        coordinator.Start(new HotkeyGesture(
-            System.Windows.Input.Key.F12,
-            System.Windows.Input.ModifierKeys.Control | System.Windows.Input.ModifierKeys.Alt));
-
-        // Surface panic failures to the user: without this the fail-closed panic
-        // path is silent (all callers fire-and-forget). Either error slot means the
-        // panic did not fully complete. PanicCompleted fires on whatever thread ran
-        // the panic (the hotkey path uses Task.Run), and the tray icon is a WPF
-        // object — marshal onto the dispatcher or the balloon itself would throw.
-        coordinator.PanicCompleted += (_, args) =>
+        catch (Exception ex)
         {
-            if (args.Error is not null || args.PolicyError is not null)
-                Dispatcher.InvokeAsync(() =>
-                    trayService.ShowBalloon("Apex Mapper", "Panic did not fully complete — check that the mapper is still active."));
-        };
-
-        // Start the foreground watcher on the UI thread: its WinEvent hook needs
-        // this thread's message pump, and without Start() the panic policy leg would
-        // never see the active game (Current stays ForegroundContext.Empty). The host
-        // owns the singleton and disposes it (Stop + unhook) on shutdown.
-        _host.Services.GetRequiredService<IForegroundWatcher>().Start();
-
-        // Start watching the profiles directory for on-disk edits; without Start()
-        // no FileSystemWatcher is created and hot-reload never happens. The host
-        // disposes the singleton (stopping the watcher) on shutdown.
-        _host.Services.GetRequiredService<IProfileHotReload>().Start();
-
-        // Profile activation: foreground/pin/reload changes flow into the
-        // engine. The selector list refreshes on hot reload (marshalled — the
-        // reload fires on a watcher/timer thread) and a pin change re-resolves
-        // immediately so the pinned profile takes effect without a focus change.
-        var activation = _host.Services.GetRequiredService<ProfileActivationService>();
-        var selectorVm = _host.Services.GetRequiredService<ProfileSelectorViewModel>();
-        activation.ProfilesReloaded += (_, _) =>
-            Dispatcher.InvokeAsync(() => selectorVm.RefreshCommand.Execute(null));
-        ((INotifyPropertyChanged)selectorVm).PropertyChanged += (_, args) =>
-        {
-            if (args.PropertyName == nameof(ProfileSelectorViewModel.PinnedProfileId))
-                activation.Reevaluate();
-        };
-        activation.Start();
-
-        // Resume guard: on system resume, gate held keys so a key-up missed
-        // while the machine was suspended cannot latch an axis until re-pressed.
-        // Start() subscribes to the OS power event; the host disposes the
-        // singleton on shutdown, which unsubscribes (a static-event handler
-        // would otherwise outlive the app).
-        _host.Services.GetRequiredService<ResumeGuard>().Start();
-
-        // Bring the input pipeline and the mapping tick loop up off the UI
-        // thread. The engine starts DISABLED — ticking only drains input and
-        // keeps the channel slot zeroed; output requires the user's enable
-        // flow. A startup failure here leaves the app running disabled with
-        // the error surfaced — never a crash loop, never silent success.
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                var selector = _host.Services.GetRequiredService<DeviceSelector>();
-                selector.Initialize();
-
-                var inputHost = _host.Services.GetRequiredService<InputHost>();
-                await inputHost.StartAsync(CancellationToken.None).ConfigureAwait(false);
-
-                var engine = _host.Services.GetRequiredService<MappingEngine>();
-                await engine.StartAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                await Dispatcher.InvokeAsync(() => trayService.ShowBalloon(
-                    "Apex Analog Mapper",
-                    $"Input pipeline failed to start: {ex.Message}"));
-            }
-        });
-
-        // Set the DataContext on the main window from DI.
-        var mainWindowVm = _host.Services.GetRequiredService<ViewModels.MainWindowViewModel>();
-        if (MainWindow is not null)
-            MainWindow.DataContext = mainWindowVm;
-
-        // ------------------------------------------------------------------
-        // 5. Show the tray icon
-        // ------------------------------------------------------------------
-        trayService.Show();
-
-        // Wire exit / open-window from tray icon events.
-        trayService.OpenMainWindowRequested += (_, _) =>
-        {
-            MainWindow?.Show();
-            MainWindow?.Activate();
-        };
-        trayService.ExitRequested += (_, _) => Shutdown();
+            Fail("The app could not start.", ex);
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        if (_host is not null)
+        _timer?.Stop();
+        for (var i = _parts.Count - 1; i >= 0; i--)
         {
-            // Zero+disconnect ordering (safety contract): the engine stops
-            // first — its shutdown pushes a final zero into the channel slot
-            // and joins the tick thread (2 s bound) — then the channel sends
-            // its own best-effort zero frame and disconnects (bounded 250 ms),
-            // then the input host tears down. Every step is idempotent against
-            // the host's own disposal below, and the supervisor's heartbeat
-            // gap zeroes the pad even if all of this fails.
-            TryTeardown(() => _host.Services.GetRequiredService<MappingEngine>()
-                .DisposeAsync().AsTask().GetAwaiter().GetResult());
-            TryTeardown(() => _host.Services.GetRequiredService<ISupervisorChannel>()
-                .DisconnectAsync(CancellationToken.None).GetAwaiter().GetResult());
-            TryTeardown(() => _host.Services.GetRequiredService<InputHost>()
-                .DisposeAsync().AsTask().GetAwaiter().GetResult());
+            try
+            {
+                _parts[i].Dispose();
+            }
+            catch (Exception ex)
+            {
+                _log?.Write($"Closing {_parts[i].GetType().Name} failed: {ex}");
+            }
         }
-
-        _host?.Dispose();
-        _guard?.Dispose();
+        _log?.Write("Closed.");
+        _log?.Dispose();
         base.OnExit(e);
     }
 
-    private static void TryTeardown(Action step)
+    private void Compose()
+    {
+        var paths = _paths = AppPaths.ForCurrentUser();
+        Directory.CreateDirectory(paths.Root);
+        var log = _log = new FileLog(paths.Log);
+        var version = VersionText();
+        log.Write($"Apex Analog Mapper {version} started.");
+
+        var settingsStore = new SettingsStore(paths.Settings);
+        var (settings, settingsProblem) = settingsStore.Load();
+        if (settingsProblem is not null)
+        {
+            log.Write(settingsProblem);
+        }
+
+        var pump = Own(new RawInputPump());
+        pump.Start();
+        var keyboards = Own(new KeyboardDiscovery());
+        keyboards.Watch(pump);
+        if (keyboards.LastError is { } listing)
+        {
+            log.Write("Listing the keyboards failed, trying again: " + listing);
+        }
+        var power = Own(new PowerNotifier());
+        _session = Own(new MappingSession(new SessionServices { Keyboards = keyboards, RawInput = pump, Power = power }));
+        var workspace = new Workspace { SettingsProblem = settingsProblem, SettingsUnread = settingsStore.LastLoadUsedDefaults };
+        var sensor = Own(new LiveSensor(workspace));
+
+        var window = new MainWindow();
+        SystemThemeWatcher.Watch(window);
+        var services = new AppServices
+        {
+            Session = _session,
+            Keyboards = keyboards,
+            Sensor = sensor,
+            KeyEvents = new RawInputKeyEvents(pump),
+            Profiles = new ProfileStore(paths.Profiles),
+            Calibrations = new CalibrationStore(paths.Calibration),
+            Settings = settingsStore,
+            Dialogs = new WindowDialogs(window),
+            Updates = new VelopackUpdates(),
+            Post = action => Dispatcher.BeginInvoke(action),
+            Open = Open,
+            Restart = Restart,
+            Close = () => Shutdown(),
+            Log = log.Write,
+            AppVersion = version,
+            DataFolder = paths.Root,
+        };
+        var main = new MainViewModel(services, workspace, settings);
+        window.Show(main);
+        MainWindow = window;
+        _instance.OnShowRequested(() => Dispatcher.BeginInvoke(() => window.BringForward()));
+
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(main.TickIntervalMs) };
+        _timer.Tick += (_, _) =>
+        {
+            main.Tick();
+            _timer.Interval = TimeSpan.FromMilliseconds(main.TickIntervalMs);
+        };
+        _timer.Start();
+    }
+
+    private T Own<T>(T part) where T : IDisposable
+    {
+        _parts.Add(part);
+        return part;
+    }
+
+    /// <summary>Opens a web page or a folder in the shell.</summary>
+    private void Open(string target)
     {
         try
         {
-            step();
+            Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })?.Dispose();
         }
-        catch
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
         {
-            // Best-effort shutdown: a failing step must not block the rest of
-            // the teardown chain (each later step is an independent backstop).
+            _log?.Write($"Opening {target} failed: {ex.Message}");
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Unhandled exception handlers
-    // -------------------------------------------------------------------------
-
-    private void OnAppDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    /// <summary>Starts a new copy, which waits for this one to exit, and closes this one.</summary>
+    private void Restart()
     {
+        _log?.Write("Restarting to clear a virtual controller that could not be removed.");
         try
         {
-            if (_host is not null)
-                _host.Services.GetRequiredService<PanicCoordinator>()
-                     .PanicAsync(CancellationToken.None).GetAwaiter().GetResult();
+            Process.Start(new ProcessStartInfo(Environment.ProcessPath!, Program.RestartedArgument))?.Dispose();
         }
-        catch
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
         {
-            // Best-effort — do not mask the original crash.
+            _log?.Write("Restart failed: " + ex.Message);
+            return;
         }
-        // Do not swallow — let the runtime decide based on IsTerminating.
+        Shutdown();
     }
 
-    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    private void OnUnhandled(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
+        e.Handled = true;
+        Fail("The app hit an error it cannot recover from and will close.", e.Exception);
+    }
+
+    private void OnUnhandledElsewhere(object sender, UnhandledExceptionEventArgs e)
+    {
+        // Subscribed before any session's crash guard, so this runs first: the controller
+        // goes to rest before the log's flush, which a stuck disk can hold for seconds.
+        _session?.CrashStop();
+        _log?.Write("Unhandled error: " + e.ExceptionObject);
+        _log?.Dispose();
+    }
+
+    private void Fail(string what, Exception e)
+    {
+        if (_failed)
+        {
+            return;
+        }
+        _failed = true;
+        _timer?.Stop();
+        _log?.Write($"{what} {e}");
         try
         {
-            if (_host is not null)
-                _host.Services.GetRequiredService<PanicCoordinator>()
-                     .PanicAsync(CancellationToken.None).GetAwaiter().GetResult();
+            // The controller goes to rest and is unplugged before the dialog waits for the user.
+            _session?.Dispose();
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort — do not mask the original exception.
+            _log?.Write("Stopping the session failed: " + ex);
         }
-        // Do not set e.Handled = true — let WPF follow its default behaviour.
+        var details = _paths is { } paths ? $"\n\nThe log has the details: {paths.Log}" : "";
+        System.Windows.MessageBox.Show($"{what}\n\n{e.Message}{details}", "Apex Analog Mapper", MessageBoxButton.OK, MessageBoxImage.Error);
+        Shutdown(1);
     }
+
+    private static string VersionText() =>
+        typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
 }

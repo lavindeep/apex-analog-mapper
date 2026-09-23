@@ -1,192 +1,220 @@
 namespace ApexMapper.Core.Keys;
 
+/// <summary>What the store knows about one key at one instant.</summary>
+/// <param name="Digital">The hook's last observation: key is down.</param>
+/// <param name="Analog">Sensor depth in 0..1, or NaN when the sensor reading is unavailable.</param>
+/// <param name="Gated">Physical state was unknown at some transition and no release has been seen since.</param>
+/// <param name="AnalogDriven">The active profile drives this key from the sensor.</param>
+public readonly record struct KeySlot(bool Digital, float Analog, bool Gated, bool AnalogDriven)
+{
+    /// <summary>
+    /// A fresh reading inside the calibration noise band normalises to exactly zero.
+    /// <see cref="Calibration.Normalizer"/> is the only producer of analog values and
+    /// returns a literal zero inside the band, so exact comparison is right here.
+    /// </summary>
+    public bool AnalogAtRest => Analog == 0f;
+}
+
 /// <summary>
-/// Holds the live depth of every key and enforces the held-key rule: after a
-/// gate transition (device attach/detach, backend fault, mode or profile
-/// switch), keys that were held are zeroed and ignored until released once.
-/// While a key is gated, any pressed write (value &gt; 0) from any source is
-/// ignored; a write of exactly 0 — a digital key-up or a fully-released
-/// analog report — clears the gate and the next press works normally.
-/// <para>
-/// Threading: only the <see cref="KeyIndex"/>-backed mode is safe for
-/// concurrent use (single volatile-read snapshots, CAS mutations). The
-/// dictionary-backed default is single-threaded only; a threaded host such
-/// as InputHost must be composed with an indexed store.
-/// </para>
+/// One packed cell per scan code slot, written by the hook thread (digital) and the
+/// engine thread (analog), read by the engine. Each cell holds both values so digital
+/// fallback can read the hook's state at the instant the sensor drops out.
+///
+/// The gate bit marks a key whose physical state became unknown (session start,
+/// return from alt-tab, hook install, keyboard reconnect). While gated the key
+/// contributes nothing. Only an observed release clears it. While the sensor reading
+/// for the key is available, only a reading at rest clears it: with rapid trigger a
+/// hook key-up means the key rose a fraction of a millimetre, not that it was
+/// released. While the reading is unavailable (sensor stale, faulted, or not yet
+/// read) the hook is the only evidence there is, and any hook event other than an
+/// auto-repeat clears the gate, exactly as for a key the profile drives digitally.
+///
+/// Every write is a compare-and-swap loop written out by hand: this runs on the hot
+/// path and must not allocate.
 /// </summary>
 public sealed class KeyStateStore
 {
-    private readonly Dictionary<KeyId, KeyState>? _states;
-    private readonly HashSet<KeyId>? _gated;
-    private readonly KeyIndex? _index;
-    private readonly long[]? _cells;
+    private const long DigitalBit = 1L << 32;
+    private const long GatedBit = 1L << 33;
+    private const long AnalogDrivenBit = 1L << 34;
+    private const long AnalogMask = 0xFFFF_FFFFL;
+
+    private static readonly long UnavailableBits = BitConverter.SingleToUInt32Bits(float.NaN);
+
+    private readonly long[] _cells = new long[ScanCode.SlotCount];
 
     public KeyStateStore()
     {
-        _states = new Dictionary<KeyId, KeyState>(capacity: 128);
-        _gated = new HashSet<KeyId>();
+        Array.Fill(_cells, UnavailableBits);
     }
 
-    public KeyStateStore(KeyIndex index)
-    {
-        ArgumentNullException.ThrowIfNull(index);
-        _index = index;
-        _cells = new long[index.Count];
-    }
+    public KeySlot Read(int slot) => Unpack(Volatile.Read(ref _cells[slot]));
 
-    public KeyState Get(KeyId key)
+    public bool IsGated(int slot) => (Volatile.Read(ref _cells[slot]) & GatedBit) != 0;
+
+    /// <summary>
+    /// Hook thread. A key-up, or a key-down from up, clears the gate unless the sensor
+    /// reading for the key is available; an auto-repeat (down while down) never does.
+    /// </summary>
+    public void SetDigital(int slot, bool down)
     {
-        if (_index is not null)
+        ref var cell = ref _cells[slot];
+        while (true)
         {
-            if (!_index.TryGetSlot(key, out var slot))
+            var current = Volatile.Read(ref cell);
+            var next = down ? current | DigitalBit : current & ~DigitalBit;
+            var repeat = down && (current & DigitalBit) != 0;
+            if (!repeat && !AnalogAvailable(next))
             {
-                return KeyState.Rest;
+                next &= ~GatedBit;
             }
-
-            var packed = Volatile.Read(ref _cells![slot]);
-            return Unpack(packed);
+            if (Commit(ref cell, current, next))
+            {
+                return;
+            }
         }
-
-        return _states!.TryGetValue(key, out var s) ? s : KeyState.Rest;
     }
 
     /// <summary>
-    /// Writes a key's depth. Ignored while the key is gated and the value is
-    /// pressed (&gt; 0); a value of exactly 0 clears the gate.
+    /// Hook thread. A mapped key's down that passed through to the desktop or the game:
+    /// recorded down and gated in one write, so the engine never reads it down and
+    /// ungated in between.
     /// </summary>
-    public void Set(KeyId key, float value, KeyProvenance source)
+    public void SetDownGated(int slot)
     {
-        var clamped = value < 0f ? 0f : value > 1f ? 1f : value;
-
-        if (_index is not null)
+        ref var cell = ref _cells[slot];
+        while (true)
         {
-            if (!_index.TryGetSlot(key, out var slot))
+            var current = Volatile.Read(ref cell);
+            if (Commit(ref cell, current, current | DigitalBit | GatedBit))
             {
                 return;
             }
+        }
+    }
 
-            ref var cell = ref _cells![slot];
+    /// <summary>Engine thread. A reading at rest (exactly zero) clears the gate of an analog-driven key.</summary>
+    public void SetAnalog(int slot, float depth)
+    {
+        var bits = (long)BitConverter.SingleToUInt32Bits(depth);
+        var atRest = depth == 0f;
+        ref var cell = ref _cells[slot];
+        while (true)
+        {
+            var current = Volatile.Read(ref cell);
+            var next = (current & ~AnalogMask) | bits;
+            if (atRest && (next & AnalogDrivenBit) != 0)
+            {
+                next &= ~GatedBit;
+            }
+            if (Commit(ref cell, current, next))
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>Called by the mapper at construction, before any gating.</summary>
+    public void SetAnalogDriven(int slot, bool analogDriven)
+    {
+        ref var cell = ref _cells[slot];
+        while (true)
+        {
+            var current = Volatile.Read(ref cell);
+            var next = analogDriven ? current | AnalogDrivenBit : current & ~AnalogDrivenBit;
+            if (Commit(ref cell, current, next))
+            {
+                return;
+            }
+        }
+    }
+
+    /// <summary>Drops every slot's analog-driven flag, so a new mapper starts from a clean set.</summary>
+    public void ClearAnalogDriven()
+    {
+        for (var slot = 0; slot < _cells.Length; slot++)
+        {
+            ref var cell = ref _cells[slot];
             while (true)
             {
                 var current = Volatile.Read(ref cell);
-                if ((current & GateBit) != 0 && clamped > 0f)
+                if (Commit(ref cell, current, current & ~AnalogDrivenBit))
                 {
-                    return;
-                }
-
-                if (Interlocked.CompareExchange(ref cell, Pack(clamped, source), current) == current)
-                {
-                    return;
+                    break;
                 }
             }
         }
+    }
 
-        if (clamped > 0f)
+    public void Gate(int slot)
+    {
+        ref var cell = ref _cells[slot];
+        while (true)
         {
-            if (_gated!.Contains(key))
+            var current = Volatile.Read(ref cell);
+            if (Commit(ref cell, current, current | GatedBit))
             {
                 return;
             }
         }
-        else
-        {
-            _gated!.Remove(key);
-        }
-
-        _states![key] = new KeyState(clamped, source);
     }
 
-    /// <summary>Gates and zeroes every key whose current value is &gt; 0.</summary>
-    public void GateHeldKeys() => GateHeldKeysCore(source: null);
-
-    /// <summary>Gates and zeroes every held key whose provenance matches <paramref name="source"/>.</summary>
-    public void GateHeldKeys(KeyProvenance source) => GateHeldKeysCore(source);
-
-    public bool IsGated(KeyId key)
+    /// <summary>
+    /// Gates every key whose state is unknown: all analog-driven keys (the next at-rest
+    /// reading, or the next hook event while the reading is unavailable, clears them)
+    /// and every digital key currently down. A digital key that is up is known to be
+    /// up and stays ungated, otherwise it could never clear. A key pressed while this
+    /// sweep is running may land after its slot was visited and stay ungated; that is
+    /// a genuine new press and is meant to count.
+    /// </summary>
+    public void GateUnknown()
     {
-        if (_index is not null)
+        for (var slot = 0; slot < _cells.Length; slot++)
         {
-            return _index.TryGetSlot(key, out var slot)
-                && (Volatile.Read(ref _cells![slot]) & GateBit) != 0;
-        }
-
-        return _gated!.Contains(key);
-    }
-
-    public void Reset()
-    {
-        if (_cells is not null)
-        {
-            Array.Clear(_cells, 0, _cells.Length);
-            return;
-        }
-
-        var dict = _states!;
-        foreach (var k in dict.Keys.ToArray())
-        {
-            dict[k] = KeyState.Rest;
-        }
-        _gated!.Clear();
-    }
-
-    public IReadOnlyCollection<KeyId> Keys =>
-        _index is not null ? _index.Keys : _states!.Keys;
-
-    private void GateHeldKeysCore(KeyProvenance? source)
-    {
-        if (_cells is not null)
-        {
-            for (var slot = 0; slot < _cells.Length; slot++)
+            ref var cell = ref _cells[slot];
+            while (true)
             {
-                ref var cell = ref _cells[slot];
-                while (true)
+                var current = Volatile.Read(ref cell);
+                var unknown = (current & (AnalogDrivenBit | DigitalBit)) != 0;
+                if (Commit(ref cell, current, unknown ? current | GatedBit : current))
                 {
-                    var current = Volatile.Read(ref cell);
-                    var state = Unpack(current);
-                    if (state.Value <= 0f || (source is not null && state.Source != source.Value))
-                    {
-                        break;
-                    }
-
-                    var next = GateBit | ((long)(byte)state.Source << 32);
-                    if (Interlocked.CompareExchange(ref cell, next, current) == current)
-                    {
-                        break;
-                    }
+                    break;
                 }
             }
-
-            return;
         }
+    }
 
-        var dict = _states!;
-        foreach (var k in dict.Keys.ToArray())
+    /// <summary>
+    /// Session stop: every cell returns to its initial state. The digital bit goes too:
+    /// the hook is uninstalled at stop, so a key released between sessions would
+    /// otherwise keep a stale down bit that the next <see cref="GateUnknown"/> turns
+    /// into one dead press. The next start re-seeds held keys at hook install.
+    /// </summary>
+    public void ClearAll()
+    {
+        for (var slot = 0; slot < _cells.Length; slot++)
         {
-            var state = dict[k];
-            if (state.Value <= 0f || (source is not null && state.Source != source.Value))
+            ref var cell = ref _cells[slot];
+            while (true)
             {
-                continue;
+                var current = Volatile.Read(ref cell);
+                if (Commit(ref cell, current, UnavailableBits))
+                {
+                    break;
+                }
             }
-
-            _gated!.Add(k);
-            dict[k] = new KeyState(0f, state.Source);
         }
     }
 
-    // Packed layout: bits 0..31 = float bits, bits 32..39 = provenance byte,
-    // bit 40 = held-key gate flag, bits 41..63 = reserved.
-    private const long GateBit = 1L << 40;
+    private static bool AnalogAvailable(long cell) =>
+        (cell & AnalogDrivenBit) != 0 && (cell & AnalogMask) != UnavailableBits;
 
-    private static long Pack(float value, KeyProvenance source)
-    {
-        var bits = (uint)BitConverter.SingleToInt32Bits(value);
-        return (long)bits | ((long)(byte)source << 32);
-    }
+    private static bool Commit(ref long cell, long current, long next) =>
+        next == current || Interlocked.CompareExchange(ref cell, next, current) == current;
 
-    private static KeyState Unpack(long packed)
-    {
-        var value = BitConverter.Int32BitsToSingle((int)(uint)packed);
-        var source = (KeyProvenance)(byte)(packed >> 32);
-        return new KeyState(value, source);
-    }
+    private static KeySlot Unpack(long cell) => new(
+        Digital: (cell & DigitalBit) != 0,
+        Analog: BitConverter.UInt32BitsToSingle((uint)(cell & AnalogMask)),
+        Gated: (cell & GatedBit) != 0,
+        AnalogDriven: (cell & AnalogDrivenBit) != 0);
 }

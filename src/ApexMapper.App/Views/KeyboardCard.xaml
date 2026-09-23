@@ -1,0 +1,62 @@
+<UserControl x:Class="ApexMapper.App.Views.KeyboardCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
+             xmlns:views="clr-namespace:ApexMapper.App.Views"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:KeyboardViewModel}">
+  <ui:CardExpander Icon="{ui:SymbolIcon Keyboard24}" IsExpanded="True" AutomationProperties.Name="Keyboard">
+    <ui:CardExpander.Header>
+      <StackPanel>
+        <ui:TextBlock FontTypography="BodyStrong" Text="Keyboard" />
+        <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Summary}" />
+      </StackPanel>
+    </ui:CardExpander.Header>
+    <StackPanel>
+      <ComboBox ItemsSource="{Binding Boards}" SelectedItem="{Binding Selected}" IsEnabled="{Binding CanChoose}"
+                MinWidth="320" HorizontalAlignment="Left" AutomationProperties.Name="Keyboard"
+                Visibility="{Binding Boards, Converter={StaticResource ShowWhenPresent}}">
+        <ComboBox.ItemTemplate>
+          <DataTemplate DataType="vm:BoardItem">
+            <StackPanel>
+              <TextBlock Text="{Binding Name}" />
+              <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Detail}" />
+            </StackPanel>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Paragraph}" Text="{Binding Missing}"
+                    Visibility="{Binding Missing, Converter={StaticResource ShowWhenPresent}}" />
+
+      <ui:TextBlock Margin="0,8,0,0" Text="{Binding FirmwareText}" TextWrapping="Wrap"
+                    Visibility="{Binding FirmwareText, Converter={StaticResource ShowWhenPresent}}" />
+      <ui:InfoBar Style="{StaticResource Warning}" Severity="Informational" Message="{Binding FirmwareWarning}"
+                  Visibility="{Binding FirmwareWarning, Converter={StaticResource ShowWhenPresent}}" />
+
+      <!-- The try-it flow for a model the app has not been tested on (H6). -->
+      <StackPanel Visibility="{Binding IsUnverified, Converter={StaticResource ShowWhenTrue}}">
+        <ui:InfoBar Style="{StaticResource Warning}" Title="Not tested yet"
+                    Message="This model has not been tested with the app. You can try it: the steps below check that its sensors answer, and a capture you share on GitHub lets it join the tested list." />
+
+        <StackPanel Margin="0,12,0,0" Visibility="{Binding NeedsConsent, Converter={StaticResource ShowWhenTrue}}">
+          <ui:TextBlock Style="{StaticResource Paragraph}" Text="{x:Static vm:KeyboardViewModel.ConsentText}" />
+          <ui:Button Appearance="Primary" Content="Accept the risk and read the sensors" Command="{Binding Consent}" />
+        </StackPanel>
+
+        <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
+          <ui:Button Content="Check the sensors" Icon="{ui:SymbolIcon Pulse24}" Command="{Binding Check}" />
+          <ui:Button Margin="8,0,0,0" Content="Export a capture" Icon="{ui:SymbolIcon Save24}" Command="{Binding Export}" />
+          <ui:ProgressRing Margin="12,0,0,0" Width="20" Height="20" IsIndeterminate="True"
+                           Visibility="{Binding IsChecking, Converter={StaticResource ShowWhenTrue}}" />
+        </StackPanel>
+        <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Paragraph}" Text="{Binding CheckText}" views:Live.Text="{Binding CheckText}"
+                      Visibility="{Binding CheckText, Converter={StaticResource ShowWhenPresent}}" />
+        <ui:Button Icon="{ui:SymbolIcon Open24}" Content="Open a new issue" Command="{Binding OpenIssue}"
+                   Visibility="{Binding Exported, Converter={StaticResource ShowWhenTrue}}" />
+      </StackPanel>
+    </StackPanel>
+  </ui:CardExpander>
+</UserControl>

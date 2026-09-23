@@ -1,0 +1,4 @@
+<Project>
+  <!-- A plain console program, not a test project: skip tests/Directory.Build.props and take only the repo-wide settings. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../../'))" />
+</Project>

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ApexMapper.Windows\ApexMapper.Windows.csproj" />
+    <!-- The kill hardware test launches it as a separate process. -->
+    <ProjectReference Include="..\ApexMapper.Harness\ApexMapper.Harness.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Real replies captured from the maintainer's board, scripted into the fake vendor stream. -->
+    <Content Include="fixtures\*.hex" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

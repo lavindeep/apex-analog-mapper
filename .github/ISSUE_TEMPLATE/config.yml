@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Share a setup
+    url: https://github.com/lavindeep/apex-analog-mapper/discussions/new?category=show-and-tell
+    about: Post a profile and the game settings you drive it with.
+  - name: Question or feature idea
+    url: https://github.com/lavindeep/apex-analog-mapper/issues/new
+    about: Open a blank issue. Read CONTRIBUTING.md first for what is likely to land.

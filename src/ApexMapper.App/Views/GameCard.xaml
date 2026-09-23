@@ -1,0 +1,40 @@
+<UserControl x:Class="ApexMapper.App.Views.GameCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:GameViewModel}">
+  <ui:CardExpander Icon="{ui:SymbolIcon Games24}" IsExpanded="True" AutomationProperties.Name="Game">
+    <ui:CardExpander.Header>
+      <StackPanel>
+        <ui:TextBlock FontTypography="BodyStrong" Text="Game" />
+        <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Summary}" />
+      </StackPanel>
+    </ui:CardExpander.Header>
+    <StackPanel>
+      <StackPanel Orientation="Horizontal">
+        <ComboBox ItemsSource="{Binding Games}" SelectedItem="{Binding Selected}" IsEnabled="{Binding CanChoose}" MinWidth="320" MaxWidth="560"
+                  IsDropDownOpen="{Binding IsListOpen, Mode=OneWayToSource}"
+                  AutomationProperties.Name="Game">
+          <ComboBox.ItemTemplate>
+            <DataTemplate DataType="vm:GameItem">
+              <StackPanel>
+                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Detail}" />
+              </StackPanel>
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon ArrowClockwise24}" ToolTip="Look for games again" Command="{Binding Refresh}"
+                   AutomationProperties.Name="Look for games again" />
+      </StackPanel>
+      <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Note}" Text="{Binding Hint}"
+                    Visibility="{Binding Hint, Converter={StaticResource ShowWhenPresent}}" />
+      <ui:InfoBar Style="{StaticResource Warning}" Message="{Binding Warning}"
+                  Visibility="{Binding Warning, Converter={StaticResource ShowWhenPresent}}" />
+    </StackPanel>
+  </ui:CardExpander>
+</UserControl>

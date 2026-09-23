@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>ApexMapper.Windows</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ApexMapper.Windows.Tests" />
+    <InternalsVisibleTo Include="ApexMapper.Harness" />
+    <!-- For a sensor poller that opens nothing, so the window's tests never read a keyboard. -->
+    <InternalsVisibleTo Include="ApexMapper.App.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Compile assets stay in this project: nothing outside it may reach the HID library. -->
+    <PackageReference Include="HidSharp" PrivateAssets="compile" />
+    <PackageReference Include="Nefarius.ViGEm.Client" />
+  </ItemGroup>
+</Project>

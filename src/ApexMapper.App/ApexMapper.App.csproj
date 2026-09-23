@@ -1,44 +1,30 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>ApexMapper.App</RootNamespace>
-    <AssemblyName>ApexMapper</AssemblyName>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ApexAnalogMapper</AssemblyName>
+    <StartupObject>ApexMapper.App.Program</StartupObject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
-
   <ItemGroup>
-    <PackageReference Include="H.NotifyIcon.Wpf" />
-    <PackageReference Include="NHotkey.Wpf" />
-    <PackageReference Include="CommunityToolkit.Mvvm" />
-    <PackageReference Include="TaskScheduler" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <PackageReference Include="Microsoft.Extensions.Logging" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <PackageReference Include="OxyPlot.Wpf" />
+    <Resource Include="Assets/app.ico" />
   </ItemGroup>
-
   <ItemGroup>
-    <ProjectReference Include="..\ApexMapper.Core\ApexMapper.Core.csproj" />
-    <ProjectReference Include="..\ApexMapper.Persistence\ApexMapper.Persistence.csproj" />
-    <ProjectReference Include="..\ApexMapper.Logging\ApexMapper.Logging.csproj" />
-    <ProjectReference Include="..\ApexMapper.Input\ApexMapper.Input.csproj" />
-    <ProjectReference Include="..\ApexMapper.Output\ApexMapper.Output.csproj" />
-    <ProjectReference Include="..\ApexMapper.Input.Abstractions\ApexMapper.Input.Abstractions.csproj" />
-    <ProjectReference Include="..\ApexMapper.Profiles\ApexMapper.Profiles.csproj" />
-    <!-- Layout-only reference: the launcher spawns ApexMapper.Supervisor.exe, so
-         the supervisor's apphost AND its managed closure must land next to
-         ApexMapper.exe. This MUST be a plain reference (ReferenceOutputAssembly
-         defaults to true): ReferenceOutputAssembly="false" copies only the
-         apphost + .deps.json + .runtimeconfig.json and NOT ApexMapper.Supervisor.dll,
-         so the spawned exe dies instantly ("The application to execute does not
-         exist"). App code must never `using` a Supervisor type — the reference
-         exists purely to co-locate the executable, not to couple types. -->
-    <ProjectReference Include="..\ApexMapper.Supervisor\ApexMapper.Supervisor.csproj" />
+    <ProjectReference Include="..\ApexMapper.Windows\ApexMapper.Windows.csproj" />
   </ItemGroup>
-
+  <ItemGroup>
+    <InternalsVisibleTo Include="ApexMapper.App.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Program.Main starts the app after Velopack and the single-instance check, so App.xaml must not generate a Main of its own. -->
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" />
+    <PackageReference Include="Velopack" />
+  </ItemGroup>
 </Project>
