@@ -3,6 +3,8 @@ name: Release
 # A tag like v0.5.0 or v0.5.0-alpha builds, tests and packs that version, then
 # publishes it as a GitHub release with SHA-256 hashes in the notes. The annotated
 # tag's message becomes the release notes. A version with a hyphen is a prerelease.
+# A run that fails after the upload leaves a draft release; delete it before running
+# the tag again.
 on:
   push:
     tags: ["v*"]
@@ -23,9 +25,12 @@ jobs:
         shell: pwsh
     env:
       REPO_URL: https://github.com/${{ github.repository }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # Build and test run the code and its packages, so they get no token: only the
+      # steps that talk to the releases do.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Version from the tag
         run: |
@@ -41,7 +46,13 @@ jobs:
         run: |
           # Checkout peels the tag to a lightweight ref, so fetch the tag object again.
           git fetch origin --force "+refs/tags/$($env:GITHUB_REF_NAME):refs/tags/$($env:GITHUB_REF_NAME)"
-          $notes = (git tag -l --format='%(contents)' $env:GITHUB_REF_NAME | Out-String).Trim()
+          # A lightweight tag has no message, and asking for one gives the commit's instead.
+          if ((git cat-file -t $env:GITHUB_REF_NAME) -ne 'tag') {
+            Write-Error "Tag '$env:GITHUB_REF_NAME' is not annotated, so it has no release notes. Tag with: git tag -a"
+            exit 1
+          }
+          # Subject and body only, so a signed tag's signature stays out of the notes.
+          $notes = (git tag -l --format='%(contents:subject)%0a%0a%(contents:body)' $env:GITHUB_REF_NAME | Out-String).Trim()
           if (-not $notes) {
             Write-Error "Tag '$env:GITHUB_REF_NAME' has no message to use as release notes. Tag with: git tag -a"
             exit 1
@@ -63,6 +74,8 @@ jobs:
 
       - name: Previous release, for a delta package
         # Nothing to download before the first release; a full package still works then.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $pre = if ($env:PRERELEASE -eq 'true') { @('--pre') } else { @() }
           vpk download github --repoUrl $env:REPO_URL --token $env:GH_TOKEN --outputDir releases @pre
@@ -72,6 +85,8 @@ jobs:
         run: scripts/pack.ps1 -Version $env:VERSION -ReleaseNotes release-notes.md
 
       - name: Upload as a draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $pre = if ($env:PRERELEASE -eq 'true') { @('--pre') } else { @() }
           vpk upload github --repoUrl $env:REPO_URL --token $env:GH_TOKEN --outputDir releases `
@@ -79,6 +94,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Hashes, then publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # The files this pack made, as vpk lists them: not the base package downloaded for the delta.
           $names = (Get-Content releases/assets.win.json -Raw | ConvertFrom-Json).RelativeFileName | Sort-Object
