@@ -106,10 +106,10 @@
                   <ui:TextBlock FontTypography="BodyStrong" Text="Keys" Margin="0,0,0,4" />
                   <WrapPanel>
                     <ui:TextBlock Margin="0,0,12,8" VerticalAlignment="Center" FontTypography="Subtitle" Text="{Binding KeysText}" MinWidth="80" />
-                    <ui:Button Margin="0,0,8,8" Content="{Binding NegativeKeyName}" ContentStringFormat="Change {0}"
+                    <ui:Button Margin="0,0,8,8" Content="{Binding ChangeNegativeKeyText}"
                                ToolTip="The key for left, or down" Command="{Binding DataContext.CaptureNegativeKey, ElementName=Root}"
                                Visibility="{Binding IsAxis, Converter={StaticResource ShowWhenTrue}}" />
-                    <ui:Button Margin="0,0,0,8" Content="{Binding KeyName}" ContentStringFormat="Change {0}"
+                    <ui:Button Margin="0,0,0,8" Content="{Binding ChangeKeyText}"
                                Command="{Binding DataContext.CaptureKey, ElementName=Root}" />
                   </WrapPanel>
 

@@ -145,7 +145,30 @@ public sealed class CalibrationViewModelTests : IDisposable
     }
 
     [Fact]
-    public void Keys_held_on_a_keyboard_that_went_away_or_on_another_keyboard_do_not_block_a_released_reading()
+    public void The_key_that_clicked_set_released_does_not_spoil_the_reading()
+    {
+        var calibration = Open();
+        var w = W(calibration);
+        _h.Sensor.Reading = FakeSensor.AtRest();
+        _h.Stamp = 1_000;
+
+        // Space clicks a button on its way up, before the tick reads the key-up.
+        calibration.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, true, Device: 1, Ticks: 500));
+        w.SetReleased.Execute(null);
+        calibration.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, false, Device: 1, Ticks: 900));
+        Run(calibration, CalibrationViewModel.ReleasedMs);
+        Assert.StartsWith("Released 850", w.Message);
+
+        // Enter clicks on its way down, and a quick tap is up again by the first reading.
+        w.SetReleased.Execute(null);
+        calibration.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, true, Device: 1, Ticks: 990));
+        calibration.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, false, Device: 1, Ticks: 1_050));
+        Run(calibration, CalibrationViewModel.ReleasedMs);
+        Assert.StartsWith("Released 850", w.Message);
+    }
+
+    [Fact]
+    public void Only_the_row_s_key_on_this_keyboard_blocks_a_released_reading()
     {
         var calibration = Open();
         var w = W(calibration);
@@ -159,6 +182,7 @@ public sealed class CalibrationViewModelTests : IDisposable
         _h.Sensor.Reading = FakeSensor.AtRest();
         w.SetReleased.Execute(null);
         calibration.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, true, Device: 2, Ticks: 0));
+        calibration.OnKey(new RawKeyEvent(DefaultProfiles.Key.Space, true, Device: 1, Ticks: 0));
         Run(calibration, CalibrationViewModel.ReleasedMs);
 
         Assert.StartsWith("Released 850", w.Message);
@@ -182,11 +206,11 @@ public sealed class CalibrationViewModelTests : IDisposable
         w.SetReleased.Execute(null);
         Run(calibration, CalibrationViewModel.ReleasedMs);
         Assert.Equal(870, w.Stored!.Rest);
-        Assert.StartsWith("Released 2400, noise 0 counts. Now hold W all the way down", w.Message);
+        Assert.Equal("Released 2400, far from the saved 870. If W was up, hold it all the way down and press Set fully pressed. If not, let go of it and press Set released again.", w.Message);
     }
 
     [Fact]
-    public void A_full_press_below_rest_on_a_tested_board_means_the_released_reading_was_taken_pressed()
+    public void A_full_press_below_rest_means_the_released_reading_was_taken_pressed_only_on_a_tested_board()
     {
         var calibration = Open();
         var w = W(calibration);
@@ -201,6 +225,14 @@ public sealed class CalibrationViewModelTests : IDisposable
         Assert.Null(w.Stored);
         Assert.StartsWith("W read lower pressed than released", w.Message);
         Assert.False(w.SetPressed.CanExecute(null));
+
+        // An untested board may read lower as its keys go down.
+        _h.Services.Calibrations.Put(AppHarness.Gen3, "1.0", DefaultProfiles.Key.W, KeyCalibration.Create(3000, 850, 40, 16));
+        _h.Workspace.Board = new Board(AppHarness.Gen3Info, new FirmwareReading("1.0", null, null), Consented: true);
+        _h.Sensor.Reading = AppHarness.Holding(16, 700);
+        W(calibration).SetPressed.Execute(null);
+        Run(calibration, CalibrationViewModel.PressedMs);
+        Assert.Equal("Fully pressed 700. Saved.", W(calibration).Message);
     }
 
     [Fact]

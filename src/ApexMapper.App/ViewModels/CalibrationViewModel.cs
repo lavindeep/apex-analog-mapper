@@ -28,6 +28,9 @@ public sealed class CalibrationRowViewModel : ObservableObject
 
     public ScanCode Key { get; }
 
+    /// <summary>What a screen reader calls the row.</summary>
+    public override string ToString() => Name;
+
     public string Name { get; }
 
     /// <summary>What is saved for this key on this board, any firmware.</summary>
@@ -140,8 +143,8 @@ public sealed class CalibrationViewModel : ObservableObject
     private Run? _run;
     private readonly HashSet<ScanCode> _held = [];
 
-    /// <summary>The step in progress: its samples, and when the last reading came.</summary>
-    private sealed class Run(CalibrationRowViewModel row, CalibrationStep step, long started)
+    /// <summary>The step in progress: its samples, when the last reading came, and the Raw Input stamp it began at.</summary>
+    private sealed class Run(CalibrationRowViewModel row, CalibrationStep step, long started, long from)
     {
         public CalibrationRowViewModel Row { get; } = row;
         public CalibrationStep Step { get; } = step;
@@ -154,7 +157,9 @@ public sealed class CalibrationViewModel : ObservableObject
         public int Extreme { get; set; } = -1;
         public LearnStep? Learn { get; set; }
 
-        /// <summary>The row's key went down during a released step.</summary>
+        public long From { get; } = from;
+
+        /// <summary>The row's key went down during a released step, or was down as a reading was taken.</summary>
         public bool KeyPressed { get; set; }
     }
 
@@ -192,7 +197,7 @@ public sealed class CalibrationViewModel : ObservableObject
 
     /// <summary>Why calibration cannot run now, or null.</summary>
     public string? Blocker => _workspace.SessionActive ? "Stop mapping to calibrate."
-        : _workspace.Board is not { } board ? "Choose a keyboard on the keyboard card first."
+        : _workspace.Board is not { } board ? (_workspace.ReadingFirmware ? "Reading the keyboard's firmware." : "Plug in your Apex Pro and choose it on the keyboard card.")
         : board.Firmware.Version is null ? "The keyboard's firmware could not be read, so its sensors are not read either."
         : !board.CanReadSensors ? "Try this keyboard on the keyboard card first."
         : _rows.Count == 0 ? "The active profile has no analog keys."
@@ -275,7 +280,8 @@ public sealed class CalibrationViewModel : ObservableObject
             return;
         }
         _held.Add(key.Code);
-        if (_run is { Step: CalibrationStep.Released } run && run.Row.Key == key.Code)
+        // A press stamped before the step, such as Enter clicking the button, counts only if the key is still down at a reading.
+        if (_run is { Step: CalibrationStep.Released } run && run.Row.Key == key.Code && key.Ticks >= run.From)
         {
             run.KeyPressed = true;
         }
@@ -300,7 +306,7 @@ public sealed class CalibrationViewModel : ObservableObject
         {
             return;
         }
-        _run = new Run(row, step, _services.NowMs()) { KeyPressed = _held.Contains(row.Key) };
+        _run = new Run(row, step, _services.NowMs(), _services.Timestamp());
         row.IsBusy = true;
         row.Message = step switch
         {
@@ -333,6 +339,9 @@ public sealed class CalibrationViewModel : ObservableObject
                 }
                 break;
             case CalibrationStep.Released:
+                // The tick has read Raw Input by now, so a Space that clicked the button on its
+                // way up is no longer held, while a key held since before the step still is.
+                run.KeyPressed |= _held.Contains(row.Key);
                 var rest = _raw[row.SensorIndex!.Value];
                 run.Sum += rest;
                 run.Count++;
@@ -425,7 +434,9 @@ public sealed class CalibrationViewModel : ObservableObject
             return;
         }
         row.PendingRest = (rest, band, index);
-        Finish(run, $"Released {rest}, noise {noise} counts. Now hold {row.Name} all the way down and press Set fully pressed.");
+        Finish(run, row.Stored is { } saved && saved.SensorIndex == index && full is null
+            ? $"Released {rest}, far from the saved {saved.Rest}. If {row.Name} was up, hold it all the way down and press Set fully pressed. If not, let go of it and press Set released again."
+            : $"Released {rest}, noise {noise} counts. Now hold {row.Name} all the way down and press Set fully pressed.");
     }
 
     private void FinishPressed(Run run)
@@ -556,6 +567,9 @@ public sealed class CalibrationViewModel : ObservableObject
             case nameof(Workspace.Calibration):
             case nameof(Workspace.ActiveProfile):
                 SyncRows();
+                break;
+            case nameof(Workspace.ReadingFirmware):
+                Raise(nameof(Blocker));
                 break;
             case nameof(Workspace.SessionActive):
                 CancelRun();

@@ -14,6 +14,17 @@ public sealed class MainViewModelTests : IDisposable
 
     public void Dispose() => _h.Dispose();
 
+    /// <summary>Ticks the window as its timer would until <paramref name="ms"/> of the harness clock have passed.</summary>
+    private void TickFor(MainViewModel main, int ms)
+    {
+        var end = _h.Now + ms;
+        while (_h.Now < end)
+        {
+            _h.Now += MainViewModel.FastTickMs;
+            main.Tick();
+        }
+    }
+
     [Fact]
     public void The_calibration_link_opens_the_calibration_card_and_speeds_up_the_timer()
     {
@@ -72,6 +83,27 @@ public sealed class MainViewModelTests : IDisposable
 
         Assert.False(main.Profile.IsCapturing);
         Assert.Equal(key, main.Profile.SelectedRow!.Key);
+    }
+
+    [Fact]
+    public void A_tick_hands_keys_to_calibration_and_coming_back_to_the_front_forgets_a_held_one()
+    {
+        _h.Keyboards.Refresh();
+        var main = new MainViewModel(_h.Services, _h.Workspace, new AppSettings());
+        main.Calibration.IsOpen = true;
+        var w = main.Calibration.Rows.Single(r => r.Key == DefaultProfiles.Key.W);
+        _h.Sensor.Reading = FakeSensor.AtRest();
+
+        w.SetReleased.Execute(null);
+        _h.Keys.Press(DefaultProfiles.Key.W);
+        TickFor(main, CalibrationViewModel.ReleasedMs);
+        Assert.StartsWith("W was pressed", w.Message);
+
+        // W came up behind the lock screen, so its key-up never came.
+        main.OnActivated();
+        w.SetReleased.Execute(null);
+        TickFor(main, CalibrationViewModel.ReleasedMs);
+        Assert.StartsWith("Released 850", w.Message);
     }
 
     [Fact]

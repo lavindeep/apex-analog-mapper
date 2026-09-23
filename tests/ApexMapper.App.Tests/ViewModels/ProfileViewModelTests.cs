@@ -155,6 +155,7 @@ public sealed class ProfileViewModelTests : IDisposable
 
         Assert.False(profile.CanEdit);
         Assert.False(profile.Save.CanExecute(null));
+        Assert.False(profile.Discard.CanExecute(null));
         Assert.False(profile.Reset.CanExecute(null));
         _h.Session.StopGate.SetResult();
         await saving;
@@ -269,6 +270,42 @@ public sealed class ProfileViewModelTests : IDisposable
 
         Assert.Equal([EndReason.ProfileEdited], _h.Session.Stops);
         Assert.Equal(DefaultProfiles.Forza().Keys[0].Response, _h.Workspace.ActiveProfile!.Keys[0].Response);
+    }
+
+    [Fact]
+    public async Task A_reset_of_the_running_profile_says_it_stops_mapping_and_holds_the_editor_until_it_has()
+    {
+        var profile = Create();
+        profile.New.Execute(null);
+        RowOf(profile, DefaultProfiles.Key.W).Deadzone = 0.1;
+        await profile.SaveAsync();
+        _h.Workspace.RunningProfileText = ProfileJson.Serialize(_h.Workspace.ActiveProfile!);
+        _h.Workspace.Session = SessionState.Running;
+        _h.Session.StopGate = new TaskCompletionSource();
+
+        var resetting = profile.ResetAsync();
+
+        Assert.EndsWith(" This stops mapping.", Assert.Single(_h.Dialogs.Messages));
+        Assert.False(profile.Reset.CanExecute(null));
+        Assert.False(profile.Delete.CanExecute(null));
+        _h.Session.StopGate.SetResult();
+        await resetting;
+        Assert.True(profile.Delete.CanExecute(null));
+    }
+
+    [Fact]
+    public void A_key_held_on_a_keyboard_that_was_unplugged_is_not_taken_for_a_repeat()
+    {
+        _h.ChooseTkl();
+        var profile = Create();
+        profile.OnKey(Down(K));
+
+        // Unplugged with K down, so its key-up never came.
+        _h.Workspace.Board = null;
+        profile.AddKey.Execute(null);
+        profile.OnKey(Down(K));
+
+        Assert.Equal(K, profile.SelectedRow!.Key);
     }
 
     [Fact]

@@ -41,7 +41,8 @@ public sealed class Workspace : ObservableObject
     private Profile? _activeProfile;
     private SessionState _session;
     private string? _runningProfileText;
-    private string? _settingsProblem;
+    private string? _loadProblem;
+    private string? _saveProblem;
     private DriverState _driver = DriverState.Unknown;
     private bool _readingFirmware;
 
@@ -124,11 +125,14 @@ public sealed class Workspace : ObservableObject
         set => Set(ref _runningProfileText, value);
     }
 
-    /// <summary>Why the settings file could not be read or written, or null. Shown on the status card.</summary>
+    /// <summary>
+    /// Why the settings file could not be read or written, or null. Shown on the status card.
+    /// Set as the app starts to the load problem; a failed save shows instead until a save works.
+    /// </summary>
     public string? SettingsProblem
     {
-        get => _settingsProblem;
-        set => Set(ref _settingsProblem, value);
+        get => _saveProblem ?? _loadProblem;
+        init => _loadProblem = value;
     }
 
     /// <summary>
@@ -153,14 +157,22 @@ public sealed class Workspace : ObservableObject
         try
         {
             settings.Update(change);
-            if (!SettingsUnread)
-            {
-                SettingsProblem = null;
-            }
+            // A save that works clears a failed one; the startup problem stays until the app restarts.
+            ReportSettings(SettingsUnread ? _loadProblem : null, null);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            SettingsProblem = "Settings could not be saved: " + e.Message;
+            ReportSettings(_loadProblem, "Settings could not be saved: " + e.Message);
+        }
+    }
+
+    private void ReportSettings(string? loadProblem, string? saveProblem)
+    {
+        var before = SettingsProblem;
+        (_loadProblem, _saveProblem) = (loadProblem, saveProblem);
+        if (SettingsProblem != before)
+        {
+            Raise(nameof(SettingsProblem));
         }
     }
 }

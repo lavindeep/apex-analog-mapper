@@ -75,7 +75,7 @@ public sealed class ProfileViewModel : ObservableObject
         _services = services;
         _workspace = workspace;
         Save = new Command(() => _ = SaveAsync(), () => CanEdit && _dirty);
-        Discard = new Command(DiscardEdits, () => _dirty);
+        Discard = new Command(DiscardEdits, () => _dirty && !_busy);
         New = new Command(CreateProfile, () => CanSwitch);
         Delete = new Command(() => _ = DeleteAsync(), () => _selected is { Id: not DefaultProfiles.ForzaId } && !_dirty && !_busy);
         Reset = new Command(() => _ = ResetAsync(), () => _selected is not null && !_dirty && !_busy);
@@ -668,6 +668,11 @@ public sealed class ProfileViewModel : ObservableObject
         else if (e.PropertyName == nameof(Workspace.RunningProfileText))
         {
             Raise(nameof(SaveNote));
+        }
+        else if (e.PropertyName == nameof(Workspace.Board))
+        {
+            // An unplugged keyboard sends no key-up for the keys held on it.
+            _held.Clear();
         }
     }
 

@@ -158,6 +158,13 @@ public sealed class WindowRenderingTests
             Settle(folder is null ? BindingsMs : AnimationsMs);
             // The cards with live readings only read the keyboard while open, so their expanders must drive it both ways.
             Assert.True(main.Calibration.IsOpen && main.Profile.IsOpen, $"{scenario.Name}: expanding did not open the cards");
+            // The selected binding's buttons say which key each one changes, in text a screen reader reads too.
+            if (main.Profile.SelectedRow is { } row)
+            {
+                var labels = Descendants<Button>(window).Select(button => button.Content).OfType<string>().ToList();
+                Assert.Contains(row.ChangeKeyText, labels);
+                Assert.True(!row.IsAxis || labels.Contains(row.ChangeNegativeKeyText), $"{scenario.Name}: no button says {row.ChangeNegativeKeyText}");
+            }
             if (folder is not null)
             {
                 Directory.CreateDirectory(folder);

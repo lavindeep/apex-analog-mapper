@@ -63,7 +63,7 @@
         <StackPanel Grid.Column="2" Orientation="Horizontal">
           <ui:Button Margin="8,0,0,0" Content="Go to calibration" Command="{Binding GoToCalibration}"
                      Visibility="{Binding BlockedByCalibration, Converter={StaticResource ShowWhenTrue}}" />
-          <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Open24}" Content="Open the driver page" Command="{Binding OpenDriverPage}"
+          <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Open24}" Content="Open the ViGEmBus release page" Command="{Binding OpenDriverPage}"
                      Visibility="{Binding BlockedByDriver, Converter={StaticResource ShowWhenTrue}}" />
           <ui:Button Margin="8,0,0,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Restart the app" Command="{Binding Restart}"
                      Visibility="{Binding RestartRequired, Converter={StaticResource ShowWhenTrue}}" />

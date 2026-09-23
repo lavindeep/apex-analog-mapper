@@ -59,7 +59,7 @@ public sealed class StatusViewModelTests : IDisposable
         Assert.Null(status.Blocker);
         Assert.False(status.BlockedByCalibration);
         Assert.True(status.Start.CanExecute(null));
-        Assert.Equal("Ready. Press Start, then launch the game.", status.Reason);
+        Assert.Equal("Ready. Press Start. Mapping begins once the game is in front.", status.Reason);
 
         _h.Session.NotStartable = SessionEnd.For(EndReason.DriverMissing);
         status.Tick(_h.Now);
@@ -114,13 +114,16 @@ public sealed class StatusViewModelTests : IDisposable
         profile.AddKey.Execute(null);
         profile.OnKey(new RawKeyEvent(new ScanCode(0x25), true, 1, ProfileViewModel.CaptureArmTicks));
 
+        // A mapped key on another keyboard: the warning is logged, the key is not.
+        _h.Keys.Containers[2] = Guid.NewGuid();
         await status.StartAsync();
-        status.OnKey(new RawKeyEvent(new ScanCode(0x25), true, 2, 0));
+        status.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, true, 2, 0));
         await status.StopAsync();
 
         Assert.Contains("Session Running.", _h.Log);
         Assert.Contains($"Session ended (UserStop): {SessionEnd.For(EndReason.UserStop).Message}", _h.Log);
-        Assert.DoesNotContain(_h.Log, line => line.Contains("0x25", StringComparison.Ordinal));
+        Assert.Contains(_h.Log, line => line.StartsWith("Warning: A mapped key was pressed on another keyboard.", StringComparison.Ordinal));
+        Assert.DoesNotContain(_h.Log, line => line.Contains("0x25", StringComparison.Ordinal) || line.Contains(DefaultProfiles.Key.W.ToString(), StringComparison.Ordinal));
     }
 
     [Fact]
@@ -194,7 +197,7 @@ public sealed class StatusViewModelTests : IDisposable
         Assert.Equal(SessionState.Idle, _h.Workspace.Session);
         Assert.Null(_h.Workspace.RunningProfileText);
         Assert.Equal("Stopped", status.StateText);
-        Assert.Equal("Ready. Press Start, then launch the game.", status.Reason);
+        Assert.Equal("Ready. Press Start. Mapping begins once the game is in front.", status.Reason);
     }
 
     [Fact]
@@ -215,10 +218,20 @@ public sealed class StatusViewModelTests : IDisposable
         Assert.Contains("Warning: " + Warning, _h.Log);
         Assert.Contains("Sensor fault: The keyboard stopped answering.", _h.Log);
 
-        // Logged once each, not every time the card reads the status.
+        // Logged once a session, not every time the card reads the status or the fault comes back.
+        var faulty = _h.Session.NextStatus;
         status.Tick(_h.Now + StatusViewModel.RefreshMs);
+        _h.Session.NextStatus = faulty with { FallbackKeys = 0, SensorProblem = null };
+        status.Tick(_h.Now + 2 * StatusViewModel.RefreshMs);
+        _h.Session.NextStatus = faulty;
+        status.Tick(_h.Now + 3 * StatusViewModel.RefreshMs);
         Assert.Single(_h.Log, line => line.StartsWith("Sensor fault", StringComparison.Ordinal));
         Assert.Single(_h.Log, line => line.StartsWith("Warning", StringComparison.Ordinal));
+
+        await status.StopAsync();
+        await status.StartAsync();
+        status.Tick(_h.Now + 4 * StatusViewModel.RefreshMs);
+        Assert.Equal(2, _h.Log.Count(line => line.StartsWith("Sensor fault", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -241,7 +254,7 @@ public sealed class StatusViewModelTests : IDisposable
     }
 
     [Fact]
-    public async Task A_game_the_hook_cannot_see_says_why_and_one_windows_would_not_describe_is_not_called_elevated()
+    public async Task A_game_the_app_leaves_alone_says_why_and_one_windows_would_not_describe_is_not_called_elevated()
     {
         _h.MakeReady();
         var status = Create();
@@ -250,12 +263,13 @@ public sealed class StatusViewModelTests : IDisposable
 
         _h.Session.NextStatus = elevated;
         status.Tick(_h.Now);
-        Assert.Contains("This app cannot see the keys of the game, which runs as administrator. Close this app, then right-click it and choose Run as administrator.", status.Warnings);
+        const string whatHappens = " Its keys reach it as plain key presses and the controller stays at rest. To map it, close this app, then right-click it and choose Run as administrator.";
+        Assert.Contains("Because the game runs as administrator and this app does not, this app leaves it alone." + whatHappens, status.Warnings);
 
         _h.Session.NextStatus = elevated with { GameElevation = Elevation.Unknown };
         status.Tick(_h.Now + StatusViewModel.RefreshMs);
-        Assert.Contains("Windows would not say whether the game runs as administrator. If its keys do not reach it, close this app, then right-click it and choose Run as administrator.", status.Warnings);
-        Assert.DoesNotContain(status.Warnings, w => w.StartsWith("This app cannot see", StringComparison.Ordinal));
+        Assert.Contains("Windows would not say whether the game runs as administrator, so this app leaves it alone." + whatHappens, status.Warnings);
+        Assert.DoesNotContain(status.Warnings, w => w.StartsWith("Because", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -64,6 +64,7 @@ public sealed class GameViewModel : ObservableObject
             Raise(nameof(Selected));
             Raise(nameof(Summary));
             Raise(nameof(Warning));
+            Raise(nameof(Hint));
             if (!string.Equals(_workspace.GamePath, value.ImagePath, StringComparison.OrdinalIgnoreCase))
             {
                 _workspace.GamePath = value.ImagePath;
@@ -94,10 +95,13 @@ public sealed class GameViewModel : ObservableObject
     /// <summary>No game is chosen, or the chosen one has not been seen running.</summary>
     private bool Waiting => _selected is not { Running: true };
 
-    /// <summary>Looks again every <see cref="RescanMs"/> while waiting for the game.</summary>
+    /// <summary>The game list is open on screen. Set by the view.</summary>
+    public bool IsListOpen { get; set; }
+
+    /// <summary>Looks again every <see cref="RescanMs"/> while waiting for the game, but not while the list is open, where a new list would move the items under the pointer.</summary>
     public void Tick(long nowMs)
     {
-        if (Waiting && nowMs - _lastScan >= RescanMs)
+        if (Waiting && !IsListOpen && nowMs - _lastScan >= RescanMs)
         {
             Rescan();
         }

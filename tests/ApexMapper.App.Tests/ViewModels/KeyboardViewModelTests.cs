@@ -67,6 +67,8 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.Equal("No keyboard chosen", keyboard.Summary);
         Assert.Equal("Choose your keyboard.", keyboard.Missing);
         Assert.Null(_h.Workspace.Board);
+        var raised = new List<string?>();
+        keyboard.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
 
         keyboard.Selected = keyboard.Boards.Single(b => b.Id == AppHarness.Gen3);
 
@@ -74,25 +76,38 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.Equal(AppHarness.Gen3, _h.Workspace.Board?.Id);
         Assert.Equal("Apex Pro TKL Gen 3", keyboard.Summary);
         Assert.Null(keyboard.Missing);
+        Assert.Contains(nameof(keyboard.Missing), raised);
     }
 
     [Fact]
     public void After_a_startup_that_could_not_read_the_settings_only_the_user_s_choices_are_saved()
     {
         var other = Guid.NewGuid();
-        _h.Services.Settings.Save(new AppSettings(Keyboard: other, ConsentedKeyboards: [other]));
+        _h.Services.Settings.Save(new AppSettings(Keyboard: other, ConsentedKeyboards: [other], ActiveProfile: "profile-7"));
         var workspace = new Workspace { SettingsUnread = true, SettingsProblem = "Settings could not be read." };
         _h.Boards[0] = AppHarness.Gen3Info;
 
         var keyboard = Create(workspace: workspace);
+        _ = new ProfileViewModel(_h.Services, workspace, remembered: null);
 
         Assert.Equal(AppHarness.Gen3, keyboard.Selected?.Id);
-        Assert.Equal(other, _h.SavedSettings.Keyboard);
+        Assert.Equal((other, "profile-7"), (_h.SavedSettings.Keyboard, _h.SavedSettings.ActiveProfile));
 
         keyboard.Consent.Execute(null);
 
         Assert.Equal([other, AppHarness.Gen3], _h.SavedSettings.ConsentedKeyboards);
         Assert.Equal("Settings could not be read.", workspace.SettingsProblem);
+
+        // A failed save shows until a save works, and then the startup problem is back.
+        var raised = 0;
+        workspace.PropertyChanged += (_, e) => raised += e.PropertyName == nameof(Workspace.SettingsProblem) ? 1 : 0;
+        using (new FileStream(_h.File("settings.json"), FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            workspace.Remember(_h.Services.Settings, settings => settings);
+        }
+        Assert.StartsWith("Settings could not be saved", workspace.SettingsProblem);
+        workspace.Remember(_h.Services.Settings, settings => settings);
+        Assert.Equal(("Settings could not be read.", 2), (workspace.SettingsProblem, raised));
     }
 
     [Fact]
@@ -142,10 +157,11 @@ public sealed class KeyboardViewModelTests : IDisposable
     public void An_untested_board_is_labelled_and_its_sensors_are_not_read_until_the_user_agrees()
     {
         _h.Boards[0] = AppHarness.Gen3Info;
+        _h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
         var keyboard = Create();
 
         Assert.True(keyboard.IsUnverified);
-        // The untested banner says it; the firmware notice would say it again.
+        // The untested banner says it; the notice for firmware no one has tried would say it again.
         Assert.Null(keyboard.FirmwareWarning);
         Assert.True(keyboard.NeedsConsent);
         Assert.False(keyboard.CanCheck);
@@ -238,6 +254,29 @@ public sealed class KeyboardViewModelTests : IDisposable
         var restGroup = export.Replies.Single(r => r.Label == "at rest" && r.Group == 50 / SensorProtocol.SensorsPerGroup + 1);
         Assert.Null(SensorProtocol.ParseGroup(Convert.FromHexString(restGroup.ReplyHex), raw, new ushort[SensorProtocol.SensorsPerGroup]));
         Assert.Equal(850, raw[50 % SensorProtocol.SensorsPerGroup]);
+    }
+
+    [Fact]
+    public void An_export_carries_its_own_board_s_report_lengths_and_none_of_another_board_s_readings()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        var rest = CheckAtRest(keyboard);
+        _h.Sensor.Reading = AppHarness.Holding(16, 3000);
+        keyboard.Tick(rest + 100);
+        Assert.False(keyboard.IsChecking);
+
+        // Swapped for a board whose vendor interface reports other lengths.
+        _h.Boards[0] = AppHarness.TklInfo with { HasVendorInterface = false, VendorInputLength = 64, VendorOutputLength = 32 };
+        keyboard.OnKeyboards(_h.Boards);
+        keyboard.Selected = keyboard.Boards.Single();
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+
+        var export = CaptureExport.FromJson(File.ReadAllText(_h.Dialogs.SavePath), out var error);
+        Assert.Null(error);
+        Assert.Equal((0x1614, 64, 32), (export!.ProductId, export.InputReportLength, export.OutputReportLength));
+        Assert.DoesNotContain(export.Replies, reply => reply.Label is "at rest" or "key held");
     }
 
     [Fact]

@@ -53,6 +53,7 @@ public sealed class KeyboardViewModel : ObservableObject
     private LearnStep? _checkStep;
     private (ushort[] Raw, ushort[] Filtered)? _restCapture;
     private (ushort[] Raw, ushort[] Filtered)? _heldCapture;
+    private Guid? _capturedFrom;
     private string? _checkText;
     private bool _exported;
 
@@ -98,6 +99,7 @@ public sealed class KeyboardViewModel : ObservableObject
             _selected = value;
             Raise(nameof(Selected));
             Raise(nameof(Summary));
+            Raise(nameof(Missing));
             Sync();
         }
     }
@@ -230,7 +232,7 @@ public sealed class KeyboardViewModel : ObservableObject
         }
         foreach (var (label, capture) in new[] { ("at rest", _restCapture), ("key held", _heldCapture) })
         {
-            if (capture is { } c)
+            if (capture is { } c && _capturedFrom == info.ContainerId)
             {
                 for (var group = 1; group <= SensorRequest.GroupCount; group++)
                 {
@@ -365,6 +367,7 @@ public sealed class KeyboardViewModel : ObservableObject
         _checkSince = _services.NowMs();
         _restCapture = null;
         _heldCapture = null;
+        _capturedFrom = _workspace.Board?.Id;
         CheckText = "Reading the sensors. Keep your hands off the keyboard for a moment.";
         _services.Sensor.Want(this, true);
         RefreshTryIt();

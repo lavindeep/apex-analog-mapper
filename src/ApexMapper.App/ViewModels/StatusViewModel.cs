@@ -35,7 +35,8 @@ public sealed class StatusViewModel : ObservableObject
     private string? _blocker;
     private bool _blockedByCalibration;
     private bool _blockedByDriver;
-    private string? _loggedSensorProblem;
+    /// <summary>The warnings and sensor faults logged since the last session ended: each is logged once a session.</summary>
+    private readonly HashSet<string> _logged = [];
     private string? _timing;
     private IReadOnlyList<string> _warnings = [];
     private HashSet<ScanCode> _mappedKeys = [];
@@ -84,7 +85,7 @@ public sealed class StatusViewModel : ObservableObject
     /// </summary>
     public string? Reason => _status.State != SessionState.Idle || _status.RestartRequired ? null
         : _status.LastEnd is { Reason: not EndReason.UserStop } end ? end.Message
-        : CanStart ? "Ready. Press Start, then launch the game."
+        : CanStart ? "Ready. Press Start. Mapping begins once the game is in front."
         : null;
 
     /// <summary>Why Start is unavailable, or null.</summary>
@@ -226,6 +227,7 @@ public sealed class StatusViewModel : ObservableObject
         {
             _workspace.RunningProfileText = null;
             _otherKeyboardSeen = false;
+            _logged.Clear();
             _atLimitSince.Clear();
             _stuckAtLimit = [];
         }
@@ -255,17 +257,14 @@ public sealed class StatusViewModel : ObservableObject
         BlockedByCalibration = fix == Fix.Calibration;
         BlockedByDriver = fix == Fix.Driver;
         var warnings = FindWarnings();
-        foreach (var added in warnings.Except(_warnings))
+        var lines = warnings.Select(warning => "Warning: " + warning);
+        if (IsMapping && _status.SensorProblem is { } problem)
         {
-            _services.Log("Warning: " + added);
+            lines = lines.Append("Sensor fault: " + problem);
         }
-        if (_status.SensorProblem != _loggedSensorProblem && IsMapping)
+        foreach (var line in lines.Where(_logged.Add))
         {
-            _loggedSensorProblem = _status.SensorProblem;
-            if (_status.SensorProblem is { } problem)
-            {
-                _services.Log("Sensor fault: " + problem);
-            }
+            _services.Log(line);
         }
         Warnings = warnings;
         foreach (var name in new[] { nameof(StateText), nameof(IsMapping), nameof(Reason), nameof(CanStart), nameof(CanStop), nameof(RestartRequired) })

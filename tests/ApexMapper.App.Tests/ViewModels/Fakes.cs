@@ -150,9 +150,12 @@ internal sealed class FakeDialogs : IDialogs
 
     public List<string> Asked { get; } = [];
 
+    public List<string> Messages { get; } = [];
+
     public Task<bool> ConfirmAsync(string title, string message, string confirm)
     {
         Asked.Add(title);
+        Messages.Add(message);
         return Task.FromResult(Answer);
     }
 
@@ -201,8 +204,8 @@ internal sealed class AppHarness : IDisposable
             KeyName = key => Names.GetValueOrDefault(key, key.ToString()),
             Log = Log.Add,
             NowMs = () => Now,
-            // Raw Input's clock stands still at zero: a capture begins there and FakeKeyEvents stamps presses after it.
-            Timestamp = () => 0,
+            // Raw Input's clock stands still at Stamp, zero unless a test moves it: a capture begins there and FakeKeyEvents stamps presses after it.
+            Timestamp = () => Stamp,
             Open = Opened.Add,
             Restart = () => Restarts++,
         };
@@ -254,6 +257,8 @@ internal sealed class AppHarness : IDisposable
     public List<string> Opened { get; } = [];
 
     public long Now { get; set; } = 1_000_000;
+
+    public long Stamp { get; set; }
 
     public int Restarts { get; private set; }
 

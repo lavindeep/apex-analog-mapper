@@ -42,7 +42,7 @@ public sealed record KeyBinding(
         }
         if (!key.IsBindable)
         {
-            return $"{key} cannot be mapped: the keyboard hook does not report it the way Raw Input does.";
+            return $"{key} cannot be mapped: the app cannot block it reliably.";
         }
         if (target.IsAxis())
         {
@@ -88,7 +88,7 @@ public sealed record AxisBinding(
         }
         if (!negativeKey.IsBindable || !positiveKey.IsBindable)
         {
-            return "Pause, Num Lock and the language keys cannot be mapped: the keyboard hook does not report them the way Raw Input does.";
+            return "Pause, Num Lock and the language keys cannot be mapped: the app cannot block them reliably.";
         }
         if (negativeKey == positiveKey)
         {

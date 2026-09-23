@@ -46,13 +46,17 @@ public sealed class GameViewModelTests : IDisposable
         var game = Create(null);
         Assert.Null(game.Selected);
         Assert.NotNull(game.Hint);
+        var raised = new List<string?>();
+        game.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
 
         game.Selected = game.Games[0];
 
+        Assert.Null(game.Hint);
+        Assert.Contains(nameof(game.Hint), raised);
         Assert.Equal(AppHarness.Game, _h.Workspace.GamePath);
         Assert.Equal(AppHarness.Game, _h.SavedSettings.GamePath);
         Assert.Equal("Forza Horizon 6", game.Summary);
-        Assert.StartsWith("This app cannot see the keys of Forza Horizon 6, which runs as administrator.", game.Warning);
+        Assert.StartsWith("Because Forza Horizon 6 runs as administrator and this app does not, this app leaves it alone.", game.Warning);
 
         game.Selected = game.Games[1];
         Assert.Null(game.Warning);
@@ -97,10 +101,16 @@ public sealed class GameViewModelTests : IDisposable
     }
 
     [Fact]
-    public void With_no_game_chosen_the_list_is_scanned_again_and_when_the_window_comes_back()
+    public void With_no_game_chosen_the_list_is_scanned_again_while_it_is_closed_and_when_the_window_comes_back()
     {
         var game = Create(null);
 
+        // Not while the list is open, where a new list would move the items under the pointer.
+        game.IsListOpen = true;
+        game.Tick(_h.Now + GameViewModel.RescanMs);
+        Assert.Equal(1, _h.WindowScans);
+
+        game.IsListOpen = false;
         game.Tick(_h.Now + GameViewModel.RescanMs);
         Assert.Equal(2, _h.WindowScans);
 

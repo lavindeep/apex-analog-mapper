@@ -105,19 +105,24 @@ public sealed class BindingRowViewModel : ObservableObject
     public ScanCode Key
     {
         get => _key;
-        set => Change(ref _key, value, [nameof(KeysText), nameof(KeyName)]);
+        set => Change(ref _key, value, [nameof(KeysText), nameof(KeyName), nameof(ChangeKeyText)]);
     }
 
     /// <summary>The negative key of an axis: left, or down.</summary>
     public ScanCode NegativeKey
     {
         get => _negativeKey;
-        set => Change(ref _negativeKey, value, [nameof(KeysText), nameof(NegativeKeyName)]);
+        set => Change(ref _negativeKey, value, [nameof(KeysText), nameof(NegativeKeyName), nameof(ChangeNegativeKeyText)]);
     }
 
     public string KeyName => _keyName(_key);
 
     public string NegativeKeyName => _keyName(_negativeKey);
+
+    /// <summary>The label of the button that captures <see cref="Key"/>, which is also its screen-reader name.</summary>
+    public string ChangeKeyText => "Change " + KeyName;
+
+    public string ChangeNegativeKeyText => "Change " + NegativeKeyName;
 
     public string KeysText => IsAxis ? $"{_keyName(_negativeKey)} and {_keyName(_key)}" : _keyName(_key);
 
