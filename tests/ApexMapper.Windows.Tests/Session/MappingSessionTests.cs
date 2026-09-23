@@ -330,6 +330,18 @@ public sealed class MappingSessionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_game_whose_elevation_windows_would_not_give_is_reported_as_unknown_and_left_alone()
+    {
+        await StartRunning();
+
+        _foreground!.Gain(Elevation.Unknown);
+
+        Assert.Equal((Elevation.Unknown, false), (_session.Status().GameElevation, _session.Status().GameHasFocus));
+        _foreground.Lose();
+        Assert.Equal(Elevation.Visible, _session.Status().GameElevation);
+    }
+
+    [Fact]
     public async Task Regaining_focus_resumes_mapping_but_a_key_held_through_it_stays_dead_until_released()
     {
         await RunningWithSpaceHeld();
@@ -908,8 +920,8 @@ public sealed class MappingSessionTests : IDisposable
 
     /// <summary>
     /// The session thread is held, so what happens is the guard's work, not a teardown the
-    /// watchdog set off. The app's crash handler runs it first through CrashStop, then the
-    /// guard's own handler runs it again.
+    /// watchdog set off. The app's crash handler runs it first through CrashStop, which does
+    /// it all; the guard's own handler runs it again and finds nothing left to do.
     /// </summary>
     [Fact]
     public async Task The_crash_guard_zeros_and_unplugs_the_pad_removes_the_hook_and_restores_the_gc_mode()
@@ -919,13 +931,15 @@ public sealed class MappingSessionTests : IDisposable
         HoldTheSessionThread();
 
         _session.CrashStop();
-        _session.CrashGuard!.Run();
 
         var log = _driver.Log;
         Assert.Equal(["submit neutral", "disconnect"], log.Skip(log.Count - 2));
-        Assert.Single(log, entry => entry == "disconnect");
         Assert.False(hook.IsInstalled);
         Assert.Equal(_latencyBefore, GCSettings.LatencyMode);
+
+        _session.CrashGuard!.Run();
+
+        Assert.Equal(log, _driver.Log);
         Assert.Equal(SessionState.Running, _session.State);
     }
 }

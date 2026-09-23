@@ -57,7 +57,7 @@ public class KeyboardDiscoveryTests
         var odd = KeyboardDiscovery.Select(
         [
             new HidInterfaceInfo("a", 0x1642, Other, string.Empty, false),
-            new HidInterfaceInfo("b", 0x1642, Other, string.Empty, false, 64, 64),
+            new HidInterfaceInfo("b", 0x1642, Other, string.Empty, false, 64, 32),
         ]);
         var usable = KeyboardDiscovery.Select(
         [
@@ -68,7 +68,7 @@ public class KeyboardDiscoveryTests
 
         var board = Assert.Single(odd);
         Assert.False(board.HasVendorInterface);
-        Assert.Equal((64, 64), (board.VendorInputLength, board.VendorOutputLength));
+        Assert.Equal((64, 32), (board.VendorInputLength, board.VendorOutputLength));
         Assert.Equal((65, 65), (usable[0].VendorInputLength, usable[0].VendorOutputLength));
     }
 

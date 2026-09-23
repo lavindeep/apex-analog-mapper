@@ -143,12 +143,13 @@ internal sealed class FakeForeground(ForegroundFlag flag) : IForegroundSource
         return true;
     }
 
-    public void Gain()
+    /// <summary>The game comes to the front. The flag goes up only for one whose input the app can see, as the tracker's does.</summary>
+    public void Gain(Elevation elevation = Elevation.Visible)
     {
-        var info = SessionFixtures.GameInFront();
+        var info = SessionFixtures.GameInFront() with { Elevation = elevation };
         Volatile.Write(ref _current, info);
         Changed?.Invoke(info);
-        flag.IsGameForeground = true;
+        flag.IsGameForeground = info.GameHasFocus;
     }
 
     public void Lose()
