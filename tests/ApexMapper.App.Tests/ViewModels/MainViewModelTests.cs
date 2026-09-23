@@ -58,6 +58,23 @@ public sealed class MainViewModelTests : IDisposable
     }
 
     [Fact]
+    public void A_key_whose_release_went_missing_is_forgotten_when_the_window_comes_back()
+    {
+        var main = new MainViewModel(_h.Services, _h.Workspace, new AppSettings());
+        var key = new ScanCode(0x25);
+        _h.Keys.Press(key);
+        main.Tick();
+
+        main.OnActivated();
+        main.Profile.AddKey.Execute(null);
+        _h.Keys.Press(key);
+        main.Tick();
+
+        Assert.False(main.Profile.IsCapturing);
+        Assert.Equal(key, main.Profile.SelectedRow!.Key);
+    }
+
+    [Fact]
     public void Coming_back_to_the_front_checks_the_driver_and_looks_for_the_game_again()
     {
         var main = new MainViewModel(_h.Services, _h.Workspace, new AppSettings());

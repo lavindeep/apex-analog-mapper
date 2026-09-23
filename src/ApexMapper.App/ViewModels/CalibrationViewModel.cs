@@ -259,10 +259,13 @@ public sealed class CalibrationViewModel : ObservableObject
         }
     }
 
-    /// <summary>A key event from Raw Input, drained on the UI thread. Keeps track of which keys are down.</summary>
+    /// <summary>
+    /// A key event from Raw Input, drained on the UI thread. Keeps track of which keys are down
+    /// on the chosen keyboard. A key Raw Input places on another keyboard is ignored.
+    /// </summary>
     public void OnKey(in RawKeyEvent key)
     {
-        if (key.Device == 0)
+        if (key.Device == 0 || FromAnotherKeyboard(key.Device))
         {
             return;
         }
@@ -277,6 +280,12 @@ public sealed class CalibrationViewModel : ObservableObject
             run.KeyPressed = true;
         }
     }
+
+    /// <summary>Forgets every key held, for when a key-up may have gone missing: see <see cref="MainViewModel.OnActivated"/>.</summary>
+    public void ForgetHeldKeys() => _held.Clear();
+
+    private bool FromAnotherKeyboard(nint device) =>
+        _services.KeyEvents.ContainerOf(device) is { } container && _workspace.Board is { } board && container != board.Id;
 
     internal bool CanStep(CalibrationRowViewModel row, CalibrationStep step) => CanCalibrate && _run is null && step switch
     {
@@ -538,6 +547,8 @@ public sealed class CalibrationViewModel : ObservableObject
                     row.PendingRest = null;
                     row.Message = null;
                 }
+                // An unplugged keyboard sends no key-up for the keys held on it.
+                _held.Clear();
                 CancelRun();
                 LoadCalibration();
                 SyncRows();

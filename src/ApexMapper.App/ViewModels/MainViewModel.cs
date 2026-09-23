@@ -53,11 +53,17 @@ public sealed class MainViewModel
 
     public SetupViewModel Setup { get; }
 
-    /// <summary>The window came back to the front: the driver may be installed now, and the game may be running.</summary>
+    /// <summary>
+    /// The window came back to the front: the driver may be installed now, and the game may be running.
+    /// Raw Input sends nothing while the lock screen or a UAC prompt is in front, so a key released
+    /// then never sent its key-up; the cards forget which keys are held.
+    /// </summary>
     public void OnActivated()
     {
         Setup.Recheck();
         Game.OnActivated();
+        Profile.ForgetHeldKeys();
+        Calibration.ForgetHeldKeys();
     }
 
     public int TickIntervalMs => Calibration.IsOpen || Profile.IsOpen || Profile.IsCapturing || Keyboard.IsChecking ? FastTickMs : SlowTickMs;

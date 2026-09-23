@@ -145,6 +145,26 @@ public sealed class CalibrationViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Keys_held_on_a_keyboard_that_went_away_or_on_another_keyboard_do_not_block_a_released_reading()
+    {
+        var calibration = Open();
+        var w = W(calibration);
+        calibration.OnKey(Key(down: true));
+
+        // Unplugged with W down and plugged back in, so no key-up ever came.
+        var board = _h.Workspace.Board;
+        _h.Workspace.Board = null;
+        _h.Workspace.Board = board;
+        _h.Keys.Containers[2] = Guid.NewGuid();
+        _h.Sensor.Reading = FakeSensor.AtRest();
+        w.SetReleased.Execute(null);
+        calibration.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, true, Device: 2, Ticks: 0));
+        Run(calibration, CalibrationViewModel.ReleasedMs);
+
+        Assert.StartsWith("Released 850", w.Message);
+    }
+
+    [Fact]
     public void A_new_released_reading_is_saved_alone_only_when_it_is_close_to_the_saved_one()
     {
         _h.Services.Calibrations.Put(AppHarness.Tkl, AppHarness.Firmware, DefaultProfiles.Key.W, KeyCalibration.Create(850, 3900, 40, 16));

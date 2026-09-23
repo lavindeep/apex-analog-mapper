@@ -234,6 +234,9 @@ public sealed class ProfileViewModel : ObservableObject
     /// <summary>Stops waiting for a key: the card's button, and the window when it loses focus, since Raw Input keeps seeing keys typed elsewhere.</summary>
     public Command CancelCapture { get; }
 
+    /// <summary>Forgets every key held, for when a key-up may have gone missing: see <see cref="MainViewModel.OnActivated"/>.</summary>
+    public void ForgetHeldKeys() => _held.Clear();
+
     /// <summary>
     /// A key event from Raw Input, drained on the UI thread. Every event keeps track of
     /// which keys are down, so an auto-repeat is never taken for a new press. While
