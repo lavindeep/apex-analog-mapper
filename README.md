@@ -20,9 +20,10 @@ Xbox controller works.
 ## What you need
 
 - Windows 10 or 11, 64-bit.
-- An Apex Pro. The sensor readout has been checked on the Apex Pro and Apex Pro TKL
-  with firmware 4.9.1 and 4.16.8. Other Apex Pro models show up as untested. The app
-  tells you the risk and asks before it reads their sensors.
+- An Apex Pro. The sensor readout has been checked on the original Apex Pro TKL with
+  firmware 4.9.1 and 4.16.8. Every other Apex Pro, the full-size one included, shows up
+  as untested. The app tells you the risk and asks before it reads its sensors, and
+  calibration learns where each key's sensor is.
 - The ViGEmBus driver, which creates the virtual controller. See below.
 
 ## Install

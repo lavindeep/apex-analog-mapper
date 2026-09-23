@@ -34,7 +34,7 @@ public sealed class KeyboardViewModel : ObservableObject
     public const string NewIssuePage = "https://github.com/lavindeep/apex-analog-mapper/issues/new";
 
     public const string ConsentText =
-        "To read how far each key is pressed, the app sends this keyboard the request that works on the Apex Pro and " +
+        "To read how far each key is pressed, the app sends this keyboard the request that works on the original " +
         "Apex Pro TKL. No one has checked how this model handles it. It will most likely answer the same way. If the " +
         "keyboard acts oddly afterwards, unplug it and plug it back in.";
 

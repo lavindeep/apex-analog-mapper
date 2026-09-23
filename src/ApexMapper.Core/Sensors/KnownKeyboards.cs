@@ -5,11 +5,12 @@ public static class KnownKeyboards
 {
     public const ushort SteelSeriesVendorId = 0x1038;
 
+    /// <param name="Verified">The sensor protocol was measured on this model. Only the original TKL has been.</param>
     public sealed record Model(ushort ProductId, string Name, bool Verified);
 
     private static readonly Model[] Models =
     [
-        new(0x1610, "Apex Pro", Verified: true),
+        new(0x1610, "Apex Pro", Verified: false),
         new(0x1614, "Apex Pro TKL", Verified: true),
         new(0x1628, "Apex Pro TKL (2023)", Verified: false),
         new(0x1630, "Apex Pro TKL Wireless (2023)", Verified: false),
