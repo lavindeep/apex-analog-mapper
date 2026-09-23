@@ -42,6 +42,40 @@ public sealed class UpdatesViewModelTests : IDisposable
     }
 
     [Fact]
+    public void The_launch_check_runs_behind_the_window_and_the_card_follows_its_answer()
+    {
+        _h.Updates.Newest = "0.5.1";
+        _h.Updates.Hold = new TaskCompletionSource();
+        var setup = new SetupViewModel(_h.Services, _h.Workspace, _h.SavedSettings);
+        var updates = setup.Updates;
+        Assert.Equal("Looking for a newer version.", updates.Text);
+        Assert.Null(updates.ActText);
+        var raised = new List<string?>();
+        setup.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+        updates.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+        updates.Act.CanExecuteChanged += (_, _) => raised.Add(nameof(updates.Act));
+
+        _h.Updates.Hold.SetResult();
+
+        Assert.Equal("Version 0.5.1 is available", setup.Summary);
+        Assert.Equal("Update", updates.ActText);
+        Assert.Contains(nameof(setup.Summary), raised);
+        Assert.Contains(nameof(updates.Spoken), raised);
+        Assert.Contains(nameof(updates.ActText), raised);
+        Assert.Contains(nameof(updates.Act), raised);
+    }
+
+    [Fact]
+    public void An_answer_saved_by_a_clock_that_ran_ahead_is_not_trusted()
+    {
+        _h.Services.Settings.Save(new AppSettings(UpdateCheckedAt: _h.Clock.AddDays(30)));
+
+        Create();
+
+        Assert.Single(_h.Updates.Asked);
+    }
+
+    [Fact]
     public void A_saved_answer_this_copy_has_caught_up_with_reads_as_the_newest()
     {
         _h.Services.Settings.Save(new AppSettings(UpdateCheckedAt: _h.Clock, UpdateFound: "0.5.0"));
@@ -80,8 +114,11 @@ public sealed class UpdatesViewModelTests : IDisposable
         _h.Updates.Hold = new TaskCompletionSource();
 
         updates.Act.Execute(null);
+        var raised = new List<string?>();
+        updates.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
         _h.Updates.Progress!(42);
         Assert.Equal("Downloading version 0.5.1: 42%.", updates.Text);
+        Assert.Contains(nameof(updates.Text), raised);
         Assert.Equal("Downloading version 0.5.1.", updates.Spoken);
         Assert.Null(updates.ActText);
         _h.Workspace.Session = SessionState.Running;
@@ -108,12 +145,53 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.Equal("Version 0.5.1 is available. Stop mapping to update.", updates.Text);
         Assert.False(updates.Act.CanExecute(null));
 
+        var raised = new List<string?>();
+        updates.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+        updates.Act.CanExecuteChanged += (_, _) => raised.Add(nameof(updates.Act));
         _h.Workspace.Session = SessionState.Idle;
+        Assert.Contains(nameof(updates.Spoken), raised);
+        Assert.Contains(nameof(updates.Act), raised);
+
         _h.Updates.Fault = new HttpRequestException("The connection was reset.");
         updates.Act.Execute(null);
         Assert.Equal("The download failed: The connection was reset.", updates.Text);
         Assert.Equal("Update", updates.ActText);
         Assert.Equal(0, _h.Updates.Installs);
+
+        _h.Updates.Fault = null;
+        updates.Act.Execute(null);
+        Assert.StartsWith("Version 0.5.1 is downloaded.", updates.Text);
+    }
+
+    [Fact]
+    public void An_updater_that_cannot_start_says_so_and_leaves_the_app_open()
+    {
+        _h.Updates.Newest = "0.5.1";
+        var updates = Create();
+        updates.Act.Execute(null);
+        _h.Updates.Fault = new InvalidOperationException("Update.exe was not found.");
+        var raised = new List<string?>();
+        updates.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        updates.Act.Execute(null);
+
+        Assert.Equal("The update could not start: Update.exe was not found.", updates.Text);
+        Assert.Contains(nameof(updates.Spoken), raised);
+        Assert.Equal("Restart and update", updates.ActText);
+        Assert.Equal((0, 0), (_h.Updates.Installs, _h.Closes));
+    }
+
+    [Fact]
+    public void A_release_withdrawn_before_the_download_leaves_this_copy_the_newest()
+    {
+        _h.Updates.Newest = "0.5.1";
+        var updates = Create();
+        _h.Updates.Newest = null;
+
+        updates.Act.Execute(null);
+
+        Assert.Equal("This is the newest version.", updates.Text);
+        Assert.Equal("Check for updates", updates.ActText);
     }
 
     [Fact]
@@ -128,9 +206,11 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.Equal([false, true], _h.Updates.Asked);
 
         using var alpha = new AppHarness("0.5.0-alpha");
+        alpha.Updates.NewestTest = "0.5.0-alpha.2";
         var test = Create(alpha);
         Assert.False(test.CanChoosePrereleases);
-        Assert.Equal([true], alpha.Updates.Asked);
+        test.Act.Execute(null);
+        Assert.StartsWith("Version 0.5.0-alpha.2 is downloaded.", test.Text);
     }
 
     [Fact]

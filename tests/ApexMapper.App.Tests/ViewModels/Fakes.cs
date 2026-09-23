@@ -181,7 +181,7 @@ internal sealed class FakeUpdates : IUpdates
     /// <summary>What a check or a download that asks for test versions finds, when it differs.</summary>
     public string? NewestTest { get; set; }
 
-    /// <summary>When set, checks and downloads throw it.</summary>
+    /// <summary>When set, checks, downloads and starting the install throw it.</summary>
     public Exception? Fault { get; set; }
 
     /// <summary>Whether each check and download asked for test versions.</summary>
@@ -217,7 +217,7 @@ internal sealed class FakeUpdates : IUpdates
 
     private string? Answer(bool prereleases) => Fault is { } fault ? throw fault : prereleases && NewestTest is { } test ? test : Newest;
 
-    public void InstallOnExit() => Installs++;
+    public void InstallOnExit() => Installs += Fault is { } fault ? throw fault : 1;
 }
 
 /// <summary>
@@ -263,6 +263,7 @@ internal sealed class AppHarness : IDisposable
             Close = () => Closes++,
             UtcNow = () => Clock,
             AppVersion = appVersion,
+            DataFolder = _dir.Path,
         };
     }
 

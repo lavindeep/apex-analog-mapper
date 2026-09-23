@@ -170,7 +170,8 @@ public sealed class WindowRenderingTests
             // A screen reader reads each live text by the name it gives its element: the state at least, and the capture prompt while it shows.
             var live = Descendants<FrameworkElement>(window).Where(e => !string.IsNullOrEmpty(Live.GetText(e))).ToList();
             Assert.All(live, e => Assert.Equal((Live.GetText(e), AutomationLiveSetting.Polite), (AutomationProperties.GetName(e), AutomationProperties.GetLiveSetting(e))));
-            Assert.All(live.Where(e => e.IsVisible), e => Assert.NotNull(Live.PeerFor(e, Live.GetText(e)!)));
+            Assert.All(live.Where(e => e.IsVisible), e => Assert.Equal((Live.GetText(e), AutomationLiveSetting.Polite),
+                Live.PeerFor(e, Live.GetText(e)!) is { } peer ? (peer.GetName(), peer.GetLiveSetting()) : default));
             Assert.Contains(live, e => Live.GetText(e) == main.Status.StateText);
             Assert.True(main.Profile.Prompt is null || live.Any(e => Live.GetText(e) == main.Profile.Prompt), $"{scenario.Name}: the capture prompt is not live");
             // The window names the buttons WPF-UI's templates leave unnamed.

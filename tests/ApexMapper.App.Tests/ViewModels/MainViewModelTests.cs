@@ -26,6 +26,14 @@ public sealed class MainViewModelTests : IDisposable
     }
 
     [Fact]
+    public void The_launch_check_follows_the_saved_settings()
+    {
+        _ = new MainViewModel(_h.Services, _h.Workspace, new AppSettings(CheckForUpdates: false));
+
+        Assert.Empty(_h.Updates.Asked);
+    }
+
+    [Fact]
     public void The_calibration_link_opens_the_calibration_card_and_speeds_up_the_timer()
     {
         var main = new MainViewModel(_h.Services, _h.Workspace, new AppSettings());

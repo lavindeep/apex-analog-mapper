@@ -40,7 +40,8 @@ public interface IDialogs
 /// <summary>
 /// The outside world as the view models see it. The app fills it with the real things;
 /// view model tests fill it with fakes, and never with a real session, whose hook would
-/// swallow the keys of whoever uses the PC.
+/// swallow the keys of whoever uses the PC. What only the app can supply is required, so
+/// leaving one out fails the build; the rest default to the real thing.
 /// </summary>
 public sealed class AppServices
 {
@@ -75,16 +76,16 @@ public sealed class AppServices
     public Func<ScanCode, string> KeyName { get; init; } = KeyNames.Of;
 
     /// <summary>Opens a web page or a folder in the shell.</summary>
-    public Action<string> Open { get; init; } = _ => { };
+    public required Action<string> Open { get; init; }
 
     /// <summary>Starts a new copy of the app and closes this one.</summary>
-    public Action Restart { get; init; } = () => { };
+    public required Action Restart { get; init; }
 
     /// <summary>Closes the app, as its window's close button does.</summary>
-    public Action Close { get; init; } = () => { };
+    public required Action Close { get; init; }
 
     /// <summary>Writes a line to the app log: session events and faults, never key presses.</summary>
-    public Action<string> Log { get; init; } = _ => { };
+    public required Action<string> Log { get; init; }
 
     /// <summary>Milliseconds on a monotonic clock, for sampling windows and rates.</summary>
     public Func<long> NowMs { get; init; } = () => Environment.TickCount64;
@@ -95,8 +96,8 @@ public sealed class AppServices
     /// <summary>The clock Raw Input stamps key events with (<see cref="Stopwatch.GetTimestamp"/>).</summary>
     public Func<long> Timestamp { get; init; } = Stopwatch.GetTimestamp;
 
-    public string AppVersion { get; init; } = "0.0.0";
+    public required string AppVersion { get; init; }
 
     /// <summary>The folder with the log and settings, for the setup card's button.</summary>
-    public string DataFolder { get; init; } = "";
+    public required string DataFolder { get; init; }
 }
