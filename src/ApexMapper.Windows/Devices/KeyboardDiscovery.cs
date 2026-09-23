@@ -7,7 +7,9 @@ namespace ApexMapper.Windows.Devices;
 /// <summary>One physical SteelSeries board: every HID interface sharing a container id.</summary>
 /// <param name="Known">The product id is an Apex Pro the app knows about.</param>
 /// <param name="HasVendorInterface">The 0xFFC0 interface the sensor path needs is present.</param>
-public sealed record KeyboardInfo(Guid ContainerId, ushort ProductId, string Name, bool Known, bool HasVendorInterface);
+/// <param name="VendorInputLength">The report lengths of an interface with the vendor usage, even when they are not the 65 bytes the sensor path needs; zero when there is none. A capture export records them.</param>
+/// <param name="VendorOutputLength">The output report length, likewise.</param>
+public sealed record KeyboardInfo(Guid ContainerId, ushort ProductId, string Name, bool Known, bool HasVendorInterface, int VendorInputLength = 0, int VendorOutputLength = 0);
 
 /// <summary>
 /// Which keyboards are plugged in. The pure <see cref="Select"/> folds HID interfaces
@@ -75,7 +77,7 @@ public sealed class KeyboardDiscovery : IDisposable
             }
             else if (!existing.Known && model is not null)
             {
-                boards[item.ContainerId] = new KeyboardInfo(item.ContainerId, item.ProductId, name, true, existing.HasVendorInterface || item.IsVendorInterface);
+                boards[item.ContainerId] = existing with { ProductId = item.ProductId, Name = name, Known = true, HasVendorInterface = existing.HasVendorInterface || item.IsVendorInterface };
             }
             else
             {
@@ -85,6 +87,12 @@ public sealed class KeyboardDiscovery : IDisposable
                     Name = existing.Name.StartsWith("SteelSeries 0x", StringComparison.Ordinal) ? name : existing.Name,
                 };
             }
+            // The sensor interface's lengths win; otherwise the first vendor-usage interface's.
+            var board = boards[item.ContainerId];
+            if (item.VendorInputLength > 0 && (item.IsVendorInterface || board.VendorInputLength == 0))
+            {
+                boards[item.ContainerId] = board with { VendorInputLength = item.VendorInputLength, VendorOutputLength = item.VendorOutputLength };
+            }
         }
         return boards.Values.OrderBy(b => b.Name, StringComparer.Ordinal).ThenBy(b => b.ContainerId).ToArray();
     }
@@ -92,7 +100,11 @@ public sealed class KeyboardDiscovery : IDisposable
     /// <summary>Asks Windows now.</summary>
     public static IReadOnlyList<KeyboardInfo> Enumerate() => Select(HidVendorDevices.SteelSeriesInterfaces());
 
-    /// <summary>Enumerates once and follows the pump's device events from then on. Calling it again moves the subscription.</summary>
+    /// <summary>
+    /// Enumerates once and follows the pump's device events from then on. Calling it again
+    /// moves the subscription. A first listing that fails is retried like a background
+    /// one, since boards already plugged in raise no device event to try again on.
+    /// </summary>
     public void Watch(RawInputPump pump)
     {
         lock (_lifetime)
@@ -102,7 +114,7 @@ public sealed class KeyboardDiscovery : IDisposable
             _pump = pump;
             pump.DeviceChanged += OnDeviceChanged;
         }
-        Refresh();
+        RefreshQuietly();
     }
 
     /// <summary>Enumerates now, on the calling thread. Throws if enumeration does; a throwing subscriber is counted instead.</summary>

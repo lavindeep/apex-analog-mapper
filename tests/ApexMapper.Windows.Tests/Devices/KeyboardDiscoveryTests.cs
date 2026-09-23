@@ -52,6 +52,27 @@ public class KeyboardDiscoveryTests
     }
 
     [Fact]
+    public void The_vendor_interface_s_report_lengths_are_kept_even_when_the_sensor_path_cannot_use_them()
+    {
+        var odd = KeyboardDiscovery.Select(
+        [
+            new HidInterfaceInfo("a", 0x1642, Other, string.Empty, false),
+            new HidInterfaceInfo("b", 0x1642, Other, string.Empty, false, 64, 64),
+        ]);
+        var usable = KeyboardDiscovery.Select(
+        [
+            new HidInterfaceInfo("a", 0x1614, Tkl, string.Empty, false, 64, 32),
+            new HidInterfaceInfo("b", 0x1614, Tkl, string.Empty, true, 65, 65),
+            new HidInterfaceInfo("c", 0x1614, Tkl, string.Empty, false, 16, 16),
+        ]);
+
+        var board = Assert.Single(odd);
+        Assert.False(board.HasVendorInterface);
+        Assert.Equal((64, 64), (board.VendorInputLength, board.VendorOutputLength));
+        Assert.Equal((65, 65), (usable[0].VendorInputLength, usable[0].VendorOutputLength));
+    }
+
+    [Fact]
     public void A_throwing_subscriber_is_counted_and_is_not_an_enumeration_failure()
     {
         using var discovery = new KeyboardDiscovery(() => []);
@@ -91,6 +112,24 @@ public class KeyboardDiscoveryTests
         Assert.Equal(3, changed);
         Assert.Equal(3, calls);
         Assert.Equal(0, first.HandlerFaults + second.HandlerFaults);
+    }
+
+    [Fact]
+    public void A_first_listing_that_fails_is_tried_again_without_a_device_event()
+    {
+        var fail = true;
+        using var discovery = new KeyboardDiscovery(() => Volatile.Read(ref fail) ? throw new IOException("bus reset") : [new KeyboardInfo(Tkl, 0x1614, "Apex Pro TKL", true, true)]);
+        using var published = new ManualResetEventSlim();
+        discovery.Changed += _ => published.Set();
+        using var pump = new RawInputPump();
+
+        discovery.Watch(pump);
+
+        Assert.Empty(discovery.Current);
+        Assert.Equal("bus reset", discovery.LastError);
+        Volatile.Write(ref fail, false);
+        Assert.True(published.Wait(KeyboardDiscovery.DebounceMs * 4, TestContext.Current.CancellationToken));
+        Assert.Single(discovery.Current);
     }
 
     [Fact]

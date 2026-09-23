@@ -5,7 +5,10 @@ using HidSharp;
 namespace ApexMapper.Windows.Hid;
 
 /// <summary>One HID interface of a SteelSeries device.</summary>
-public sealed record HidInterfaceInfo(string Path, ushort ProductId, Guid ContainerId, string ProductName, bool IsVendorInterface);
+/// <param name="IsVendorInterface">The interface the sensor path opens: the vendor usage with 65-byte reports.</param>
+/// <param name="VendorInputLength">The input report length of an interface with the vendor usage, whatever it is; zero for any other.</param>
+/// <param name="VendorOutputLength">The output report length, likewise.</param>
+public sealed record HidInterfaceInfo(string Path, ushort ProductId, Guid ContainerId, string ProductName, bool IsVendorInterface, int VendorInputLength = 0, int VendorOutputLength = 0);
 
 /// <summary>What the selection rule looks at for one HID interface.</summary>
 internal readonly record struct VendorCandidate(ushort ProductId, Guid ContainerId, bool HasVendorUsage, int InputLength, int OutputLength);
@@ -37,7 +40,10 @@ public static class HidVendorDevices
             {
                 continue;
             }
-            list.Add(new HidInterfaceInfo(device.DevicePath, (ushort)device.ProductID, container.Value, SafeName(device), IsVendorInterface(device)));
+            var c = Describe(device, container.Value);
+            list.Add(c.HasVendorUsage
+                ? new HidInterfaceInfo(device.DevicePath, c.ProductId, c.ContainerId, SafeName(device), IsSensorInterface(c), c.InputLength, c.OutputLength)
+                : new HidInterfaceInfo(device.DevicePath, c.ProductId, c.ContainerId, SafeName(device), false));
         }
         return list;
     }
@@ -117,11 +123,8 @@ public static class HidVendorDevices
         }
     }
 
-    private static bool IsVendorInterface(HidDevice device)
-    {
-        var c = Describe(device, Guid.Empty);
-        return c.HasVendorUsage && c.InputLength == SensorProtocol.ReportLength && c.OutputLength == SensorProtocol.ReportLength;
-    }
+    private static bool IsSensorInterface(VendorCandidate c) =>
+        c.HasVendorUsage && c.InputLength == SensorProtocol.ReportLength && c.OutputLength == SensorProtocol.ReportLength;
 
     private static string SafeName(HidDevice device)
     {
