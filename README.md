@@ -192,7 +192,7 @@ dotnet build ApexAnalogMapper.slnx
 dotnet test ApexAnalogMapper.slnx
 ```
 
-`scripts/pack.ps1 -Version 0.5.0-alpha` builds the installer with the
+`scripts/pack.ps1 -Version 0.5.1-alpha` builds the installer with the
 [Velopack](https://velopack.io) CLI (`dotnet tool install -g vpk --version 1.2.0`).
 [CONTRIBUTING.md](CONTRIBUTING.md) covers the hardware tests and how to send a change.
 

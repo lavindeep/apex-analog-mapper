@@ -15,7 +15,7 @@ body:
     id: keyboard
     attributes:
       label: Keyboard and app version
-      placeholder: Apex Pro TKL, 0.5.0-alpha
+      placeholder: Apex Pro TKL, 0.5.1-alpha
     validations:
       required: true
   - type: textarea
