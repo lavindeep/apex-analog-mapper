@@ -316,10 +316,63 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.Equal(rejected, export!.Replies.Single(r => r.Label.StartsWith("rejected", StringComparison.Ordinal)));
     }
 
+    /// <summary>The calibration card can keep the live sensor polling between checks, so it may still hold an earlier check's rejection.</summary>
     [Fact]
-    public void An_unsupported_board_says_so_and_is_never_asked_for_its_sensors_even_with_earlier_consent()
+    public void A_capture_keeps_only_a_reply_rejected_during_its_own_check()
     {
-        var wireless = AppHarness.Gen3Info with { ProductId = 0x1646, Name = "Apex Pro TKL Wireless Gen 3" };
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        var path = _h.File("capture.json");
+        _h.Dialogs.SavePath = path;
+        _h.Sensor.Rejected = new CapturedReply("rejected: Reply padding was not zero.", 1, "00AA");
+
+        var rest = CheckAtRest(keyboard);
+        keyboard.Tick(rest + KeyboardViewModel.CheckTimeoutMs + 1);
+        keyboard.Export.Execute(null);
+        Assert.Empty(RejectedIn(path));
+
+        // Rejected while waiting for a key press, after readings had come in.
+        rest = CheckAtRest(keyboard);
+        var during = new CapturedReply("rejected: Reply padding was not zero.", 4, "00BB");
+        _h.Sensor.Rejected = during;
+        keyboard.Tick(rest + KeyboardViewModel.CheckTimeoutMs + 1);
+        keyboard.Export.Execute(null);
+        Assert.Equal([during], RejectedIn(path));
+    }
+
+    private static List<CapturedReply> RejectedIn(string path) =>
+        [.. CaptureExport.FromJson(File.ReadAllText(path), out _)!.Replies.Where(r => r.Label.StartsWith("rejected", StringComparison.Ordinal))];
+
+    [Fact]
+    public void A_capture_is_not_exported_once_the_board_reports_other_firmware()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        var rest = CheckAtRest(keyboard);
+        _h.Sensor.Reading = AppHarness.Holding(16, 3000);
+        keyboard.Tick(rest + 100);
+
+        // Updated in GG, then plugged back in.
+        _h.FirmwareOf = _ => new FirmwareReading("4.17.0", null, null);
+        keyboard.OnKeyboards([]);
+        keyboard.OnKeyboards([AppHarness.Gen3Info]);
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+
+        var export = CaptureExport.FromJson(File.ReadAllText(_h.Dialogs.SavePath), out var error);
+        Assert.Null(error);
+        Assert.Equal("4.17.0", export!.Firmware);
+        Assert.DoesNotContain(export.Replies, reply => reply.Label is "at rest" or "key held");
+    }
+
+    [Theory]
+    [InlineData(0x1630)]
+    [InlineData(0x1632)]
+    [InlineData(0x1644)]
+    [InlineData(0x1646)]
+    public void An_unsupported_board_says_so_and_is_never_asked_for_its_sensors_even_with_earlier_consent(int productId)
+    {
+        var wireless = AppHarness.Gen3Info with { ProductId = (ushort)productId, Name = "Apex Pro TKL Wireless" };
         _h.Boards[0] = wireless;
 
         var keyboard = Create(consented: [wireless.ContainerId]);

@@ -48,8 +48,12 @@ public static class HidVendorDevices
         return list;
     }
 
-    /// <summary>The selection rule, pure: the index of the one candidate to open, or -1 when there is none or more than one.</summary>
-    internal static int Select(ReadOnlySpan<VendorCandidate> candidates, Guid containerId)
+    /// <summary>
+    /// The selection rule, pure: the index of the one candidate to open, or -1 when there
+    /// is none or more than one. For sensor reads an unsupported model never qualifies,
+    /// so 0xD7 cannot reach one whatever the cards allow; the firmware probe still may.
+    /// </summary>
+    internal static int Select(ReadOnlySpan<VendorCandidate> candidates, Guid containerId, bool forSensorReads = false)
     {
         var match = -1;
         for (var i = 0; i < candidates.Length; i++)
@@ -57,7 +61,8 @@ public static class HidVendorDevices
             var c = candidates[i];
             if (c.ContainerId != containerId || !c.HasVendorUsage
                 || c.InputLength != SensorProtocol.ReportLength || c.OutputLength != SensorProtocol.ReportLength
-                || !KnownKeyboards.IsApexPro(c.ProductId))
+                || KnownKeyboards.Find(c.ProductId) is not { } model
+                || (forSensorReads && model.Support == SensorSupport.Unsupported))
             {
                 continue;
             }
@@ -70,8 +75,8 @@ public static class HidVendorDevices
         return match;
     }
 
-    /// <summary>Opens the vendor interface of the given keyboard, or null when it is absent, ambiguous, or busy.</summary>
-    internal static IVendorStream? Open(Guid containerId)
+    /// <summary>Opens the vendor interface of the given keyboard, or null when it is absent, ambiguous, or busy, or unsupported for sensor reads.</summary>
+    internal static IVendorStream? Open(Guid containerId, bool forSensorReads = false)
     {
         var devices = new List<HidDevice>();
         var candidates = new List<VendorCandidate>();
@@ -85,7 +90,7 @@ public static class HidVendorDevices
             devices.Add(device);
             candidates.Add(Describe(device, container.Value));
         }
-        var index = Select(candidates.ToArray(), containerId);
+        var index = Select(candidates.ToArray(), containerId, forSensorReads);
         if (index < 0)
         {
             return null;

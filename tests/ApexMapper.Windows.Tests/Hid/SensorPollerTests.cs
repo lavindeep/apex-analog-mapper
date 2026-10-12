@@ -133,15 +133,22 @@ public class SensorPollerTests
         Assert.True(fake.IsDisposed);
     }
 
-    /// <summary>A board with another reply layout fails the parse; the export needs the bytes it sent, not a rebuild of what parsed.</summary>
-    [Fact]
-    public void A_reply_that_fails_its_check_is_kept_as_the_keyboard_sent_it()
+    /// <summary>A board with another reply layout fails a check; the export needs the bytes it sent, not a rebuild of what parsed.</summary>
+    [Theory]
+    [InlineData("dirty padding", 3, "Reply padding was not zero.")]
+    [InlineData("all zero", 3, "A sensor reply was all zero or all one value, which is not sensor data.")]
+    [InlineData("shifted", 2, "A sensor reply failed its group signature (shifted or foreign reply).")]
+    public void A_reply_that_fails_a_check_is_kept_as_the_keyboard_sent_it(string kind, int group, string reason)
     {
-        var dirty = Fixtures.RestGroup(3);
-        dirty[^1] = 0x5A;
+        // Shifted is group 3's reply in group 2's slot.
+        var bad = kind == "all zero" ? new byte[SensorProtocol.ReportLength] : Fixtures.RestGroup(3);
+        if (kind == "dirty padding")
+        {
+            bad[^1] = 0x5A;
+        }
         var fake = new FakeVendorStream
         {
-            OnRead = (index, command, selector) => selector == 3 ? dirty : FakeVendorStream.DefaultReply(command, selector),
+            OnRead = (index, command, selector) => selector == group ? bad : FakeVendorStream.DefaultReply(command, selector),
         };
         using var poller = new SensorPoller(OpenOnce(fake), new SensorSnapshot(), Racing);
         Assert.Null(poller.Rejected);
@@ -150,7 +157,7 @@ public class SensorPollerTests
         Assert.True(WaitUntil(() => poller.FaultCount == 1));
         poller.Stop();
 
-        Assert.Equal(new CapturedReply("rejected: Reply padding was not zero.", 3, Convert.ToHexString(dirty)), poller.Rejected);
+        Assert.Equal(new CapturedReply("rejected: " + reason, group, Convert.ToHexString(bad)), poller.Rejected);
     }
 
     /// <summary>A stop that lands while the poller reopens after a fault must not replace the fault with the waiting reason.</summary>

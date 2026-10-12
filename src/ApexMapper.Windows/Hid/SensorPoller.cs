@@ -147,7 +147,7 @@ public sealed class SensorPoller : IDisposable
 
     /// <summary>A poller for the keyboard with the given container id.</summary>
     public static SensorPoller ForKeyboard(Guid containerId, SensorSnapshot shared, PollerConfig config) =>
-        new(() => HidVendorDevices.Open(containerId), shared, config);
+        new(() => HidVendorDevices.Open(containerId, forSensorReads: true), shared, config);
 
     public PollerState State => (PollerState)Volatile.Read(ref _state);
 

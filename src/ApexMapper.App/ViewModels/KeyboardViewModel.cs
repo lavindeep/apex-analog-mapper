@@ -60,7 +60,8 @@ public sealed class KeyboardViewModel : ObservableObject
     private (ushort[] Raw, ushort[] Filtered)? _restCapture;
     private (ushort[] Raw, ushort[] Filtered)? _heldCapture;
     private CapturedReply? _rejectedCapture;
-    private Guid? _capturedFrom;
+    private CapturedReply? _rejectedBefore;
+    private (KeyboardInfo Info, string? Firmware)? _capturedFrom;
     private string? _checkText;
     private bool _exported;
 
@@ -199,8 +200,6 @@ public sealed class KeyboardViewModel : ObservableObject
         {
             if (nowMs - _checkSince > CheckTimeoutMs)
             {
-                // Taken before the check ends: the poller that holds it stops with it.
-                _rejectedCapture = _services.Sensor.Rejected;
                 EndCheck(_services.Sensor.Problem is { } problem
                     ? "The keyboard's sensors could not be read: " + problem
                     : "No readings came from the keyboard's sensors.");
@@ -234,7 +233,11 @@ public sealed class KeyboardViewModel : ObservableObject
         }
     }
 
-    /// <summary>What a GitHub issue needs to add this board to the tested list (H6).</summary>
+    /// <summary>
+    /// What a GitHub issue needs to add this board to the tested list (H6). The check's
+    /// replies go in only for the board and firmware they came from, so a replug after a
+    /// firmware update never labels old replies with the new version.
+    /// </summary>
     internal CaptureExport BuildExport(KeyboardInfo info, Board? board)
     {
         var replies = new List<CapturedReply>();
@@ -242,13 +245,14 @@ public sealed class KeyboardViewModel : ObservableObject
         {
             replies.Add(new CapturedReply("firmware", 0, Convert.ToHexString(firmware)));
         }
-        if (_rejectedCapture is { } rejected && _capturedFrom == info.ContainerId)
+        var fromThisBoard = _capturedFrom == (info, board?.Firmware.Version);
+        if (_rejectedCapture is { } rejected && fromThisBoard)
         {
             replies.Add(rejected);
         }
         foreach (var (label, capture) in new[] { ("at rest", _restCapture), ("key held", _heldCapture) })
         {
-            if (capture is { } c && _capturedFrom == info.ContainerId)
+            if (capture is { } c && fromThisBoard)
             {
                 for (var group = 1; group <= SensorRequest.GroupCount; group++)
                 {
@@ -378,6 +382,10 @@ public sealed class KeyboardViewModel : ObservableObject
         StartCheck();
     }
 
+    /// <summary>
+    /// Starts the check. Another card can keep the live sensor polling between checks, so
+    /// a rejected reply it already holds belongs to an earlier check and is set aside.
+    /// </summary>
     private void StartCheck()
     {
         _check = CheckPhase.Rest;
@@ -385,14 +393,17 @@ public sealed class KeyboardViewModel : ObservableObject
         _restCapture = null;
         _heldCapture = null;
         _rejectedCapture = null;
-        _capturedFrom = _workspace.Board?.Id;
+        _rejectedBefore = _services.Sensor.Rejected;
+        _capturedFrom = _workspace.Board is { } board ? (board.Info, board.Firmware.Version) : null;
         CheckText = "Reading the sensors. Keep your hands off the keyboard for a moment.";
         _services.Sensor.Want(this, true);
         RefreshTryIt();
     }
 
+    /// <summary>Ends the check. A reply rejected during it is kept now, before the poller that holds it stops.</summary>
     private void EndCheck(string text)
     {
+        _rejectedCapture = _services.Sensor.Rejected is { } rejected && !ReferenceEquals(rejected, _rejectedBefore) ? rejected : null;
         CancelCheck();
         CheckText = text;
         _services.Log("Sensor check: " + text);
