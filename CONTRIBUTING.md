@@ -12,7 +12,8 @@ when there is one. A useful bug report has:
 - The app version, shown under Updates on the Setup card.
 - Your keyboard model and firmware version, and whether SteelSeries GG was running.
   For a model the app hasn't been tested with, the capture from Export a capture on
-  the keyboard card.
+  the keyboard card. [Add support for your keyboard](docs/adding-a-keyboard.md) covers
+  the whole path, and the Keyboard support form collects it.
 - The game and how it was launched (Steam, Store, Game Pass), and whether it runs as
   administrator.
 - What you did, what you expected, and what happened instead.
@@ -65,12 +66,21 @@ dotnet test ApexAnalogMapper.slnx -c Release
 
 Hardware tests need an Apex Pro plugged in and run only with `APEX_HW_TESTS=1`.
 Several of them inject W keystrokes, which land in whatever window is in the
-foreground, so focus an empty editor first:
+foreground, and others drive a virtual pad, so run them at the desk with an empty
+editor in front:
 
 ```
 $env:APEX_HW_TESTS = '1'
-dotnet test ApexAnalogMapper.slnx -c Release
+try {
+	dotnet test ApexAnalogMapper.slnx -c Release
+} finally {
+	Remove-Item Env:APEX_HW_TESTS
+}
 ```
+
+A coding agent runs only the five read-only tests that
+[AGENTS.md](AGENTS.md#hardware-tests) lists, and only after you agree. The soak test
+has its own switch, `APEX_SOAK=1`, and runs for minutes.
 
 Tests are named as sentences (`A_key_up_is_swallowed_only_if_its_down_was`) and each
 one checks one behaviour. Add a test for any behaviour you change; skip tests that
