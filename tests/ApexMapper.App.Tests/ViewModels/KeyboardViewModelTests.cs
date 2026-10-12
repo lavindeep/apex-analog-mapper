@@ -295,6 +295,44 @@ public sealed class KeyboardViewModelTests : IDisposable
     }
 
     [Fact]
+    public void A_check_whose_replies_fail_exports_the_reply_the_keyboard_sent()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        var rejected = new CapturedReply("rejected: Reply padding was not zero.", 1, "00AB");
+
+        keyboard.Check.Execute(null);
+        _h.Sensor.Problem = "Reply padding was not zero.";
+        _h.Sensor.Rejected = rejected;
+        keyboard.Tick(_h.Now + KeyboardViewModel.CheckTimeoutMs + 1);
+        // The check stopped the poller, and the reply went with it.
+        _h.Sensor.Rejected = null;
+
+        Assert.Equal("The keyboard's sensors could not be read: Reply padding was not zero.", keyboard.CheckText);
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+        var export = CaptureExport.FromJson(File.ReadAllText(_h.Dialogs.SavePath), out var error);
+        Assert.Null(error);
+        Assert.Equal(rejected, export!.Replies.Single(r => r.Label.StartsWith("rejected", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void An_unsupported_board_says_so_and_is_never_asked_for_its_sensors_even_with_earlier_consent()
+    {
+        var wireless = AppHarness.Gen3Info with { ProductId = 0x1646, Name = "Apex Pro TKL Wireless Gen 3" };
+        _h.Boards[0] = wireless;
+
+        var keyboard = Create(consented: [wireless.ContainerId]);
+
+        Assert.Equal("Not supported", keyboard.Boards.Single().Detail);
+        Assert.True(keyboard.IsUnsupported);
+        Assert.False(keyboard.IsUnverified);
+        Assert.False(keyboard.NeedsConsent);
+        Assert.False(keyboard.CanCheck);
+        Assert.False(_h.Workspace.Board!.CanReadSensors);
+    }
+
+    [Fact]
     public void A_check_with_no_readings_gives_up_and_one_a_session_interrupts_says_so()
     {
         _h.Boards[0] = AppHarness.Gen3Info;

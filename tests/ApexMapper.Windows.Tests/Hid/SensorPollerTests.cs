@@ -133,6 +133,26 @@ public class SensorPollerTests
         Assert.True(fake.IsDisposed);
     }
 
+    /// <summary>A board with another reply layout fails the parse; the export needs the bytes it sent, not a rebuild of what parsed.</summary>
+    [Fact]
+    public void A_reply_that_fails_its_check_is_kept_as_the_keyboard_sent_it()
+    {
+        var dirty = Fixtures.RestGroup(3);
+        dirty[^1] = 0x5A;
+        var fake = new FakeVendorStream
+        {
+            OnRead = (index, command, selector) => selector == 3 ? dirty : FakeVendorStream.DefaultReply(command, selector),
+        };
+        using var poller = new SensorPoller(OpenOnce(fake), new SensorSnapshot(), Racing);
+        Assert.Null(poller.Rejected);
+
+        poller.Start();
+        Assert.True(WaitUntil(() => poller.FaultCount == 1));
+        poller.Stop();
+
+        Assert.Equal(new CapturedReply("rejected: Reply padding was not zero.", 3, Convert.ToHexString(dirty)), poller.Rejected);
+    }
+
     /// <summary>A stop that lands while the poller reopens after a fault must not replace the fault with the waiting reason.</summary>
     [Fact]
     public void A_stop_during_the_reopen_keeps_the_fault_reason()

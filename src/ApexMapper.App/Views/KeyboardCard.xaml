@@ -35,6 +35,8 @@
                     Visibility="{Binding FirmwareText, Converter={StaticResource ShowWhenPresent}}" />
       <ui:InfoBar Style="{StaticResource Warning}" Severity="Informational" Message="{Binding FirmwareWarning}"
                   Visibility="{Binding FirmwareWarning, Converter={StaticResource ShowWhenPresent}}" />
+      <ui:InfoBar Style="{StaticResource Warning}" Title="Not supported" Message="{x:Static vm:KeyboardViewModel.UnsupportedText}"
+                  Visibility="{Binding IsUnsupported, Converter={StaticResource ShowWhenTrue}}" />
 
       <!-- The try-it flow for a model the app has not been tested on (H6). -->
       <StackPanel Visibility="{Binding IsUnverified, Converter={StaticResource ShowWhenTrue}}">

@@ -199,6 +199,7 @@ public sealed class CalibrationViewModel : ObservableObject
     public string? Blocker => _workspace.SessionActive ? "Stop mapping to calibrate."
         : _workspace.Board is not { } board ? (_workspace.ReadingFirmware ? "Reading the keyboard's firmware." : "Plug in your Apex Pro and choose it on the keyboard card.")
         : board.Firmware.Version is null ? "The keyboard's firmware could not be read, so its sensors are not read either."
+        : board.Unsupported ? "The app cannot read this keyboard's sensors."
         : !board.CanReadSensors ? "Try this keyboard on the keyboard card first."
         : _rows.Count == 0 ? "The active profile has no analog keys."
         : null;

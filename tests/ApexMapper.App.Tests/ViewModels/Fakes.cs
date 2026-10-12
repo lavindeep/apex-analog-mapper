@@ -88,6 +88,8 @@ internal sealed class FakeSensor : ILiveSensor
 
     public string? Problem { get; set; }
 
+    public CapturedReply? Rejected { get; set; }
+
     public bool Wanted => Readers.Count > 0;
 
     /// <summary>Every sensor at a rest-like 850 counts, slots with no key at 5.</summary>

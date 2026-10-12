@@ -18,6 +18,9 @@ public interface ILiveSensor
     /// <summary>Why there are no readings while someone wants them, or null.</summary>
     string? Problem { get; }
 
+    /// <summary>The last sensor reply that failed a check while someone wanted readings, as the keyboard sent it, or null.</summary>
+    CapturedReply? Rejected { get; }
+
     /// <summary>Says whether a reader wants readings. The keyboard is read only while someone does.</summary>
     void Want(object reader, bool wanted);
 }
@@ -53,6 +56,8 @@ public sealed class LiveSensor : ILiveSensor, IDisposable
     internal bool IsPolling => _poller is not null;
 
     public string? Problem => _poller is { State: not PollerState.Running and not PollerState.Starting, FaultReason: { } reason } ? reason : null;
+
+    public CapturedReply? Rejected => _poller?.Rejected;
 
     public void Want(object reader, bool wanted)
     {

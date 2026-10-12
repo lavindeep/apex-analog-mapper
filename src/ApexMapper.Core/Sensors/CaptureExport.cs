@@ -2,7 +2,7 @@ using ApexMapper.Core.Storage;
 
 namespace ApexMapper.Core.Sensors;
 
-/// <summary>One reply, as hex, with what the user was doing when it was taken.</summary>
+/// <summary>One reply, as hex, labelled with what the user was doing when it was taken, or why the app rejected it.</summary>
 public sealed record CapturedReply(string Label, int Group, string ReplyHex);
 
 /// <summary>

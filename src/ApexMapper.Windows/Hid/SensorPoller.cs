@@ -127,6 +127,7 @@ public sealed class SensorPoller : IDisposable
     private int _firmwareLength;
     private int _state;
     private string? _faultReason;
+    private CapturedReply? _rejected;
     private string _firmware = string.Empty;
     private int _faultCount;
     private int _consecutiveFaults;
@@ -152,6 +153,9 @@ public sealed class SensorPoller : IDisposable
 
     /// <summary>Why the handle was last retired, or why the poller is waiting; null until the first.</summary>
     public string? FaultReason => Volatile.Read(ref _faultReason);
+
+    /// <summary>The last sensor reply that failed a check, as the keyboard sent it and labelled with why; null until one does. A capture export carries it.</summary>
+    public CapturedReply? Rejected => Volatile.Read(ref _rejected);
 
     /// <summary>Firmware string read when the device was last opened.</summary>
     public string Firmware => Volatile.Read(ref _firmware);
@@ -285,15 +289,15 @@ public sealed class SensorPoller : IDisposable
             }
             if (SensorProtocol.ParseGroup(_reply, _raw, _filtered) is { } error)
             {
-                return error;
+                return Reject(group, error);
             }
             if (!SensorProtocol.IsPlausibleGroup(_raw))
             {
-                return "A sensor reply was all zero or all one value, which is not sensor data.";
+                return Reject(group, "A sensor reply was all zero or all one value, which is not sensor data.");
             }
             if (config.Signatures[group - 1] is { } signature && !signature.Matches(_raw))
             {
-                return SignatureFaultReason();
+                return Reject(group, SignatureFaultReason());
             }
             _working.SetGroup(group, _raw, _filtered);
         }
@@ -321,6 +325,13 @@ public sealed class SensorPoller : IDisposable
         }
         var periodMs = (float)((Stopwatch.GetTimestamp() - cycleStart) / _ticksPerMs);
         return _stats.Record(periodMs) ? "Three consecutive sensor cycles of 100 ms or more." : null;
+    }
+
+    /// <summary>Keeps the reply for <see cref="Rejected"/> and returns why it failed. Only a failed reply allocates, so the cycle path stays allocation-free.</summary>
+    private string Reject(int group, string reason)
+    {
+        Volatile.Write(ref _rejected, new CapturedReply("rejected: " + reason, group, Convert.ToHexString(_reply)));
+        return reason;
     }
 
     private string SignatureFaultReason()
