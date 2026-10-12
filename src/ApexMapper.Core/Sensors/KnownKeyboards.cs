@@ -17,7 +17,8 @@ public static class KnownKeyboards
     public const ushort SteelSeriesVendorId = 0x1038;
 
     /// <param name="Support">What is known about the sensor protocol on this model. Only the original TKL is verified.</param>
-    public sealed record Model(ushort ProductId, string Name, SensorSupport Support);
+    /// <param name="VerifiedFirmware">Firmware versions the sensor protocol was verified against on this model.</param>
+    public sealed record Model(ushort ProductId, string Name, SensorSupport Support, IReadOnlyList<string> VerifiedFirmware);
 
     /// <summary>
     /// The wireless models run 3.x firmware, a different family from the original TKL's
@@ -27,19 +28,19 @@ public static class KnownKeyboards
     /// </summary>
     private static readonly Model[] Models =
     [
-        new(0x1610, "Apex Pro", SensorSupport.Unverified),
-        new(0x1614, "Apex Pro TKL", SensorSupport.Verified),
-        new(0x1628, "Apex Pro TKL (2023)", SensorSupport.Unverified),
-        new(0x1630, "Apex Pro TKL Wireless (2023)", SensorSupport.Unsupported),
-        new(0x1632, "Apex Pro TKL Wireless (2023)", SensorSupport.Unsupported),
-        new(0x1640, "Apex Pro Gen 3", SensorSupport.Unverified),
-        new(0x1642, "Apex Pro TKL Gen 3", SensorSupport.Unverified),
-        new(0x1644, "Apex Pro TKL Wireless Gen 3", SensorSupport.Unsupported),
-        new(0x1646, "Apex Pro TKL Wireless Gen 3", SensorSupport.Unsupported),
+        new(0x1610, "Apex Pro", SensorSupport.Unverified, []),
+        new(0x1614, "Apex Pro TKL", SensorSupport.Verified, ["4.9.1", "4.16.8"]),
+        new(0x1628, "Apex Pro TKL (2023)", SensorSupport.Unverified, []),
+        new(0x1630, "Apex Pro TKL Wireless (2023)", SensorSupport.Unsupported, []),
+        new(0x1632, "Apex Pro TKL Wireless (2023)", SensorSupport.Unsupported, []),
+        new(0x1640, "Apex Pro Gen 3", SensorSupport.Unverified, []),
+        new(0x1642, "Apex Pro TKL Gen 3", SensorSupport.Unverified, []),
+        new(0x1644, "Apex Pro TKL Wireless Gen 3", SensorSupport.Unsupported, []),
+        new(0x1646, "Apex Pro TKL Wireless Gen 3", SensorSupport.Unsupported, []),
     ];
 
-    /// <summary>Firmware strings the sensor protocol has been verified against.</summary>
-    public static readonly IReadOnlySet<string> VerifiedFirmware = new HashSet<string>(StringComparer.Ordinal) { "4.9.1", "4.16.8" };
+    /// <summary>Every model the app knows, for the tests that check the tested ones have evidence.</summary>
+    public static IReadOnlyList<Model> All => Models;
 
     public static Model? Find(ushort productId) => Models.FirstOrDefault(m => m.ProductId == productId);
 
@@ -47,5 +48,5 @@ public static class KnownKeyboards
     public static bool IsApexPro(ushort productId) => Find(productId) is not null;
 
     public static bool IsVerified(ushort productId, string firmware) =>
-        Find(productId) is { Support: SensorSupport.Verified } && VerifiedFirmware.Contains(firmware);
+        Find(productId) is { Support: SensorSupport.Verified } model && model.VerifiedFirmware.Contains(firmware);
 }

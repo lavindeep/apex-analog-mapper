@@ -25,7 +25,7 @@ public sealed record Board(KeyboardInfo Info, FirmwareReading Firmware, bool Con
     public bool Unsupported => KnownKeyboards.Find(Info.ProductId) is { Support: SensorSupport.Unsupported };
 
     /// <summary>The firmware is one the protocol was verified on. Another version only warns.</summary>
-    public bool FirmwareVerified => Firmware.Version is { } version && KnownKeyboards.VerifiedFirmware.Contains(version);
+    public bool FirmwareVerified => Firmware.Version is { } version && KnownKeyboards.IsVerified(Info.ProductId, version);
 
     /// <summary>The app may send sensor requests: the board answered with a version, and it is verified or the user agreed to try a model that may work.</summary>
     public bool CanReadSensors => Firmware.Version is not null && (Verified || (Consented && !Unsupported));
