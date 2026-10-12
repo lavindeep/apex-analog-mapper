@@ -36,8 +36,9 @@ public sealed class KeyboardViewModel : ObservableObject
 
     public const string ConsentText =
         "To read how far each key is pressed, the app sends this keyboard the request that works on the original " +
-        "Apex Pro TKL. No one has checked how this model handles it. It will most likely answer the same way. If the " +
-        "keyboard acts oddly afterwards, unplug it and plug it back in.";
+        "Apex Pro TKL. No one has checked how this model handles it. It will most likely answer the same way. If it " +
+        "answers in a way the app can't read, the app keeps the answer so you can export it in a capture. Nothing is " +
+        "saved unless you do. If the keyboard acts oddly afterwards, unplug it and plug it back in.";
 
     public const string UnsupportedText =
         "The app cannot read how far keys are pressed on this model. Its firmware has no request for it that anyone has " +
