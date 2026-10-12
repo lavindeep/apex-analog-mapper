@@ -11,6 +11,8 @@ when there is one. A useful bug report has:
 
 - The app version, shown under Updates on the Setup card.
 - Your keyboard model and firmware version, and whether SteelSeries GG was running.
+  For a model the app hasn't been tested with, the capture from Export a capture on
+  the keyboard card.
 - The game and how it was launched (Steam, Store, Game Pass), and whether it runs as
   administrator.
 - What you did, what you expected, and what happened instead.

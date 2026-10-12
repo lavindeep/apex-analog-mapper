@@ -13,7 +13,7 @@ body:
     id: keyboard
     attributes:
       label: Keyboard and firmware
-      description: Model and the firmware version SteelSeries GG shows. Say whether GG was running.
+      description: Model and the firmware version SteelSeries GG shows. Say whether GG was running. For an untested model, also attach the capture the keyboard card exports.
       placeholder: Apex Pro TKL, firmware 4.16.8, GG running
     validations:
       required: true

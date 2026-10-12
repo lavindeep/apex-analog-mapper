@@ -21,8 +21,11 @@ Xbox controller works.
 
 - Windows 10 or 11, 64-bit.
 - An Apex Pro. The sensor readout has been checked on the original Apex Pro TKL with
-  firmware 4.9.1 and 4.16.8. Every other Apex Pro, the full-size one included, shows up
-  as untested. The app tells you the risk and asks before it reads its sensors, and
+  firmware 4.9.1 and 4.16.8. The Apex Pro TKL Wireless (2023) and Apex Pro TKL Wireless
+  Gen 3 don't work, on a cable or through their receiver. Their firmware has no request
+  for key depth that anyone has found, so the keyboard card says they aren't supported
+  and the app never reads them. Every other Apex Pro, the full-size one included, shows
+  up as untested. The app tells you the risk and asks before it reads its sensors, and
   calibration learns where each key's sensor is.
 - The ViGEmBus driver, which creates the virtual controller. See below.
 
@@ -156,6 +159,11 @@ alpha, you're offered the next test version too.
 - **A key's calibration is refused.** Let go of the key, then press Set released
   again. If the key was down during that step, the reading is refused and nothing is
   saved.
+- **An untested keyboard's sensor check fails.** Press Export a capture on the keyboard
+  card and attach the file to a
+  [new issue](https://github.com/lavindeep/apex-analog-mapper/issues/new). The file
+  holds the keyboard's model, firmware and replies to the app's requests, including a
+  reply the app couldn't read. It never holds your typing.
 - **Something else.** The Setup card opens the folder with the log. It records
   sessions, calibrations and faults, never your typing. It names a key only when you
   calibrate it or when the app warns about its calibration. File paths in it can show

@@ -15,7 +15,10 @@ and how to report a vulnerability.
   presses deeper than its calibration.
 - The keyboard's vendor interface. The app sends exactly two commands to it: a
   firmware version query and a sensor read. Nothing else is ever written to the
-  keyboard, and the app never changes firmware or actuation settings.
+  keyboard, and the app never changes firmware or actuation settings. The sensor read
+  goes only to a tested model, or to an untested one after you agree. A model whose
+  firmware has no sensor read that anyone has found, such as the Apex Pro TKL Wireless
+  Gen 3, gets only the firmware query.
 - A virtual controller through the ViGEmBus driver.
 
 ## Network posture
