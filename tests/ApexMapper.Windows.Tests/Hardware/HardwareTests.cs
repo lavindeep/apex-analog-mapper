@@ -12,7 +12,7 @@ using Xunit;
 namespace ApexMapper.Windows.Tests.Hardware;
 
 /// <summary>
-/// Against the maintainer's Apex Pro TKL and an interactive desktop. Run with
+/// Against a connected Apex Pro and an interactive desktop. Run with
 /// APEX_HW_TESTS=1; thresholds in <see cref="HardwareThresholds"/>. The hook and pump
 /// tests inject W, which types into the foreground window on the pass-through passes.
 /// </summary>
@@ -28,9 +28,10 @@ public class HardwareTests
         return board.ContainerId;
     }
 
-    private static VendorInterface OpenSelected()
+    /// <summary>For sensor reads, opens through the app's own guard, so a model marked Unsupported never gets one.</summary>
+    private static VendorInterface OpenSelected(bool forSensorReads = false)
     {
-        var stream = HidVendorDevices.Open(SelectedKeyboard());
+        var stream = HidVendorDevices.Open(SelectedKeyboard(), forSensorReads);
         Assert.NotNull(stream);
         return new VendorInterface(stream);
     }
@@ -61,7 +62,7 @@ public class HardwareTests
     private static Dictionary<int, GroupSignature> RestSignatures()
     {
         var signatures = new Dictionary<int, GroupSignature>();
-        using var device = OpenSelected();
+        using var device = OpenSelected(forSensorReads: true);
         var reply = new byte[SensorProtocol.ReportLength];
         var raw = new ushort[SensorProtocol.SensorsPerGroup];
         var filtered = new ushort[SensorProtocol.SensorsPerGroup];
