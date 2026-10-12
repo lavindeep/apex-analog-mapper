@@ -36,9 +36,27 @@ public sealed class KeyboardViewModel : ObservableObject
 
     public const string ConsentText =
         "To read how far each key is pressed, the app sends this keyboard the request that works on the original " +
-        "Apex Pro TKL. No one has checked how this model handles it. It will most likely answer the same way. If it " +
-        "answers in a way the app can't read, the app keeps the answer so you can export it in a capture. Nothing is " +
-        "saved unless you do. If the keyboard acts oddly afterwards, unplug it and plug it back in.";
+        "Apex Pro TKL. No one has checked how this model handles it. It will most likely answer the same way. If the " +
+        "keyboard acts oddly afterwards, unplug it and plug it back in. The keyboard's answers stay in the app's " +
+        "memory. They go into a file only if you export a capture, and the app never sends them anywhere.";
+
+    /// <summary>Every field a capture file holds, in plain words, shown before anyone presses Export.</summary>
+    public static readonly IReadOnlyList<string> CaptureHolds =
+    [
+        "The app's version and when you saved the file.",
+        "The keyboard's model, product ID and firmware version.",
+        "The ID Windows gave this keyboard, and the size of its reports.",
+        "The keyboard's answer to the firmware request.",
+        "The sensor readings from your last check, once with your hands off and once while you held a key.",
+        "Any answer from the keyboard that the app couldn't read.",
+    ];
+
+    public const string CaptureLimits =
+        "A capture holds no record of your typing, your profiles or anything else from this PC. Each reading is a " +
+        "single moment, so it shows which keys were down right then, such as the key you held. The check's readings " +
+        "stay in the app's memory. The next check replaces them, and they're gone when you close the app. The app " +
+        "writes the file only when you press Export a capture and choose where to save it. It never uploads the " +
+        "file. If you attach it to a GitHub issue, anyone can read it.";
 
     public const string UnsupportedText =
         "The app cannot read how far keys are pressed on this model. Its firmware has no request for it that anyone has " +

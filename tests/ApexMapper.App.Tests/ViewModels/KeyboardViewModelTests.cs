@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using ApexMapper.App.Model;
 using ApexMapper.App.Storage;
 using ApexMapper.App.ViewModels;
@@ -363,6 +364,25 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.Null(error);
         Assert.Equal("4.17.0", export!.Firmware);
         Assert.DoesNotContain(export.Replies, reply => reply.Label is "at rest" or "key held");
+    }
+
+    /// <summary>The card lists a capture's fields by hand, so a new field fails here until the card names it too.</summary>
+    [Fact]
+    public void A_capture_file_holds_only_the_fields_the_card_lists()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        _h.FirmwareOf = _ => new FirmwareReading("1.0", [0x00, 0x31], null);
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+
+        using var json = JsonDocument.Parse(File.ReadAllText(_h.Dialogs.SavePath));
+        var payload = json.RootElement.GetProperty("payload");
+        Assert.Equal(["version", "payload"], json.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(
+            ["app_version", "taken_at", "product_id", "product_name", "firmware", "container_id", "input_report_length", "output_report_length", "replies"],
+            payload.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["label", "group", "reply_hex"], payload.GetProperty("replies")[0].EnumerateObject().Select(p => p.Name));
     }
 
     [Theory]

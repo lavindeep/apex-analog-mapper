@@ -161,9 +161,14 @@ alpha, you're offered the next test version too.
   saved.
 - **An untested keyboard's sensor check fails.** Press Export a capture on the keyboard
   card and attach the file to a
-  [new issue](https://github.com/lavindeep/apex-analog-mapper/issues/new). The file
-  holds the keyboard's model, firmware and replies to the app's requests, including a
-  reply the app couldn't read. It never holds your typing.
+  [new issue](https://github.com/lavindeep/apex-analog-mapper/issues/new). The
+  keyboard card lists what the file holds: the app version and the time, the
+  keyboard's model, product ID, firmware and Windows device ID, its report sizes, its
+  answer to the firmware request, the sensor readings from the last check, and any
+  answer the app couldn't read. It holds no record of your typing, but each reading is
+  a single moment and shows which keys were down right then. The app writes the file
+  only when you export it and never uploads it. Once it's attached to an issue, anyone
+  can read it.
 - **Something else.** The Setup card opens the folder with the log. It records
   sessions, calibrations and faults, never your typing. It names a key only when you
   calibrate it or when the app warns about its calibration. File paths in it can show

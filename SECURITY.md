@@ -19,6 +19,14 @@ and how to report a vulnerability.
   goes only to a tested model, or to an untested one after you agree. A model whose
   firmware has no sensor read that anyone has found, such as the Apex Pro TKL Wireless
   Gen 3, gets only the firmware query.
+- Capture files. The sensor check for an untested model keeps the keyboard's answers
+  in memory. The app writes them to a file only when you press Export a capture and
+  choose where to save it, and never uploads the file. It holds the app version, the
+  time, the keyboard's model, product ID, firmware, Windows container ID and report
+  sizes, its answer to the firmware query, the sensor readings from the last check
+  with no key held and with one key held, and any answer the app couldn't read. It
+  holds no record of typing. Each reading is a single moment and shows which keys were
+  down right then.
 - A virtual controller through the ViGEmBus driver.
 
 ## Network posture
