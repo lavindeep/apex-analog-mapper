@@ -345,7 +345,7 @@ public sealed class KeyboardViewModelTests : IDisposable
         [.. CaptureExport.FromJson(File.ReadAllText(path), out _)!.Replies.Where(r => r.Label.StartsWith("rejected", StringComparison.Ordinal))];
 
     [Fact]
-    public void A_capture_is_not_exported_once_the_board_reports_other_firmware()
+    public void A_capture_leaves_out_an_earlier_check_once_the_board_reports_other_firmware()
     {
         _h.Boards[0] = AppHarness.Gen3Info;
         var keyboard = Create(consented: [AppHarness.Gen3]);
