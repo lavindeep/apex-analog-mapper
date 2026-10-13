@@ -74,6 +74,7 @@ public class SensorPollerTests
         Assert.Contains("canary", poller.FaultReason);
         Assert.Equal(SensorPoller.CanaryEveryCycles, poller.Cycles);
         Assert.True(fake.IsDisposed);
+        Assert.Equal(new CapturedReply("rejected: " + poller.FaultReason, 0, Convert.ToHexString(wrong)), poller.Rejected);
     }
 
     /// <summary>The canary compares the padding too: a reply that shares the version text but carries bytes after the terminator is not the reply read at open.</summary>
@@ -131,6 +132,43 @@ public class SensorPollerTests
         Assert.Contains("12-bit", poller.FaultReason);
         Assert.Equal(1, poller.FaultCount);
         Assert.True(fake.IsDisposed);
+    }
+
+    /// <summary>A board with another reply layout fails a check; the export needs the bytes it sent, not a rebuild of what parsed.</summary>
+    [Theory]
+    [InlineData("dirty padding", 3, "Reply padding was not zero.")]
+    [InlineData("all zero", 3, "A sensor reply was all zero or all one value, which is not sensor data.")]
+    [InlineData("shifted", 2, "A sensor reply failed its group signature (shifted or foreign reply).")]
+    [InlineData("short", 3, "The keyboard sent a short reply.")]
+    [InlineData("report id", 3, "The keyboard sent a reply with a non-zero report id.")]
+    public void A_reply_that_fails_a_check_is_kept_as_the_keyboard_sent_it(string kind, int group, string reason)
+    {
+        // Shifted is group 3's reply in group 2's slot.
+        var bad = kind == "all zero" ? new byte[SensorProtocol.ReportLength] : Fixtures.RestGroup(3);
+        switch (kind)
+        {
+            case "dirty padding":
+                bad[^1] = 0x5A;
+                break;
+            case "short":
+                bad = bad[..40];
+                break;
+            case "report id":
+                bad[0] = 0x01;
+                break;
+        }
+        var fake = new FakeVendorStream
+        {
+            OnRead = (index, command, selector) => selector == group ? bad : FakeVendorStream.DefaultReply(command, selector),
+        };
+        using var poller = new SensorPoller(OpenOnce(fake), new SensorSnapshot(), Racing);
+        Assert.Null(poller.Rejected);
+
+        poller.Start();
+        Assert.True(WaitUntil(() => poller.FaultCount == 1));
+        poller.Stop();
+
+        Assert.Equal(new CapturedReply("rejected: " + reason, group, Convert.ToHexString(bad)), poller.Rejected);
     }
 
     /// <summary>A stop that lands while the poller reopens after a fault must not replace the fault with the waiting reason.</summary>

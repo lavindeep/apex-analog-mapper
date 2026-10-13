@@ -127,6 +127,7 @@ public sealed class SensorPoller : IDisposable
     private int _firmwareLength;
     private int _state;
     private string? _faultReason;
+    private CapturedReply? _rejected;
     private string _firmware = string.Empty;
     private int _faultCount;
     private int _consecutiveFaults;
@@ -146,12 +147,18 @@ public sealed class SensorPoller : IDisposable
 
     /// <summary>A poller for the keyboard with the given container id.</summary>
     public static SensorPoller ForKeyboard(Guid containerId, SensorSnapshot shared, PollerConfig config) =>
-        new(() => HidVendorDevices.Open(containerId), shared, config);
+        new(() => HidVendorDevices.Open(containerId, forSensorReads: true), shared, config);
 
     public PollerState State => (PollerState)Volatile.Read(ref _state);
 
     /// <summary>Why the handle was last retired, or why the poller is waiting; null until the first.</summary>
     public string? FaultReason => Volatile.Read(ref _faultReason);
+
+    /// <summary>
+    /// The last reply that failed a check, as the keyboard sent it and labelled with why;
+    /// null until one does. Group 0 is a firmware reply. A capture export carries it.
+    /// </summary>
+    public CapturedReply? Rejected => Volatile.Read(ref _rejected);
 
     /// <summary>Firmware string read when the device was last opened.</summary>
     public string Firmware => Volatile.Read(ref _firmware);
@@ -281,19 +288,19 @@ public sealed class SensorPoller : IDisposable
             var status = device.Exchange(SensorRequest.Group(group), _reply);
             if (status != ExchangeStatus.Ok)
             {
-                return Describe(status);
+                return Failed(device, status, group);
             }
             if (SensorProtocol.ParseGroup(_reply, _raw, _filtered) is { } error)
             {
-                return error;
+                return Reject(group, error);
             }
             if (!SensorProtocol.IsPlausibleGroup(_raw))
             {
-                return "A sensor reply was all zero or all one value, which is not sensor data.";
+                return Reject(group, "A sensor reply was all zero or all one value, which is not sensor data.");
             }
             if (config.Signatures[group - 1] is { } signature && !signature.Matches(_raw))
             {
-                return SignatureFaultReason();
+                return Reject(group, SignatureFaultReason());
             }
             _working.SetGroup(group, _raw, _filtered);
         }
@@ -312,16 +319,31 @@ public sealed class SensorPoller : IDisposable
             var status = device.Exchange(SensorRequest.Firmware(), _reply);
             if (status != ExchangeStatus.Ok)
             {
-                return Describe(status);
+                return Failed(device, status, 0);
             }
             if (!CanaryMatches())
             {
-                return "The firmware canary did not match the firmware read at open (desynchronised replies).";
+                return Reject(0, "The firmware canary did not match the firmware read at open (desynchronised replies).");
             }
         }
         var periodMs = (float)((Stopwatch.GetTimestamp() - cycleStart) / _ticksPerMs);
         return _stats.Record(periodMs) ? "Three consecutive sensor cycles of 100 ms or more." : null;
     }
+
+    /// <summary>Keeps the reply for <see cref="Rejected"/> and returns why it failed. Only a failed reply allocates, so the cycle path stays allocation-free.</summary>
+    private string Reject(int group, string reason) => Reject(group, reason, _reply);
+
+    private string Reject(int group, string reason, ReadOnlySpan<byte> reply)
+    {
+        Volatile.Write(ref _rejected, new CapturedReply("rejected: " + reason, group, Convert.ToHexString(reply)));
+        return reason;
+    }
+
+    /// <summary>Why an exchange failed. A reply the keyboard did send, short or with a non-zero report id, is kept too.</summary>
+    private string Failed(VendorInterface device, ExchangeStatus status, int group) =>
+        status is ExchangeStatus.ShortReply or ExchangeStatus.BadReportId
+            ? Reject(group, Describe(status), device.Received)
+            : Describe(status);
 
     private string SignatureFaultReason()
     {
@@ -394,11 +416,11 @@ public sealed class SensorPoller : IDisposable
         var status = device.Exchange(SensorRequest.Firmware(), _reply);
         if (status != ExchangeStatus.Ok)
         {
-            return Describe(status);
+            return Failed(device, status, 0);
         }
         if (SensorProtocol.ParseFirmware(_reply, out var version) is { } error)
         {
-            return error;
+            return Reject(0, error);
         }
         var text = _reply.AsSpan(1);
         _firmwareLength = text.IndexOf((byte)0) is var end and >= 0 ? end : text.Length;

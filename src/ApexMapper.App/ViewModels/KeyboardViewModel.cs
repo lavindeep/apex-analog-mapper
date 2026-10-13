@@ -24,8 +24,9 @@ public sealed record BoardItem(KeyboardInfo Info, string Detail)
 /// firmware the chosen one reports. An unverified model gets the try-it flow: the
 /// firmware request is the only thing sent until the user agrees to the risk, then a
 /// check that its sensors move when a key is pressed, the learn step per key on the
-/// calibration card, and a capture export for a GitHub issue. The firmware is never
-/// asked while a session runs: the session's poller has the board open.
+/// calibration card, and a capture export for a GitHub issue. An unsupported model is
+/// told so and never gets the sensor request. The firmware is never asked while a
+/// session runs: the session's poller has the board open.
 /// </summary>
 public sealed class KeyboardViewModel : ObservableObject
 {
@@ -36,7 +37,30 @@ public sealed class KeyboardViewModel : ObservableObject
     public const string ConsentText =
         "To read how far each key is pressed, the app sends this keyboard the request that works on the original " +
         "Apex Pro TKL. No one has checked how this model handles it. It will most likely answer the same way. If the " +
-        "keyboard acts oddly afterwards, unplug it and plug it back in.";
+        "keyboard acts oddly afterwards, unplug it and plug it back in. The keyboard's answers stay in the app's " +
+        "memory. They go into a file only if you export a capture, and the app never sends them anywhere.";
+
+    /// <summary>Every field a capture file holds, in plain words, shown before anyone presses Export.</summary>
+    public static readonly IReadOnlyList<string> CaptureHolds =
+    [
+        "The app's version and when you saved the file.",
+        "The keyboard's model, product ID and firmware version.",
+        "The ID Windows gave this keyboard, and the size of its reports.",
+        "The keyboard's answer to the firmware request.",
+        "The sensor readings from your last check, once with your hands off and once while you held a key.",
+        "Any answer from the keyboard that the app couldn't read.",
+    ];
+
+    public const string CaptureLimits =
+        "A capture holds no record of your typing, your profiles or anything else from this PC. Each reading is a " +
+        "single moment, so it shows which keys were down right then, such as the key you held. The check's readings " +
+        "stay in the app's memory. The next check replaces them, and they're gone when you close the app. The app " +
+        "writes the file only when you press Export a capture and choose where to save it. It never uploads the " +
+        "file. If you attach it to a GitHub issue, anyone can read it.";
+
+    public const string UnsupportedText =
+        "The app cannot read how far keys are pressed on this model. Its firmware has no request for it that anyone has " +
+        "found, so the app never sends one.";
 
     private readonly AppServices _services;
     private readonly Workspace _workspace;
@@ -53,7 +77,9 @@ public sealed class KeyboardViewModel : ObservableObject
     private LearnStep? _checkStep;
     private (ushort[] Raw, ushort[] Filtered)? _restCapture;
     private (ushort[] Raw, ushort[] Filtered)? _heldCapture;
-    private Guid? _capturedFrom;
+    private CapturedReply? _rejectedCapture;
+    private CapturedReply? _rejectedBefore;
+    private (KeyboardInfo Info, string? Firmware)? _capturedFrom;
     private string? _checkText;
     private bool _exported;
 
@@ -129,11 +155,14 @@ public sealed class KeyboardViewModel : ObservableObject
           "the analog keys switch to on and off and the status card says why."
         : null;
 
-    /// <summary>The board is a model the app has not been verified on; the banner stays for as long as it is chosen (H6).</summary>
-    public bool IsUnverified => _workspace.Board is { Verified: false };
+    /// <summary>The board is a model the app has not been verified on but may work; the banner stays for as long as it is chosen (H6).</summary>
+    public bool IsUnverified => _workspace.Board is { Verified: false, Unsupported: false };
+
+    /// <summary>The board is a model whose firmware has no sensor request anyone has found.</summary>
+    public bool IsUnsupported => _workspace.Board is { Unsupported: true };
 
     /// <summary>Try-it step 2: the firmware answered and the user has not yet agreed to the sensor request.</summary>
-    public bool NeedsConsent => _workspace.Board is { Verified: false, Consented: false, Firmware.Version: not null } && !_workspace.SessionActive;
+    public bool NeedsConsent => _workspace.Board is { Verified: false, Unsupported: false, Consented: false, Firmware.Version: not null } && !_workspace.SessionActive;
 
     public bool CanCheck => _workspace.Board is { Verified: false, CanReadSensors: true } && _check == CheckPhase.None && !_workspace.SessionActive;
 
@@ -222,7 +251,11 @@ public sealed class KeyboardViewModel : ObservableObject
         }
     }
 
-    /// <summary>What a GitHub issue needs to add this board to the tested list (H6).</summary>
+    /// <summary>
+    /// What a GitHub issue needs to add this board to the tested list (H6). The check's
+    /// replies go in only for the board and firmware they came from, so a replug after a
+    /// firmware update never labels old replies with the new version.
+    /// </summary>
     internal CaptureExport BuildExport(KeyboardInfo info, Board? board)
     {
         var replies = new List<CapturedReply>();
@@ -230,9 +263,14 @@ public sealed class KeyboardViewModel : ObservableObject
         {
             replies.Add(new CapturedReply("firmware", 0, Convert.ToHexString(firmware)));
         }
+        var fromThisBoard = _capturedFrom == (info, board?.Firmware.Version);
+        if (_rejectedCapture is { } rejected && fromThisBoard)
+        {
+            replies.Add(rejected);
+        }
         foreach (var (label, capture) in new[] { ("at rest", _restCapture), ("key held", _heldCapture) })
         {
-            if (capture is { } c && _capturedFrom == info.ContainerId)
+            if (capture is { } c && fromThisBoard)
             {
                 for (var group = 1; group <= SensorRequest.GroupCount; group++)
                 {
@@ -264,6 +302,7 @@ public sealed class KeyboardViewModel : ObservableObject
                 Raise(nameof(FirmwareText));
                 Raise(nameof(FirmwareWarning));
                 Raise(nameof(IsUnverified));
+                Raise(nameof(IsUnsupported));
                 RefreshTryIt();
                 break;
             case nameof(Workspace.SessionActive):
@@ -308,9 +347,10 @@ public sealed class KeyboardViewModel : ObservableObject
     private async Task ReadFirmwareAsync(BoardItem item)
     {
         var probe = ++_probe;
-        CancelCheck();
         // Cleared first: the live sensor stops before the request, so the two never share the board.
+        // The check ends after that, so a reply the stopping poller rejects goes in its capture.
         _workspace.Board = null;
+        CancelCheck();
         SetReading(true);
         FirmwareReading reading;
         try
@@ -361,13 +401,19 @@ public sealed class KeyboardViewModel : ObservableObject
         StartCheck();
     }
 
+    /// <summary>
+    /// Starts the check. Another card can keep the live sensor polling between checks, so
+    /// a rejected reply it already holds belongs to an earlier check and is set aside.
+    /// </summary>
     private void StartCheck()
     {
         _check = CheckPhase.Rest;
         _checkSince = _services.NowMs();
         _restCapture = null;
         _heldCapture = null;
-        _capturedFrom = _workspace.Board?.Id;
+        _rejectedCapture = null;
+        _rejectedBefore = _services.Sensor.Rejected;
+        _capturedFrom = _workspace.Board is { } board ? (board.Info, board.Firmware.Version) : null;
         CheckText = "Reading the sensors. Keep your hands off the keyboard for a moment.";
         _services.Sensor.Want(this, true);
         RefreshTryIt();
@@ -380,11 +426,21 @@ public sealed class KeyboardViewModel : ObservableObject
         _services.Log("Sensor check: " + text);
     }
 
+    /// <summary>
+    /// Stops a running check, however it ends, and keeps a reply rejected during it for the
+    /// capture. Read after the check lets go of the sensor, since a poller that stops can
+    /// still reject a reply on its way out.
+    /// </summary>
     private void CancelCheck()
     {
+        var running = _check != CheckPhase.None;
         _check = CheckPhase.None;
         _checkStep = null;
         _services.Sensor.Want(this, false);
+        if (running && _services.Sensor.Rejected is { } rejected && !ReferenceEquals(rejected, _rejectedBefore))
+        {
+            _rejectedCapture = rejected;
+        }
         RefreshTryIt();
     }
 
@@ -420,10 +476,11 @@ public sealed class KeyboardViewModel : ObservableObject
         Export.Refresh();
     }
 
-    private static string DetailOf(KeyboardInfo info) => (KnownKeyboards.Find(info.ProductId)?.Verified, info.HasVendorInterface) switch
+    private static string DetailOf(KeyboardInfo info) => (KnownKeyboards.Find(info.ProductId)?.Support, info.HasVendorInterface) switch
     {
+        (SensorSupport.Unsupported, _) => "Not supported",
         (_, false) => "Its sensor interface was not found",
-        (true, _) => "Tested",
+        (SensorSupport.Verified, _) => "Tested",
         _ => "Not tested yet: try it",
     };
 }

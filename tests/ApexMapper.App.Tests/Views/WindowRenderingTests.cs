@@ -76,6 +76,11 @@ public sealed class WindowRenderingTests
             h.Boards[0] = AppHarness.Gen3Info;
             h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
         }),
+        new("unsupported-board", h =>
+        {
+            h.Boards[0] = AppHarness.Gen3Info with { ProductId = 0x1646, Name = "Apex Pro TKL Wireless Gen 3" };
+            h.FirmwareOf = _ => new FirmwareReading("3.2.1", null, null);
+        }),
         new("driver-missing", h => h.DriverCheck = () => DriverState.Missing),
         new("restart-required", h =>
         {

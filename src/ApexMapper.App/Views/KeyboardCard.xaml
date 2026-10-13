@@ -35,6 +35,8 @@
                     Visibility="{Binding FirmwareText, Converter={StaticResource ShowWhenPresent}}" />
       <ui:InfoBar Style="{StaticResource Warning}" Severity="Informational" Message="{Binding FirmwareWarning}"
                   Visibility="{Binding FirmwareWarning, Converter={StaticResource ShowWhenPresent}}" />
+      <ui:InfoBar Style="{StaticResource Warning}" Title="Not supported" Message="{x:Static vm:KeyboardViewModel.UnsupportedText}"
+                  Visibility="{Binding IsUnsupported, Converter={StaticResource ShowWhenTrue}}" />
 
       <!-- The try-it flow for a model the app has not been tested on (H6). -->
       <StackPanel Visibility="{Binding IsUnverified, Converter={StaticResource ShowWhenTrue}}">
@@ -46,7 +48,22 @@
           <ui:Button Appearance="Primary" Content="Accept the risk and read the sensors" Command="{Binding Consent}" />
         </StackPanel>
 
-        <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
+        <!-- Spelled out before Export so no one attaches a file without knowing what is in it. -->
+        <ui:TextBlock Style="{StaticResource FieldLabel}" Text="What a capture holds" />
+        <ItemsControl Margin="8,0,0,0" ItemsSource="{x:Static vm:KeyboardViewModel.CaptureHolds}" Focusable="False"
+                      AutomationProperties.Name="What a capture holds">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <DockPanel Margin="0,0,0,4">
+                <ui:TextBlock DockPanel.Dock="Left" Margin="0,0,8,0" Text="•" />
+                <ui:TextBlock Text="{Binding}" TextWrapping="Wrap" />
+              </DockPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <ui:TextBlock Margin="0,4,0,0" Style="{StaticResource Paragraph}" Text="{x:Static vm:KeyboardViewModel.CaptureLimits}" />
+
+        <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
           <ui:Button Content="Check the sensors" Icon="{ui:SymbolIcon Pulse24}" Command="{Binding Check}" />
           <ui:Button Margin="8,0,0,0" Content="Export a capture" Icon="{ui:SymbolIcon Save24}" Command="{Binding Export}" />
           <ui:ProgressRing Margin="12,0,0,0" Width="20" Height="20" IsIndeterminate="True"

@@ -19,13 +19,16 @@ public sealed record Board(KeyboardInfo Info, FirmwareReading Firmware, bool Con
     public Guid Id => Info.ContainerId;
 
     /// <summary>The product has been verified with the sensor protocol.</summary>
-    public bool Verified => KnownKeyboards.Find(Info.ProductId) is { Verified: true };
+    public bool Verified => KnownKeyboards.Find(Info.ProductId) is { Support: SensorSupport.Verified };
+
+    /// <summary>The product's firmware has no sensor request anyone has found. Consent given before it was known does not count.</summary>
+    public bool Unsupported => KnownKeyboards.Find(Info.ProductId) is { Support: SensorSupport.Unsupported };
 
     /// <summary>The firmware is one the protocol was verified on. Another version only warns.</summary>
     public bool FirmwareVerified => Firmware.Version is { } version && KnownKeyboards.VerifiedFirmware.Contains(version);
 
-    /// <summary>The app may send sensor requests: the board answered with a version, and it is verified or the user agreed.</summary>
-    public bool CanReadSensors => Firmware.Version is not null && (Verified || Consented);
+    /// <summary>The app may send sensor requests: the board answered with a version, and it is verified or the user agreed to try a model that may work.</summary>
+    public bool CanReadSensors => Firmware.Version is not null && (Verified || (Consented && !Unsupported));
 }
 
 /// <summary>

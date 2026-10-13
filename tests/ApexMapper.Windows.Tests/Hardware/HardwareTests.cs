@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using ApexMapper.Core.Keys;
 using ApexMapper.Core.Sensors;
@@ -11,7 +12,7 @@ using Xunit;
 namespace ApexMapper.Windows.Tests.Hardware;
 
 /// <summary>
-/// Against the maintainer's Apex Pro TKL and an interactive desktop. Run with
+/// Against a connected Apex Pro and an interactive desktop. Run with
 /// APEX_HW_TESTS=1; thresholds in <see cref="HardwareThresholds"/>. The hook and pump
 /// tests inject W, which types into the foreground window on the pass-through passes.
 /// </summary>
@@ -27,9 +28,10 @@ public class HardwareTests
         return board.ContainerId;
     }
 
-    private static VendorInterface OpenSelected()
+    /// <summary>For sensor reads, opens through the app's own guard, so a model marked Unsupported never gets one.</summary>
+    private static VendorInterface OpenSelected(bool forSensorReads = false)
     {
-        var stream = HidVendorDevices.Open(SelectedKeyboard());
+        var stream = HidVendorDevices.Open(SelectedKeyboard(), forSensorReads);
         Assert.NotNull(stream);
         return new VendorInterface(stream);
     }
@@ -56,24 +58,28 @@ public class HardwareTests
         Assert.True(SensorProtocol.LooksLikeVersion(version), version);
     }
 
+    /// <summary>Signatures of groups 2 and 3 from the live board's replies at rest. Hands off the keyboard.</summary>
+    private static Dictionary<int, GroupSignature> RestSignatures()
+    {
+        var signatures = new Dictionary<int, GroupSignature>();
+        using var device = OpenSelected(forSensorReads: true);
+        var reply = new byte[SensorProtocol.ReportLength];
+        var raw = new ushort[SensorProtocol.SensorsPerGroup];
+        var filtered = new ushort[SensorProtocol.SensorsPerGroup];
+        foreach (var group in new[] { 2, 3 })
+        {
+            Assert.Equal(ExchangeStatus.Ok, device.Exchange(SensorRequest.Group(group), reply));
+            Assert.Null(SensorProtocol.ParseGroup(reply, raw, filtered));
+            signatures[group] = GroupSignature.FromRest(raw);
+        }
+        return signatures;
+    }
+
     /// <summary>Signatures come from the live board's rest replies, so every cycle is checked the way a calibrated session checks it, and the two groups must cross-reject. Hands off the keyboard.</summary>
     [HardwareFact]
     public void The_poller_cycles_two_groups_against_live_signatures_under_the_threshold_with_no_faults()
     {
-        var signatures = new Dictionary<int, GroupSignature>();
-        using (var device = OpenSelected())
-        {
-            var reply = new byte[SensorProtocol.ReportLength];
-            var raw = new ushort[SensorProtocol.SensorsPerGroup];
-            var filtered = new ushort[SensorProtocol.SensorsPerGroup];
-            foreach (var group in new[] { 2, 3 })
-            {
-                Assert.Equal(ExchangeStatus.Ok, device.Exchange(SensorRequest.Group(group), reply));
-                Assert.Null(SensorProtocol.ParseGroup(reply, raw, filtered));
-                signatures[group] = GroupSignature.FromRest(raw);
-            }
-        }
-        var config = PollerConfig.For([2, 3], signatures);
+        var config = PollerConfig.For([2, 3], RestSignatures());
         Assert.True(config.SignaturesDistinguishGroups, "Groups 2 and 3 should cross-reject on this board.");
         var shared = new SensorSnapshot();
         using var poller = SensorPoller.ForKeyboard(SelectedKeyboard(), shared, config);
@@ -94,6 +100,71 @@ public class HardwareTests
         Assert.True(clock.ElapsedMilliseconds < 200, $"Stop against a live read took {clock.ElapsedMilliseconds} ms.");
         Assert.True(shared.WasRead(16) && shared.WasRead(29));
         Assert.True(SensorProtocol.LooksLikeVersion(poller.Firmware), poller.Firmware);
+    }
+
+    /// <summary>The calibration card's live sensor asks for all five groups with no signatures. Hands off the keyboard.</summary>
+    [HardwareFact]
+    public void The_poller_reads_all_five_groups_the_way_the_live_sensor_does_with_no_faults()
+    {
+        var shared = new SensorSnapshot();
+        using var poller = SensorPoller.ForKeyboard(SelectedKeyboard(), shared, PollerConfig.For([1, 2, 3, 4, 5]));
+
+        poller.Start();
+        Assert.True(SpinWait.SpinUntil(() => poller.State == PollerState.Running, 3000), poller.FaultReason);
+        Thread.Sleep(1000);
+        Assert.True(poller.Stop(), "The poller thread did not exit.");
+
+        Assert.Equal(0, poller.FaultCount);
+        Assert.Null(poller.Rejected);
+        Assert.True(poller.Cycles > 20, $"{poller.Cycles} cycles in 1 s.");
+        Assert.All(Enumerable.Range(0, SensorRequest.GroupCount), group => Assert.True(shared.WasRead(group * SensorProtocol.SensorsPerGroup), $"group {group + 1} unread"));
+    }
+
+    /// <summary>
+    /// The capture export keeps a rejected reply as the keyboard sent it. Swapped signatures
+    /// make group 2's live reply fail, and the stream records every reply the keyboard sent,
+    /// so the kept reply must equal one of them byte for byte. Hands off the keyboard.
+    /// </summary>
+    [HardwareFact]
+    public void A_live_reply_that_fails_its_signature_is_kept_exactly_as_the_keyboard_sent_it()
+    {
+        var signatures = RestSignatures();
+        var swapped = new Dictionary<int, GroupSignature> { [2] = signatures[3], [3] = signatures[2] };
+        var config = PollerConfig.For([2, 3], swapped);
+        Assert.True(config.SignaturesDistinguishGroups, "Groups 2 and 3 should cross-reject on this board.");
+        var replies = new ConcurrentQueue<string>();
+        var keyboard = SelectedKeyboard();
+        using var poller = new SensorPoller(
+            () => HidVendorDevices.Open(keyboard, forSensorReads: true) is { } stream ? new RecordingStream(stream, replies) : null,
+            new SensorSnapshot(), config);
+
+        poller.Start();
+        var rejectedInTime = SpinWait.SpinUntil(() => poller.Rejected is not null, 3000);
+        var stopped = poller.Stop();
+
+        Assert.True(rejectedInTime, poller.FaultReason);
+        Assert.True(stopped, "The poller thread did not exit.");
+        var rejected = poller.Rejected!;
+        Assert.Equal(2, rejected.Group);
+        Assert.StartsWith("rejected: ", rejected.Label, StringComparison.Ordinal);
+        Assert.Contains("signature", rejected.Label, StringComparison.Ordinal);
+        Assert.Equal(SensorProtocol.ReportLength * 2, rejected.ReplyHex.Length);
+        Assert.Contains(rejected.ReplyHex, replies);
+    }
+
+    /// <summary>The real keyboard's stream, keeping a hex copy of every reply read from it.</summary>
+    private sealed class RecordingStream(IVendorStream inner, ConcurrentQueue<string> replies) : IVendorStream
+    {
+        public int Read(byte[] buffer, int offset, int count)
+        {
+            var read = inner.Read(buffer, offset, count);
+            replies.Enqueue(Convert.ToHexString(buffer, offset, read));
+            return read;
+        }
+
+        public void Write(byte[] buffer, int offset, int count) => inner.Write(buffer, offset, count);
+
+        public void Dispose() => inner.Dispose();
     }
 
     [HardwareFact]

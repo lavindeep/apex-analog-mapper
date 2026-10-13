@@ -321,6 +321,10 @@ public sealed class StatusViewModel : ObservableObject
         {
             return ("The keyboard's firmware could not be read. " + board.Firmware.Problem, Fix.None);
         }
+        if (board.Unsupported)
+        {
+            return ("The app cannot read this keyboard's sensors. The keyboard card says why.", Fix.None);
+        }
         if (!board.CanReadSensors)
         {
             return ("This keyboard has not been tested. Try it on the keyboard card first.", Fix.None);

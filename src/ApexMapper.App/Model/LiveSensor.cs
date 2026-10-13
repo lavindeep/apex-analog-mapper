@@ -18,6 +18,13 @@ public interface ILiveSensor
     /// <summary>Why there are no readings while someone wants them, or null.</summary>
     string? Problem { get; }
 
+    /// <summary>
+    /// The last reply that failed a check while someone wanted readings, as the keyboard
+    /// sent it, or null. It outlives the poller, so a check that mapping or an unplug
+    /// interrupts still has it.
+    /// </summary>
+    CapturedReply? Rejected { get; }
+
     /// <summary>Says whether a reader wants readings. The keyboard is read only while someone does.</summary>
     void Want(object reader, bool wanted);
 }
@@ -40,6 +47,7 @@ public sealed class LiveSensor : ILiveSensor, IDisposable
     private readonly HashSet<object> _readers = [];
     private SensorPoller? _poller;
     private SensorSnapshot? _snapshot;
+    private CapturedReply? _rejected;
     private Guid _board;
 
     public LiveSensor(Workspace workspace, Func<Guid, SensorSnapshot, PollerConfig, SensorPoller>? create = null)
@@ -53,6 +61,8 @@ public sealed class LiveSensor : ILiveSensor, IDisposable
     internal bool IsPolling => _poller is not null;
 
     public string? Problem => _poller is { State: not PollerState.Running and not PollerState.Starting, FaultReason: { } reason } ? reason : null;
+
+    public CapturedReply? Rejected => _poller?.Rejected ?? _rejected;
 
     public void Want(object reader, bool wanted)
     {
@@ -119,9 +129,14 @@ public sealed class LiveSensor : ILiveSensor, IDisposable
         }
     }
 
+    /// <summary>Reads the poller's rejection after Dispose joins its worker, which can still reject a reply on its way out.</summary>
     private void StopPolling()
     {
-        _poller?.Dispose();
+        if (_poller is { } poller)
+        {
+            poller.Dispose();
+            _rejected = poller.Rejected ?? _rejected;
+        }
         _poller = null;
         _snapshot = null;
     }

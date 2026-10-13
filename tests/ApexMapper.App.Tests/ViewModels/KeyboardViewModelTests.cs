@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text.Json;
 using ApexMapper.App.Model;
 using ApexMapper.App.Storage;
 using ApexMapper.App.ViewModels;
@@ -292,6 +293,180 @@ public sealed class KeyboardViewModelTests : IDisposable
 
         Assert.False(keyboard.IsChecking);
         Assert.StartsWith("No sensor moved", keyboard.CheckText);
+    }
+
+    [Fact]
+    public void A_check_whose_replies_fail_exports_the_reply_the_keyboard_sent()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        var rejected = new CapturedReply("rejected: Reply padding was not zero.", 1, "00AB");
+
+        keyboard.Check.Execute(null);
+        _h.Sensor.Problem = "Reply padding was not zero.";
+        _h.Sensor.Rejected = rejected;
+        keyboard.Tick(_h.Now + KeyboardViewModel.CheckTimeoutMs + 1);
+        // The check stopped the poller, and the reply went with it.
+        _h.Sensor.Rejected = null;
+
+        Assert.Equal("The keyboard's sensors could not be read: Reply padding was not zero.", keyboard.CheckText);
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+        var export = CaptureExport.FromJson(File.ReadAllText(_h.Dialogs.SavePath), out var error);
+        Assert.Null(error);
+        Assert.Equal(rejected, export!.Replies.Single(r => r.Label.StartsWith("rejected", StringComparison.Ordinal)));
+    }
+
+    /// <summary>A replug cancels the check before it times out. The reply rejected during it still goes in the capture.</summary>
+    [Fact]
+    public void A_check_cut_short_by_a_replug_still_exports_its_rejected_reply()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        keyboard.Check.Execute(null);
+        var rejected = new CapturedReply("rejected: Reply padding was not zero.", 1, "00AB");
+        _h.Sensor.Rejected = rejected;
+
+        keyboard.OnKeyboards([]);
+        keyboard.OnKeyboards([AppHarness.Gen3Info]);
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+
+        Assert.Equal([rejected], RejectedIn(_h.Dialogs.SavePath));
+    }
+
+    /// <summary>The poller can reject a reply while it stops, after the check has let go of the sensor.</summary>
+    [Fact]
+    public void A_reply_rejected_while_the_poller_stops_still_goes_in_the_capture()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        var rejected = new CapturedReply("rejected: Reply padding was not zero.", 2, "00AC");
+        _h.Sensor.OnRelease = () => _h.Sensor.Rejected = rejected;
+
+        keyboard.Check.Execute(null);
+        _h.Workspace.Session = SessionState.Starting;
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+
+        Assert.Equal([rejected], RejectedIn(_h.Dialogs.SavePath));
+    }
+
+    /// <summary>
+    /// With the calibration card still reading, the poller stops only when the board is
+    /// cleared for the next one, and can reject a reply on its way out.
+    /// </summary>
+    [Fact]
+    public void A_reply_rejected_while_switching_keyboards_still_goes_in_the_capture()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        _h.Boards.Add(AppHarness.TklInfo);
+        var keyboard = Create(remembered: AppHarness.Gen3, consented: [AppHarness.Gen3]);
+        _h.Sensor.Want(new object(), true);
+        var rejected = new CapturedReply("rejected: Reply padding was not zero.", 3, "00AD");
+        _h.Workspace.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Workspace.Board) && _h.Workspace.Board is null)
+            {
+                _h.Sensor.Rejected = rejected;
+            }
+        };
+
+        keyboard.Check.Execute(null);
+        keyboard.Selected = keyboard.Boards.Single(b => b.Info == AppHarness.TklInfo);
+        keyboard.Selected = keyboard.Boards.Single(b => b.Info == AppHarness.Gen3Info);
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+
+        Assert.Equal([rejected], RejectedIn(_h.Dialogs.SavePath));
+    }
+
+    /// <summary>The calibration card can keep the live sensor polling between checks, so it may still hold an earlier check's rejection.</summary>
+    [Fact]
+    public void A_capture_keeps_only_a_reply_rejected_during_its_own_check()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        var path = _h.File("capture.json");
+        _h.Dialogs.SavePath = path;
+        _h.Sensor.Rejected = new CapturedReply("rejected: Reply padding was not zero.", 1, "00AA");
+
+        var rest = CheckAtRest(keyboard);
+        keyboard.Tick(rest + KeyboardViewModel.CheckTimeoutMs + 1);
+        keyboard.Export.Execute(null);
+        Assert.Empty(RejectedIn(path));
+
+        // Rejected while waiting for a key press, after readings had come in.
+        rest = CheckAtRest(keyboard);
+        var during = new CapturedReply("rejected: Reply padding was not zero.", 4, "00BB");
+        _h.Sensor.Rejected = during;
+        keyboard.Tick(rest + KeyboardViewModel.CheckTimeoutMs + 1);
+        keyboard.Export.Execute(null);
+        Assert.Equal([during], RejectedIn(path));
+    }
+
+    private static List<CapturedReply> RejectedIn(string path) =>
+        [.. CaptureExport.FromJson(File.ReadAllText(path), out _)!.Replies.Where(r => r.Label.StartsWith("rejected", StringComparison.Ordinal))];
+
+    [Fact]
+    public void A_capture_leaves_out_an_earlier_check_once_the_board_reports_other_firmware()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        var rest = CheckAtRest(keyboard);
+        _h.Sensor.Reading = AppHarness.Holding(16, 3000);
+        keyboard.Tick(rest + 100);
+
+        // Updated in GG, then plugged back in.
+        _h.FirmwareOf = _ => new FirmwareReading("4.17.0", null, null);
+        keyboard.OnKeyboards([]);
+        keyboard.OnKeyboards([AppHarness.Gen3Info]);
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+
+        var export = CaptureExport.FromJson(File.ReadAllText(_h.Dialogs.SavePath), out var error);
+        Assert.Null(error);
+        Assert.Equal("4.17.0", export!.Firmware);
+        Assert.DoesNotContain(export.Replies, reply => reply.Label is "at rest" or "key held");
+    }
+
+    /// <summary>The card lists a capture's fields by hand, so a new field fails here until the card names it too.</summary>
+    [Fact]
+    public void A_capture_file_holds_only_the_fields_the_card_lists()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        _h.FirmwareOf = _ => new FirmwareReading("1.0", [0x00, 0x31], null);
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+
+        using var json = JsonDocument.Parse(File.ReadAllText(_h.Dialogs.SavePath));
+        var payload = json.RootElement.GetProperty("payload");
+        Assert.Equal(["version", "payload"], json.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(
+            ["app_version", "taken_at", "product_id", "product_name", "firmware", "container_id", "input_report_length", "output_report_length", "replies"],
+            payload.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["label", "group", "reply_hex"], payload.GetProperty("replies")[0].EnumerateObject().Select(p => p.Name));
+    }
+
+    [Theory]
+    [InlineData(0x1630)]
+    [InlineData(0x1632)]
+    [InlineData(0x1644)]
+    [InlineData(0x1646)]
+    public void An_unsupported_board_says_so_and_is_never_asked_for_its_sensors_even_with_earlier_consent(int productId)
+    {
+        var wireless = AppHarness.Gen3Info with { ProductId = (ushort)productId, Name = "Apex Pro TKL Wireless" };
+        _h.Boards[0] = wireless;
+
+        var keyboard = Create(consented: [wireless.ContainerId]);
+
+        Assert.Equal("Not supported", keyboard.Boards.Single().Detail);
+        Assert.True(keyboard.IsUnsupported);
+        Assert.False(keyboard.IsUnverified);
+        Assert.False(keyboard.NeedsConsent);
+        Assert.False(keyboard.CanCheck);
+        Assert.False(_h.Workspace.Board!.CanReadSensors);
     }
 
     [Fact]

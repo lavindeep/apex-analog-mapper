@@ -21,8 +21,11 @@ Xbox controller works.
 
 - Windows 10 or 11, 64-bit.
 - An Apex Pro. The sensor readout has been checked on the original Apex Pro TKL with
-  firmware 4.9.1 and 4.16.8. Every other Apex Pro, the full-size one included, shows up
-  as untested. The app tells you the risk and asks before it reads its sensors, and
+  firmware 4.9.1 and 4.16.8. The Apex Pro TKL Wireless (2023) and Apex Pro TKL Wireless
+  Gen 3 don't work, on a cable or through their receiver. Their firmware has no request
+  for key depth that anyone has found, so the keyboard card says they aren't supported
+  and the app never reads them. Every other Apex Pro, the full-size one included, shows
+  up as untested. The app tells you the risk and asks before it reads its sensors, and
   calibration learns where each key's sensor is.
 - The ViGEmBus driver, which creates the virtual controller. See below.
 
@@ -156,6 +159,16 @@ alpha, you're offered the next test version too.
 - **A key's calibration is refused.** Let go of the key, then press Set released
   again. If the key was down during that step, the reading is refused and nothing is
   saved.
+- **An untested keyboard's sensor check fails.** Press Export a capture on the keyboard
+  card and attach the file to a
+  [new issue](https://github.com/lavindeep/apex-analog-mapper/issues/new). The
+  keyboard card lists what the file holds: the app version and the time, the
+  keyboard's model, product ID, firmware and Windows device ID, its report sizes, its
+  answer to the firmware request, the sensor readings from the last check, and any
+  answer the app couldn't read. It holds no record of your typing, but each reading is
+  a single moment and shows which keys were down right then. The app writes the file
+  only when you export it and never uploads it. Once it's attached to an issue, anyone
+  can read it.
 - **Something else.** The Setup card opens the folder with the log. It records
   sessions, calibrations and faults, never your typing. It names a key only when you
   calibrate it or when the app warns about its calibration. File paths in it can show
@@ -184,7 +197,7 @@ dotnet build ApexAnalogMapper.slnx
 dotnet test ApexAnalogMapper.slnx
 ```
 
-`scripts/pack.ps1 -Version 0.5.0-alpha` builds the installer with the
+`scripts/pack.ps1 -Version 0.5.1-alpha` builds the installer with the
 [Velopack](https://velopack.io) CLI (`dotnet tool install -g vpk --version 1.2.0`).
 [CONTRIBUTING.md](CONTRIBUTING.md) covers the hardware tests and how to send a change.
 

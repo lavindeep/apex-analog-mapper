@@ -38,6 +38,16 @@ public class HidVendorDevicesTests
     }
 
     [Fact]
+    public void An_unsupported_model_is_opened_for_its_firmware_but_never_for_sensor_reads()
+    {
+        VendorCandidate[] wireless = [Good() with { ProductId = 0x1646 }];
+
+        Assert.Equal(0, HidVendorDevices.Select(wireless, Tkl));
+        Assert.Equal(-1, HidVendorDevices.Select(wireless, Tkl, forSensorReads: true));
+        Assert.Equal(0, HidVendorDevices.Select([Good()], Tkl, forSensorReads: true));
+    }
+
+    [Fact]
     public void Two_matches_in_one_container_select_nothing()
     {
         Assert.Equal(-1, HidVendorDevices.Select([Good(), Good()], Tkl));
