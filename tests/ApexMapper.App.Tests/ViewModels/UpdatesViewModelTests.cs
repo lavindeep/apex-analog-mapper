@@ -278,4 +278,21 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.False(updates.CanChoosePrereleases);
         Assert.Equal("This copy was not installed with Setup.exe, so it cannot update itself.", updates.Text);
     }
+
+    /// <summary>A CI build shares the installed release's settings, so it can find that release's saved answer too.</summary>
+    [Fact]
+    public void A_ci_build_never_looks_and_never_offers_a_release_in_its_place()
+    {
+        using var ci = new AppHarness("0.1.0-ci.137");
+        ci.Updates.Newest = "0.5.1-alpha";
+        ci.Services.Settings.Save(new AppSettings(UpdateCheckedAt: ci.Clock, UpdateFound: "0.5.1-alpha"));
+
+        var updates = Create(ci);
+
+        Assert.Empty(ci.Updates.Asked);
+        Assert.Null(updates.Available);
+        Assert.Null(updates.ActText);
+        Assert.False(updates.CanUpdate);
+        Assert.Equal("This is a test build from CI, so it does not look for updates.", updates.Text);
+    }
 }

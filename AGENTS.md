@@ -121,8 +121,8 @@ The .NET 10 SDK from `global.json` builds the app, on Windows only.
   It saves every card in light and dark.
 - CI packs every PR with Velopack. The artifact `apex-analog-mapper-ci-<run number>`
   holds `ApexAnalogMapper-win-Portable.zip`. Extract it into a new, empty folder and run
-  `current\ApexAnalogMapper.exe`. The CI version is `0.1.0-ci.<run number>`, so it
-  offers the latest release as an update. Leave Update alone.
+  `current\ApexAnalogMapper.exe`. The CI version is `0.1.0-ci.<run number>`, and a
+  build with that version never looks for updates.
 
 ### Hardware tests
 
