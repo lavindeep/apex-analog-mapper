@@ -154,7 +154,10 @@ public sealed class SensorPoller : IDisposable
     /// <summary>Why the handle was last retired, or why the poller is waiting; null until the first.</summary>
     public string? FaultReason => Volatile.Read(ref _faultReason);
 
-    /// <summary>The last sensor reply that failed a check, as the keyboard sent it and labelled with why; null until one does. A capture export carries it.</summary>
+    /// <summary>
+    /// The last reply that failed a check, as the keyboard sent it and labelled with why;
+    /// null until one does. Group 0 is a firmware reply. A capture export carries it.
+    /// </summary>
     public CapturedReply? Rejected => Volatile.Read(ref _rejected);
 
     /// <summary>Firmware string read when the device was last opened.</summary>
@@ -285,7 +288,7 @@ public sealed class SensorPoller : IDisposable
             var status = device.Exchange(SensorRequest.Group(group), _reply);
             if (status != ExchangeStatus.Ok)
             {
-                return Describe(status);
+                return Failed(device, status, group);
             }
             if (SensorProtocol.ParseGroup(_reply, _raw, _filtered) is { } error)
             {
@@ -316,11 +319,11 @@ public sealed class SensorPoller : IDisposable
             var status = device.Exchange(SensorRequest.Firmware(), _reply);
             if (status != ExchangeStatus.Ok)
             {
-                return Describe(status);
+                return Failed(device, status, 0);
             }
             if (!CanaryMatches())
             {
-                return "The firmware canary did not match the firmware read at open (desynchronised replies).";
+                return Reject(0, "The firmware canary did not match the firmware read at open (desynchronised replies).");
             }
         }
         var periodMs = (float)((Stopwatch.GetTimestamp() - cycleStart) / _ticksPerMs);
@@ -328,11 +331,19 @@ public sealed class SensorPoller : IDisposable
     }
 
     /// <summary>Keeps the reply for <see cref="Rejected"/> and returns why it failed. Only a failed reply allocates, so the cycle path stays allocation-free.</summary>
-    private string Reject(int group, string reason)
+    private string Reject(int group, string reason) => Reject(group, reason, _reply);
+
+    private string Reject(int group, string reason, ReadOnlySpan<byte> reply)
     {
-        Volatile.Write(ref _rejected, new CapturedReply("rejected: " + reason, group, Convert.ToHexString(_reply)));
+        Volatile.Write(ref _rejected, new CapturedReply("rejected: " + reason, group, Convert.ToHexString(reply)));
         return reason;
     }
+
+    /// <summary>Why an exchange failed. A reply the keyboard did send, short or with a non-zero report id, is kept too.</summary>
+    private string Failed(VendorInterface device, ExchangeStatus status, int group) =>
+        status is ExchangeStatus.ShortReply or ExchangeStatus.BadReportId
+            ? Reject(group, Describe(status), device.Received)
+            : Describe(status);
 
     private string SignatureFaultReason()
     {
@@ -405,11 +416,11 @@ public sealed class SensorPoller : IDisposable
         var status = device.Exchange(SensorRequest.Firmware(), _reply);
         if (status != ExchangeStatus.Ok)
         {
-            return Describe(status);
+            return Failed(device, status, 0);
         }
         if (SensorProtocol.ParseFirmware(_reply, out var version) is { } error)
         {
-            return error;
+            return Reject(0, error);
         }
         var text = _reply.AsSpan(1);
         _firmwareLength = text.IndexOf((byte)0) is var end and >= 0 ? end : text.Length;

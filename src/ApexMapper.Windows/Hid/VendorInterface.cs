@@ -31,6 +31,7 @@ public sealed class VendorInterface : IDisposable
     private readonly IVendorStream _stream;
     private readonly byte[] _request = new byte[SensorProtocol.ReportLength];
     private readonly byte[] _reply = new byte[SensorProtocol.ReportLength];
+    private int _received;
     private int _closed;
 
     internal VendorInterface(IVendorStream stream)
@@ -40,6 +41,12 @@ public sealed class VendorInterface : IDisposable
 
     public bool IsClosed => Volatile.Read(ref _closed) != 0;
 
+    /// <summary>
+    /// The last reply as the keyboard sent it, including one <see cref="Exchange"/> refused
+    /// as short or with a non-zero report id, so a capture can keep it. Empty when none came.
+    /// </summary>
+    internal ReadOnlySpan<byte> Received => _reply.AsSpan(0, _received);
+
     /// <summary>Writes the request and reads the reply into <paramref name="reply"/> (65 bytes). Allocation-free.</summary>
     public ExchangeStatus Exchange(SensorRequest request, Span<byte> reply)
     {
@@ -48,6 +55,7 @@ public sealed class VendorInterface : IDisposable
             throw new ArgumentException("Reply buffer must be 65 bytes.", nameof(reply));
         }
         request.WriteTo(_request);
+        _received = 0;
         if (IsClosed)
         {
             return ExchangeStatus.Closed;
@@ -56,6 +64,7 @@ public sealed class VendorInterface : IDisposable
         {
             _stream.Write(_request, 0, _request.Length);
             var read = _stream.Read(_reply, 0, _reply.Length);
+            _received = read;
             if (IsClosed)
             {
                 return ExchangeStatus.Closed;
