@@ -129,10 +129,14 @@ public sealed class LiveSensor : ILiveSensor, IDisposable
         }
     }
 
+    /// <summary>Reads the poller's rejection after Dispose joins its worker, which can still reject a reply on its way out.</summary>
     private void StopPolling()
     {
-        _rejected = _poller?.Rejected ?? _rejected;
-        _poller?.Dispose();
+        if (_poller is { } poller)
+        {
+            poller.Dispose();
+            _rejected = poller.Rejected ?? _rejected;
+        }
         _poller = null;
         _snapshot = null;
     }

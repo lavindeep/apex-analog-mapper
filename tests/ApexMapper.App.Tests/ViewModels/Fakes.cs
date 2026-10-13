@@ -92,6 +92,9 @@ internal sealed class FakeSensor : ILiveSensor
 
     public bool Wanted => Readers.Count > 0;
 
+    /// <summary>Runs when a reader lets go, as a poller that stops and rejects a reply on its way out.</summary>
+    public Action? OnRelease { get; set; }
+
     /// <summary>Every sensor at a rest-like 850 counts, slots with no key at 5.</summary>
     public static ushort[] AtRest()
     {
@@ -124,9 +127,9 @@ internal sealed class FakeSensor : ILiveSensor
         {
             Readers.Add(reader);
         }
-        else
+        else if (Readers.Remove(reader))
         {
-            Readers.Remove(reader);
+            OnRelease?.Invoke();
         }
     }
 }

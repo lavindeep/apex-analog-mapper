@@ -425,16 +425,21 @@ public sealed class KeyboardViewModel : ObservableObject
         _services.Log("Sensor check: " + text);
     }
 
-    /// <summary>Stops a running check, however it ends, and keeps a reply rejected during it for the capture.</summary>
+    /// <summary>
+    /// Stops a running check, however it ends, and keeps a reply rejected during it for the
+    /// capture. Read after the check lets go of the sensor, since a poller that stops can
+    /// still reject a reply on its way out.
+    /// </summary>
     private void CancelCheck()
     {
-        if (_check != CheckPhase.None && _services.Sensor.Rejected is { } rejected && !ReferenceEquals(rejected, _rejectedBefore))
-        {
-            _rejectedCapture = rejected;
-        }
+        var running = _check != CheckPhase.None;
         _check = CheckPhase.None;
         _checkStep = null;
         _services.Sensor.Want(this, false);
+        if (running && _services.Sensor.Rejected is { } rejected && !ReferenceEquals(rejected, _rejectedBefore))
+        {
+            _rejectedCapture = rejected;
+        }
         RefreshTryIt();
     }
 
