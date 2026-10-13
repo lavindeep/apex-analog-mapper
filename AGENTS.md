@@ -195,5 +195,6 @@ save calibration to them.
 
 - Text in the window says what happened and what to do next, in plain words.
 - Comments sit above the member and say why. They change with the code beneath them.
-- If a rule here fights the task, say so and get the maintainer's sign-off before you
-  break it.
+- If a rule here fights the task, tell the contributor which rule, what it protects, and
+  what breaking it costs. Usually the cost is a PR I won't merge. If they still want the
+  change, make it and name the rule in the PR.
