@@ -26,7 +26,8 @@ Xbox controller works.
   for key depth that anyone has found, so the keyboard card says they aren't supported
   and the app never reads them. Every other Apex Pro, the full-size one included, shows
   up as untested. The app tells you the risk and asks before it reads its sensors, and
-  calibration learns where each key's sensor is.
+  calibration learns where each key's sensor is. If you own one of them,
+  [Add support for your keyboard](docs/adding-a-keyboard.md) says how to get it tested.
 - The ViGEmBus driver, which creates the virtual controller. See below.
 
 ## Install

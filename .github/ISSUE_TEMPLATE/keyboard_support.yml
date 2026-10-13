@@ -1,0 +1,75 @@
+name: Keyboard support
+description: Evidence that an Apex Pro model works with the app, or what you found about one that doesn't.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        [Add support for your keyboard](https://github.com/lavindeep/apex-analog-mapper/blob/main/docs/adding-a-keyboard.md) says how to take the capture this form asks for.
+  - type: input
+    id: model
+    attributes:
+      label: Keyboard
+      description: The model's name as SteelSeries sells it.
+      placeholder: Apex Pro TKL Gen 3
+    validations:
+      required: true
+  - type: input
+    id: hardware_id
+    attributes:
+      label: Hardware Ids
+      description: In Device Manager, open the keyboard's properties, choose Details, then Hardware Ids. Paste the line that starts with HID\VID_1038.
+      placeholder: HID\VID_1038&PID_1642
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware
+      description: As the keyboard card shows it. Leave it empty if the keyboard isn't in the list.
+      placeholder: 1.2.0
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection
+      options:
+        - USB cable
+        - Wireless receiver
+        - Bluetooth
+    validations:
+      required: true
+  - type: dropdown
+    id: card
+    attributes:
+      label: What the keyboard card says
+      options:
+        - Not tested yet
+        - Not supported
+        - The keyboard isn't in the list
+    validations:
+      required: true
+  - type: dropdown
+    id: check
+    attributes:
+      label: Sensor check, holding W
+      options:
+        - It passed
+        - It failed
+        - I didn't run it
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: 0.5.1-alpha
+    validations:
+      required: true
+  - type: textarea
+    id: capture
+    attributes:
+      label: Capture
+      description: Drag in the file from Export a capture, and paste the exact message the card showed if the check failed. Anyone can read the file once you post it. The keyboard card lists what it holds, and it has no record of your typing.
+  - type: textarea
+    id: found
+    attributes:
+      label: What you found
+      description: For a request you found in the firmware, the request as hex and where you found it, plus any replies you already have, as hex, with no key pressed and with W halfway and fully down. Share hex only, never a USB capture file.
