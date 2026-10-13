@@ -18,7 +18,11 @@ public interface ILiveSensor
     /// <summary>Why there are no readings while someone wants them, or null.</summary>
     string? Problem { get; }
 
-    /// <summary>The last sensor reply that failed a check while someone wanted readings, as the keyboard sent it, or null.</summary>
+    /// <summary>
+    /// The last reply that failed a check while someone wanted readings, as the keyboard
+    /// sent it, or null. It outlives the poller, so a check that mapping or an unplug
+    /// interrupts still has it.
+    /// </summary>
     CapturedReply? Rejected { get; }
 
     /// <summary>Says whether a reader wants readings. The keyboard is read only while someone does.</summary>
@@ -43,6 +47,7 @@ public sealed class LiveSensor : ILiveSensor, IDisposable
     private readonly HashSet<object> _readers = [];
     private SensorPoller? _poller;
     private SensorSnapshot? _snapshot;
+    private CapturedReply? _rejected;
     private Guid _board;
 
     public LiveSensor(Workspace workspace, Func<Guid, SensorSnapshot, PollerConfig, SensorPoller>? create = null)
@@ -57,7 +62,7 @@ public sealed class LiveSensor : ILiveSensor, IDisposable
 
     public string? Problem => _poller is { State: not PollerState.Running and not PollerState.Starting, FaultReason: { } reason } ? reason : null;
 
-    public CapturedReply? Rejected => _poller?.Rejected;
+    public CapturedReply? Rejected => _poller?.Rejected ?? _rejected;
 
     public void Want(object reader, bool wanted)
     {
@@ -126,6 +131,7 @@ public sealed class LiveSensor : ILiveSensor, IDisposable
 
     private void StopPolling()
     {
+        _rejected = _poller?.Rejected ?? _rejected;
         _poller?.Dispose();
         _poller = null;
         _snapshot = null;

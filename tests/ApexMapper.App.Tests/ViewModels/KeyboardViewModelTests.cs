@@ -317,6 +317,24 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.Equal(rejected, export!.Replies.Single(r => r.Label.StartsWith("rejected", StringComparison.Ordinal)));
     }
 
+    /// <summary>A replug cancels the check before it times out. The reply rejected during it still goes in the capture.</summary>
+    [Fact]
+    public void A_check_cut_short_by_a_replug_still_exports_its_rejected_reply()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        keyboard.Check.Execute(null);
+        var rejected = new CapturedReply("rejected: Reply padding was not zero.", 1, "00AB");
+        _h.Sensor.Rejected = rejected;
+
+        keyboard.OnKeyboards([]);
+        keyboard.OnKeyboards([AppHarness.Gen3Info]);
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+
+        Assert.Equal([rejected], RejectedIn(_h.Dialogs.SavePath));
+    }
+
     /// <summary>The calibration card can keep the live sensor polling between checks, so it may still hold an earlier check's rejection.</summary>
     [Fact]
     public void A_capture_keeps_only_a_reply_rejected_during_its_own_check()
