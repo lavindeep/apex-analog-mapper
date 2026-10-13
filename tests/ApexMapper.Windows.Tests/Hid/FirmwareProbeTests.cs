@@ -35,6 +35,29 @@ public class FirmwareProbeTests
         Assert.Equal(sensorReply, reading.Reply);
     }
 
+    /// <summary>The interface refuses these before parsing, but they are still the keyboard's answer, so the capture keeps them.</summary>
+    [Theory]
+    [InlineData("short")]
+    [InlineData("report id")]
+    public void A_short_reply_or_one_with_another_report_id_is_kept_with_the_reason(string kind)
+    {
+        var reply = Fixtures.Firmware;
+        if (kind == "short")
+        {
+            reply = reply[..20];
+        }
+        else
+        {
+            reply[0] = 0x02;
+        }
+
+        var reading = FirmwareProbe.Read(() => new FakeVendorStream { OnRead = (_, _, _) => reply });
+
+        Assert.Null(reading.Version);
+        Assert.NotNull(reading.Problem);
+        Assert.Equal(reply, reading.Reply);
+    }
+
     [Fact]
     public void No_interface_or_no_answer_gives_the_reason_and_no_reply()
     {

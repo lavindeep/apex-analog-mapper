@@ -418,17 +418,20 @@ public sealed class KeyboardViewModel : ObservableObject
         RefreshTryIt();
     }
 
-    /// <summary>Ends the check. A reply rejected during it is kept now, before the poller that holds it stops.</summary>
     private void EndCheck(string text)
     {
-        _rejectedCapture = _services.Sensor.Rejected is { } rejected && !ReferenceEquals(rejected, _rejectedBefore) ? rejected : null;
         CancelCheck();
         CheckText = text;
         _services.Log("Sensor check: " + text);
     }
 
+    /// <summary>Stops a running check, however it ends, and keeps a reply rejected during it for the capture.</summary>
     private void CancelCheck()
     {
+        if (_check != CheckPhase.None && _services.Sensor.Rejected is { } rejected && !ReferenceEquals(rejected, _rejectedBefore))
+        {
+            _rejectedCapture = rejected;
+        }
         _check = CheckPhase.None;
         _checkStep = null;
         _services.Sensor.Want(this, false);

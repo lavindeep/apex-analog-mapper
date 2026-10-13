@@ -38,7 +38,8 @@ public static class FirmwareProbe
         var status = device.Exchange(SensorRequest.Firmware(), reply);
         if (status != ExchangeStatus.Ok)
         {
-            return new FirmwareReading(null, null, SensorPoller.Describe(status));
+            // A short reply or one with a non-zero report id still goes in the capture.
+            return new FirmwareReading(null, device.Received.IsEmpty ? null : device.Received.ToArray(), SensorPoller.Describe(status));
         }
         return SensorProtocol.ParseFirmware(reply, out var version) is { } error
             ? new FirmwareReading(null, reply, error)
