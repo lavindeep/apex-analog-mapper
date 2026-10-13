@@ -88,13 +88,16 @@ that aside first.
    the clip under 10 MB so GitHub accepts it.
 5. Open the keyboard card. It names your model, says "Tested" under it, and shows the
    firmware.
-6. On the profile card, choose Forza.
+6. On the profile card, press **New**. It makes a profile named "Profile 2", or the next
+   free number, with the default Forza keys, and selects it. Your own profiles stay as
+   they are.
 7. Open the calibration card. Each of W, A, S and D says "Not calibrated. With the key up,
    press Set released." If a row asks you to press **Learn**, your build doesn't treat
    the model as tested, so check the change.
 8. Press W, A, S and D one at a time, halfway and then fully. Each key's bar follows that
    key, and no other bar moves. Press no button on the card.
-9. Stop recording and close your build. Put your calibration back:
+9. Stop recording. On the profile card, delete the profile you made in step 6, then choose
+   the profile you had before. Close your build and put your calibration back:
 
    ```
    Rename-Item "$env:APPDATA\ApexAnalogMapper\calibration-saved" calibration
