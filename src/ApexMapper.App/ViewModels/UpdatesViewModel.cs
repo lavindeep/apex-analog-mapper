@@ -12,7 +12,8 @@ namespace ApexMapper.App.ViewModels;
 /// launch check off, or the settings that would say so could not be read; a launch check
 /// that fails is only logged. Test versions are offered while this copy is one, or when
 /// the user asks for them. Nothing downloads until the user presses Update, and the new
-/// version installs on a restart the user starts, never while mapping.
+/// version installs on a restart the user starts, never while mapping. A CI build never
+/// looks.
 /// </summary>
 public sealed class UpdatesViewModel : ObservableObject
 {
@@ -21,6 +22,13 @@ public sealed class UpdatesViewModel : ObservableObject
     private readonly AppServices _services;
     private readonly Workspace _workspace;
     private readonly SemanticVersion _current;
+
+    /// <summary>
+    /// CI packs every build as 0.1.0-ci.&lt;run&gt; (ci.yml). Its portable zip reads as installed
+    /// and older than every release, so it would offer the latest release in place of the
+    /// build under test.
+    /// </summary>
+    private readonly bool _ciBuild;
     private bool _prereleases;
     private bool _checkOnLaunch;
     private Step _step;
@@ -43,6 +51,7 @@ public sealed class UpdatesViewModel : ObservableObject
         _services = services;
         _workspace = workspace;
         _current = SemanticVersion.Parse(services.AppVersion);
+        _ciBuild = _current.ReleaseLabels.FirstOrDefault() == "ci";
         _prereleases = settings.Prereleases;
         _checkOnLaunch = settings.CheckForUpdates;
         Act = new Command(OnAct, () => _step switch
@@ -52,7 +61,7 @@ public sealed class UpdatesViewModel : ObservableObject
             _ => false,
         });
         workspace.PropertyChanged += OnWorkspaceChanged;
-        if (!services.Updates.Installed || !_checkOnLaunch || workspace.SettingsUnread)
+        if (!CanUpdate || !_checkOnLaunch || workspace.SettingsUnread)
         {
             return;
         }
@@ -80,6 +89,7 @@ public sealed class UpdatesViewModel : ObservableObject
         Step.Ready => $"Version {_found} is downloaded. Restart the app to install it, or it installs the next time the app starts."
             + (_workspace.SessionActive ? " Stop mapping first." : ""),
         Step.Installing => $"Closing to install version {_found}.",
+        _ when _ciBuild => "This is a test build from CI, so it does not look for updates.",
         _ when !_services.Updates.Installed => "This copy was not installed with Setup.exe, so it cannot update itself.",
         _ when _found is not null => $"Version {_found} is available." + (_workspace.SessionActive ? " Stop mapping to update." : ""),
         _ when _checked => "This is the newest version.",
@@ -93,14 +103,15 @@ public sealed class UpdatesViewModel : ObservableObject
     public string? ActText => _step switch
     {
         Step.Ready => "Restart and update",
-        Step.Idle when _services.Updates.Installed => _found is null ? "Check for updates" : "Update",
+        Step.Idle when CanUpdate => _found is null ? "Check for updates" : "Update",
         _ => null,
     };
 
     /// <summary>Checks, downloads, or restarts to install, depending on how far the update got.</summary>
     public Command Act { get; }
 
-    public bool Installed => _services.Updates.Installed;
+    /// <summary>An installed copy that is not a CI build, which may look for updates and install them.</summary>
+    public bool CanUpdate => _services.Updates.Installed && !_ciBuild;
 
     /// <summary>Look for a newer version when the app starts. Off, the app only looks when asked.</summary>
     public bool CheckOnLaunch
@@ -116,7 +127,7 @@ public sealed class UpdatesViewModel : ObservableObject
     }
 
     /// <summary>Test versions are always offered while this copy is one, so the switch only shows on a release.</summary>
-    public bool CanChoosePrereleases => _services.Updates.Installed && !_current.IsPrerelease;
+    public bool CanChoosePrereleases => CanUpdate && !_current.IsPrerelease;
 
     /// <summary>Offer test versions too. Changing it looks again at once.</summary>
     public bool Prereleases

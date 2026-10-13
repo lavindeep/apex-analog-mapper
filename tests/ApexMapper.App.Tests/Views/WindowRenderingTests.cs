@@ -38,7 +38,8 @@ public sealed class WindowRenderingTests
     private const int BindingsMs = 50;
 
     /// <param name="Narrow">Shown at the window's minimum width.</param>
-    private sealed record Scenario(string Name, Action<AppHarness> Arrange, Func<MainViewModel, AppHarness, Task>? Act = null, bool Narrow = false);
+    /// <param name="Version">The app's version, when it is not the harness's.</param>
+    private sealed record Scenario(string Name, Action<AppHarness> Arrange, Func<MainViewModel, AppHarness, Task>? Act = null, bool Narrow = false, string? Version = null);
 
     private static readonly Scenario[] Scenarios =
     [
@@ -95,6 +96,7 @@ public sealed class WindowRenderingTests
             main.Profile.CaptureNegativeKey.Execute(null);
             return Task.CompletedTask;
         }, Narrow: true),
+        new("ci-build", h => h.Updates.Newest = "0.5.1-alpha", Version: "0.1.0-ci.137"),
     ];
 
     [Fact]
@@ -137,7 +139,7 @@ public sealed class WindowRenderingTests
 
     private static void Render(Scenario scenario, ApplicationTheme theme, string? folder)
     {
-        using var h = new AppHarness();
+        using var h = scenario.Version is { } version ? new AppHarness(version) : new AppHarness();
         scenario.Arrange(h);
         h.Keyboards.Refresh();
         var main = new MainViewModel(h.Services, h.Workspace, new AppSettings(GamePath: AppHarness.Game));
