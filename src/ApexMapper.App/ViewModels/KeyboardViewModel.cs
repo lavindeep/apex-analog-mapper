@@ -347,9 +347,10 @@ public sealed class KeyboardViewModel : ObservableObject
     private async Task ReadFirmwareAsync(BoardItem item)
     {
         var probe = ++_probe;
-        CancelCheck();
         // Cleared first: the live sensor stops before the request, so the two never share the board.
+        // The check ends after that, so a reply the stopping poller rejects goes in its capture.
         _workspace.Board = null;
+        CancelCheck();
         SetReading(true);
         FirmwareReading reading;
         try

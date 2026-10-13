@@ -352,6 +352,35 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.Equal([rejected], RejectedIn(_h.Dialogs.SavePath));
     }
 
+    /// <summary>
+    /// With the calibration card still reading, the poller stops only when the board is
+    /// cleared for the next one, and can reject a reply on its way out.
+    /// </summary>
+    [Fact]
+    public void A_reply_rejected_while_switching_keyboards_still_goes_in_the_capture()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        _h.Boards.Add(AppHarness.TklInfo);
+        var keyboard = Create(remembered: AppHarness.Gen3, consented: [AppHarness.Gen3]);
+        _h.Sensor.Want(new object(), true);
+        var rejected = new CapturedReply("rejected: Reply padding was not zero.", 3, "00AD");
+        _h.Workspace.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Workspace.Board) && _h.Workspace.Board is null)
+            {
+                _h.Sensor.Rejected = rejected;
+            }
+        };
+
+        keyboard.Check.Execute(null);
+        keyboard.Selected = keyboard.Boards.Single(b => b.Info == AppHarness.TklInfo);
+        keyboard.Selected = keyboard.Boards.Single(b => b.Info == AppHarness.Gen3Info);
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+
+        Assert.Equal([rejected], RejectedIn(_h.Dialogs.SavePath));
+    }
+
     /// <summary>The calibration card can keep the live sensor polling between checks, so it may still hold an earlier check's rejection.</summary>
     [Fact]
     public void A_capture_keeps_only_a_reply_rejected_during_its_own_check()
