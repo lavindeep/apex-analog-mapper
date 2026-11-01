@@ -26,9 +26,9 @@ public sealed record BoardItem(KeyboardInfo Info, string Detail)
 /// firmware request is the only thing sent until the user agrees to the risk, then a
 /// check that its sensors move when a key is pressed and names the sensor that moved,
 /// the learn step per key on the calibration card, and a capture export for a GitHub
-/// issue whose form the card fills in. An unsupported model is
-/// told so and never gets the sensor request. The firmware is never asked while a
-/// session runs: the session's poller has the board open.
+/// issue whose form the card fills in. An unsupported model is told so and never gets
+/// the sensor request. The firmware is never asked while a session runs: the session's
+/// poller has the board open.
 /// </summary>
 public sealed class KeyboardViewModel : ObservableObject
 {
@@ -252,10 +252,7 @@ public sealed class KeyboardViewModel : ObservableObject
         if (_checkStep.AnythingMoved())
         {
             _heldCapture = ([.. _raw], [.. _filtered]);
-            var sensor = _checkStep.Result().SensorIndex;
-            // The log gets the result alone: the sensor names the key held, and the log names keys only for calibration.
-            EndCheck("The sensors respond to key presses.", SensorCheckResult.Passed);
-            CheckText += " " + WhichSensor(sensor) + " Calibrate each key on the calibration card; the learn step finds its sensor.";
+            EndCheck("The sensors respond to key presses.", SensorCheckResult.Passed, WhichSensor(_checkStep.Result().SensorIndex));
         }
         else if (nowMs - _checkSince > CheckTimeoutMs)
         {
@@ -272,11 +269,16 @@ public sealed class KeyboardViewModel : ObservableObject
     private string WhichSensor(int sensor)
     {
         var w = _services.KeyName(DefaultProfiles.Key.W);
-        var key = SensorMap.DefaultKeyAt(sensor);
-        return key == DefaultProfiles.Key.W
-            ? $"Sensor {sensor} moved, the one the app maps to {w}. Export the capture below to share it."
-            : $"Sensor {sensor} moved, which the app maps to {(key is { } k ? _services.KeyName(k) : "no key")}, not {w}. " +
-              $"Run the check again and hold only {w}. If the same sensor moves, export the capture anyway, because this model's keys may sit on other sensors.";
+        var moved = SensorMap.DefaultKeyAt(sensor) switch
+        {
+            { } key when key == DefaultProfiles.Key.W => null,
+            { } key => $"Sensor {sensor} moved, which the app maps to {_services.KeyName(key)}, not {w}.",
+            null => $"Sensor {sensor} moved, which has no key in the app's map.",
+        };
+        return moved is null
+            ? $"Sensor {sensor} moved, the one the app maps to {w}. Export the capture below to share it. " +
+              "Calibrate each key on the calibration card; the learn step finds its sensor."
+            : $"{moved} Run the check again holding only {w}. If the same sensor moves, export the capture anyway.";
     }
 
     /// <summary>
@@ -450,12 +452,13 @@ public sealed class KeyboardViewModel : ObservableObject
     }
 
     /// <param name="result">How the check ended, or null when it stopped before it had an answer.</param>
-    private void EndCheck(string text, SensorCheckResult? result = null)
+    /// <param name="detail">Shown after the text but kept out of the log, which names keys only for calibration.</param>
+    private void EndCheck(string text, SensorCheckResult? result = null, string? detail = null)
     {
         CancelCheck();
         _checkResult = result;
         OffersExport = result is not null;
-        CheckText = text;
+        CheckText = detail is null ? text : text + " " + detail;
         _services.Log("Sensor check: " + text);
     }
 

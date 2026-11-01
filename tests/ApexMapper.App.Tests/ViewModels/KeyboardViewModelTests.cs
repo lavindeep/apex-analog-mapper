@@ -293,10 +293,11 @@ public sealed class KeyboardViewModelTests : IDisposable
         keyboard.Tick(rest + 100);
 
         Assert.False(keyboard.IsChecking);
-        Assert.StartsWith("The sensors respond to key presses. Sensor 17 moved, which the app maps to E, not W. Run the check again and hold only W.", keyboard.CheckText);
+        Assert.Equal("The sensors respond to key presses. Sensor 17 moved, which the app maps to E, not W. " +
+            "Run the check again holding only W. If the same sensor moves, export the capture anyway.", keyboard.CheckText);
         Assert.True(keyboard.OffersExport);
         // The key held stays out of the log.
-        Assert.Contains("Sensor check: The sensors respond to key presses.", _h.Log);
+        Assert.Equal(["Sensor check: The sensors respond to key presses."], _h.Log.Where(line => line.StartsWith("Sensor check", StringComparison.Ordinal)));
     }
 
     [Fact]

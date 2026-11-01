@@ -65,7 +65,9 @@
 
         <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
           <ui:Button Content="Check the sensors" Icon="{ui:SymbolIcon Pulse24}" Command="{Binding Check}" />
-          <ui:Button Margin="8,0,0,0" Content="Export a capture" Icon="{ui:SymbolIcon Save24}" Command="{Binding Export}" />
+          <!-- Hidden while the same button shows under the check's message. -->
+          <ui:Button Margin="8,0,0,0" Content="Export a capture" Icon="{ui:SymbolIcon Save24}" Command="{Binding Export}"
+                     Visibility="{Binding OffersExport, Converter={StaticResource ShowWhenAbsent}}" />
           <ui:ProgressRing Margin="12,0,0,0" Width="20" Height="20" IsIndeterminate="True"
                            Visibility="{Binding IsChecking, Converter={StaticResource ShowWhenTrue}}" />
         </StackPanel>
