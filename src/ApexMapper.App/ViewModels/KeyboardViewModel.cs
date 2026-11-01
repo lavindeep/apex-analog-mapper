@@ -24,11 +24,11 @@ public sealed record BoardItem(KeyboardInfo Info, string Detail)
 /// The keyboard card: the Apex Pro boards plugged in, the remembered choice, and the
 /// firmware the chosen one reports. An unverified model gets the try-it flow: the
 /// firmware request is the only thing sent until the user agrees to the risk, then a
-/// check that its sensors move when a key is pressed and names the sensor that moved,
-/// the learn step per key on the calibration card, and a capture export for a GitHub
-/// issue whose form the card fills in. An unsupported model is told so and never gets
-/// the sensor request. The firmware is never asked while a session runs: the session's
-/// poller has the board open.
+/// check that its sensors move when a key is pressed, which names the sensor that
+/// moved, the learn step per key on the calibration card, and a capture export for a
+/// GitHub issue whose form the card fills in. An unsupported model is told so and never
+/// gets the sensor request. The firmware is never asked while a session runs: the
+/// session's poller has the board open.
 /// </summary>
 public sealed class KeyboardViewModel : ObservableObject
 {
@@ -493,7 +493,7 @@ public sealed class KeyboardViewModel : ObservableObject
         try
         {
             File.WriteAllText(path, BuildExport(info, board).ToJson());
-            CheckText = "Saved. Press Open a new issue. The form fills in what the app knows, so you only choose the connection and attach the file.";
+            CheckText = "Saved. Press Open a new issue. The form fills in what the app knows. Fill in the rest and attach the file.";
             _issueUrl = IssueUrl(info, board);
             OffersExport = false;
             Exported = true;
