@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using ApexMapper.App.Model;
 using ApexMapper.App.Mvvm;
+using ApexMapper.Core.Profiles;
 using ApexMapper.Core.Sensors;
 using ApexMapper.Windows.Devices;
 using ApexMapper.Windows.Hid;
@@ -23,16 +24,15 @@ public sealed record BoardItem(KeyboardInfo Info, string Detail)
 /// The keyboard card: the Apex Pro boards plugged in, the remembered choice, and the
 /// firmware the chosen one reports. An unverified model gets the try-it flow: the
 /// firmware request is the only thing sent until the user agrees to the risk, then a
-/// check that its sensors move when a key is pressed, the learn step per key on the
-/// calibration card, and a capture export for a GitHub issue. An unsupported model is
-/// told so and never gets the sensor request. The firmware is never asked while a
-/// session runs: the session's poller has the board open.
+/// check that its sensors move when a key is pressed, which names the sensor that
+/// moved, the learn step per key on the calibration card, and a capture export for a
+/// GitHub issue whose form the card fills in. An unsupported model is told so and never
+/// gets the sensor request. The firmware is never asked while a session runs: the
+/// session's poller has the board open.
 /// </summary>
 public sealed class KeyboardViewModel : ObservableObject
 {
     public const int CheckTimeoutMs = 10_000;
-
-    public const string NewIssuePage = "https://github.com/lavindeep/apex-analog-mapper/issues/new";
 
     public const string ConsentText =
         "To read how far each key is pressed, the app sends this keyboard the request that works on the original " +
@@ -80,8 +80,11 @@ public sealed class KeyboardViewModel : ObservableObject
     private CapturedReply? _rejectedCapture;
     private CapturedReply? _rejectedBefore;
     private (KeyboardInfo Info, string? Firmware)? _capturedFrom;
+    private SensorCheckResult? _checkResult;
     private string? _checkText;
+    private bool _offersExport;
     private bool _exported;
+    private string _issueUrl = SupportIssue.Form;
 
     private enum CheckPhase
     {
@@ -99,7 +102,7 @@ public sealed class KeyboardViewModel : ObservableObject
         Consent = new Command(GiveConsent, () => NeedsConsent);
         Check = new Command(StartCheck, () => CanCheck);
         Export = new Command(ExportCapture, () => _selected is not null);
-        OpenIssue = new Command(() => _services.Open(NewIssuePage));
+        OpenIssue = new Command(() => _services.Open(_issueUrl));
         _services.Keyboards.Changed += list => _services.Post(() => OnKeyboards(list));
         _workspace.PropertyChanged += OnWorkspaceChanged;
     }
@@ -182,6 +185,13 @@ public sealed class KeyboardViewModel : ObservableObject
 
     public Command Export { get; }
 
+    /// <summary>The check ended with a result worth sharing and no capture of it is saved yet, so Export shows under its message.</summary>
+    public bool OffersExport
+    {
+        get => _offersExport;
+        private set => Set(ref _offersExport, value);
+    }
+
     /// <summary>A capture was saved this run, so the card offers the page to attach it to.</summary>
     public bool Exported
     {
@@ -220,7 +230,7 @@ public sealed class KeyboardViewModel : ObservableObject
             {
                 EndCheck(_services.Sensor.Problem is { } problem
                     ? "The keyboard's sensors could not be read: " + problem
-                    : "No readings came from the keyboard's sensors.");
+                    : "No readings came from the keyboard's sensors.", SensorCheckResult.Failed);
             }
             return;
         }
@@ -242,13 +252,33 @@ public sealed class KeyboardViewModel : ObservableObject
         if (_checkStep.AnythingMoved())
         {
             _heldCapture = ([.. _raw], [.. _filtered]);
-            EndCheck("The sensors respond to key presses. Calibrate each key on the calibration card; the learn step finds its sensor.");
+            EndCheck("The sensors respond to key presses.", SensorCheckResult.Passed, WhichSensor(_checkStep.Result().SensorIndex));
         }
         else if (nowMs - _checkSince > CheckTimeoutMs)
         {
             EndCheck("No sensor moved when a key was pressed, so this keyboard may not answer the way the tested ones do. " +
-                "Please export a capture and attach it to a GitHub issue.");
+                "Please export a capture and attach it to a GitHub issue.", SensorCheckResult.Failed);
         }
+    }
+
+    /// <summary>
+    /// For the pass message: the sensor that moved most and the key the built-in map puts
+    /// there, because the tests accept a capture only when W moved W's sensor. Any key
+    /// still passes, as the check only asks whether the sensors answer.
+    /// </summary>
+    private string WhichSensor(int sensor)
+    {
+        var w = _services.KeyName(DefaultProfiles.Key.W);
+        var moved = SensorMap.DefaultKeyAt(sensor) switch
+        {
+            { } key when key == DefaultProfiles.Key.W => null,
+            { } key => $"Sensor {sensor} moved, which the app maps to {_services.KeyName(key)}, not {w}.",
+            null => $"Sensor {sensor} moved, which has no key in the app's map.",
+        };
+        return moved is null
+            ? $"Sensor {sensor} moved, the one the app maps to {w}. Export the capture below to share it. " +
+              "Calibrate each key on the calibration card; the learn step finds its sensor."
+            : $"{moved} Run the check again holding only {w}. If the same sensor moves, export the capture anyway.";
     }
 
     /// <summary>
@@ -412,6 +442,8 @@ public sealed class KeyboardViewModel : ObservableObject
         _restCapture = null;
         _heldCapture = null;
         _rejectedCapture = null;
+        _checkResult = null;
+        OffersExport = false;
         _rejectedBefore = _services.Sensor.Rejected;
         _capturedFrom = _workspace.Board is { } board ? (board.Info, board.Firmware.Version) : null;
         CheckText = "Reading the sensors. Keep your hands off the keyboard for a moment.";
@@ -419,10 +451,14 @@ public sealed class KeyboardViewModel : ObservableObject
         RefreshTryIt();
     }
 
-    private void EndCheck(string text)
+    /// <param name="result">How the check ended, or null when it stopped before it had an answer.</param>
+    /// <param name="detail">Shown after the text but kept out of the log, which names keys only for calibration.</param>
+    private void EndCheck(string text, SensorCheckResult? result = null, string? detail = null)
     {
         CancelCheck();
-        CheckText = text;
+        _checkResult = result;
+        OffersExport = result is not null;
+        CheckText = detail is null ? text : text + " " + detail;
         _services.Log("Sensor check: " + text);
     }
 
@@ -457,13 +493,25 @@ public sealed class KeyboardViewModel : ObservableObject
         try
         {
             File.WriteAllText(path, BuildExport(info, board).ToJson());
-            CheckText = "Saved. Attach the file to a new issue on GitHub.";
+            CheckText = "Saved. Press Open a new issue. The form fills in what the app knows. Fill in the rest and attach the file.";
+            _issueUrl = IssueUrl(info, board);
+            OffersExport = false;
             Exported = true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             CheckText = "The capture could not be saved: " + e.Message;
         }
+    }
+
+    /// <summary>
+    /// The keyboard support form filled in for the board just exported. The check's result
+    /// counts only for the board and firmware it ran on, as in <see cref="BuildExport"/>.
+    /// </summary>
+    internal string IssueUrl(KeyboardInfo info, Board? board)
+    {
+        var check = _capturedFrom == (info, board?.Firmware.Version) ? _checkResult : SensorCheckResult.NotRun;
+        return SupportIssue.Url(info.Name, info.ProductId, board?.Firmware.Version, KnownKeyboards.Find(info.ProductId)?.Support, check, _services.AppVersion);
     }
 
     private void RefreshTryIt()

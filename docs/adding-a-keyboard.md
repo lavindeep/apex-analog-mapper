@@ -41,13 +41,17 @@ You need the latest release and the keyboard. No code.
    for W.
 4. Keep holding W until the card says "The sensors respond to key presses." If it says
    anything else, follow [If the check fails](#if-the-check-fails).
-5. Press **Export a capture** and save the file. The card lists what the file holds. It
-   has no record of your typing. Each reading shows which keys were down at that moment,
-   which should be W alone.
+5. Read which sensor the card says moved. If it says "the one the app maps to W", go on.
+   If it says anything else, run the check again and hold only W. If the same sensor
+   moves again, go on anyway. The capture shows where W sits on your model.
+6. Press **Export a capture** under the message and save the file. The card lists what
+   the file holds. It has no record of your typing. Each reading shows which keys were
+   down at that moment, which should be W alone.
 
-If you'd rather not change code, stop here. Open a
-[keyboard support issue](https://github.com/lavindeep/apex-analog-mapper/issues/new?template=keyboard_support.yml)
-and attach the capture. Anyone who builds the app can take it from there.
+If you'd rather not change code, stop here. Press **Open a new issue** on the card. It
+opens the keyboard support form with the model, hardware ID, firmware, card status,
+check result and app version filled in. Choose the connection, attach the capture, and
+submit it. Anyone who builds the app can take it from there.
 
 ### Make the change
 
@@ -122,8 +126,8 @@ card answers. If you are fixing a failed test, export the new capture, replace t
 one, and mark the model `Verified` again.
 
 If it fails again, the keyboard answers differently from the TKL, or its keys sit on
-different sensors. Press **Export a capture** and open a
-[keyboard support issue](https://github.com/lavindeep/apex-analog-mapper/issues/new?template=keyboard_support.yml).
+different sensors. Press **Export a capture**, then **Open a new issue**, which fills in
+the form as in [Take a capture](#take-a-capture).
 Paste the exact message the card or the test showed, and attach the capture. If the
 keyboard sent a reply the app couldn't read, the capture holds it. Together with the
 message, that tells me which of the two it is.

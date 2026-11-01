@@ -26,6 +26,17 @@ public class SensorMapTests
         Assert.Equal(slot, SensorMap.SlotOf(index));
     }
 
+    [Fact]
+    public void Each_sensor_names_the_key_the_table_puts_on_it()
+    {
+        Assert.True(SensorMap.Default.TryGetSensorIndex(new ScanCode(0x11), out var w));
+        Assert.Equal(new ScanCode(0x11), SensorMap.DefaultKeyAt(w));
+        Assert.Equal(new ScanCode(0x12), SensorMap.DefaultKeyAt(w + 1));
+        // Slot 13 of group 2 has no key, and 70 is past the last sensor.
+        Assert.Null(SensorMap.DefaultKeyAt(27));
+        Assert.Null(SensorMap.DefaultKeyAt(70));
+    }
+
     [Theory]
     [InlineData(0xE048)]
     [InlineData(0x01)]
