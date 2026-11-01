@@ -122,9 +122,11 @@ public class ForegroundTrackerLifecycleTests
         var current = tracker.Current;
 
         tracker.GamePath = current.ImagePath;
-        Assert.True(SpinWait.SpinUntil(() => tracker.Current.IsGame, 2000));
-        var visible = tracker.Current.Elevation == Elevation.Visible;
-        Assert.Equal(visible, flag.IsGameForeground);
+        var game = ForegroundInfo.None;
+        Assert.True(SpinWait.SpinUntil(() => (game = tracker.Current).IsGame, 2000));
+        var visible = game.Elevation == Elevation.Visible;
+        // On a gain the tracker publishes Current and runs Changed before it raises the flag, so wait for the flag too.
+        Assert.True(SpinWait.SpinUntil(() => flag.IsGameForeground == visible, 2000));
         var clock = Stopwatch.StartNew();
         var stopped = tracker.Stop();
         clock.Stop();
