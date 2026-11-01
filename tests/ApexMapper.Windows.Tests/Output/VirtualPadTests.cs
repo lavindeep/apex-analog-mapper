@@ -268,7 +268,11 @@ public class VirtualPadTests
 
         pad.BeginUnplug();
 
-        Assert.True(clock.ElapsedMilliseconds < 100, $"BeginUnplug took {clock.ElapsedMilliseconds} ms.");
+        // The worker cannot finish before release.Set(), so BeginUnplug did not do the work itself. A BeginUnplug that
+        // fell into Unplug's wait would take UnplugWaitMs. The bound is loose because the time includes Thread.Start,
+        // which returns only once the OS runs the worker, and a busy CI runner has taken hundreds of ms for that.
+        Assert.False(pad.IsUnplugged);
+        Assert.True(clock.ElapsedMilliseconds < VirtualPad.UnplugWaitMs / 2, $"BeginUnplug took {clock.ElapsedMilliseconds} ms.");
         Assert.True(pad.IsClaimed);
         Assert.False(pad.TrySubmit(Throttle, Ms(100)));
         release.Set();
