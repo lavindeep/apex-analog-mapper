@@ -161,9 +161,9 @@ alpha, you're offered the next test version too.
   again. If the key was down during that step, the reading is refused and nothing is
   saved.
 - **An untested keyboard's sensor check fails.** Press Export a capture on the keyboard
-  card and attach the file to a
-  [new issue](https://github.com/lavindeep/apex-analog-mapper/issues/new). The
-  keyboard card lists what the file holds: the app version and the time, the
+  card, then Open a new issue. The issue form opens with the keyboard's model, hardware
+  ID, firmware, card status, check result and the app version filled in. Choose the
+  connection and attach the file. The keyboard card lists what the file holds: the app version and the time, the
   keyboard's model, product ID, firmware and Windows device ID, its report sizes, its
   answer to the firmware request, the sensor readings from the last check, and any
   answer the app couldn't read. It holds no record of your typing, but each reading is
