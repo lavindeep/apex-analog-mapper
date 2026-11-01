@@ -77,6 +77,19 @@ public sealed class WindowRenderingTests
             h.Boards[0] = AppHarness.Gen3Info;
             h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
         }),
+        new("untested-board-check-passed", h =>
+        {
+            h.Boards[0] = AppHarness.Gen3Info;
+            h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
+        }, (main, h) =>
+        {
+            main.Keyboard.Consent.Execute(null);
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Keyboard.Tick(h.Now + CalibrationViewModel.SettleMs);
+            h.Sensor.Reading = AppHarness.Holding(16, 3000);
+            main.Keyboard.Tick(h.Now + CalibrationViewModel.SettleMs + 100);
+            return Task.CompletedTask;
+        }),
         new("unsupported-board", h =>
         {
             h.Boards[0] = AppHarness.Gen3Info with { ProductId = 0x1646, Name = "Apex Pro TKL Wireless Gen 3" };

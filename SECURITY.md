@@ -27,6 +27,12 @@ and how to report a vulnerability.
   with no key held and with one key held, and any answer the app couldn't read. It
   holds no record of typing. Each reading is a single moment and shows which keys were
   down right then.
+- Issue links. After you export a capture, Open a new issue opens GitHub's keyboard
+  support form in your browser. The link carries the keyboard's model, product ID and
+  firmware, the card's status, the sensor check's result and the app version, so the
+  form arrives filled in. Your browser sends that link to GitHub when you press the
+  button. The capture itself goes up only if you attach it, and nothing is posted until
+  you submit the form.
 - A virtual controller through the ViGEmBus driver.
 
 ## Network posture

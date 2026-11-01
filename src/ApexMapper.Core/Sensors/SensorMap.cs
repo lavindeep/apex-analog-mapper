@@ -50,6 +50,10 @@ public sealed class SensorMap
 
     public int SupportedCount => _byKey.Count;
 
+    /// <summary>The key the built-in table puts on a sensor, or null for a slot with no key, so the sensor check can name what moved.</summary>
+    public static ScanCode? DefaultKeyAt(int sensorIndex) =>
+        sensorIndex is >= 0 and < SensorProtocol.SensorCount && Defaults[sensorIndex] != 0 ? new ScanCode(Defaults[sensorIndex]) : null;
+
     public static int GroupOf(int sensorIndex) => sensorIndex / SensorProtocol.SensorsPerGroup + 1;
 
     public static int SlotOf(int sensorIndex) => sensorIndex % SensorProtocol.SensorsPerGroup;

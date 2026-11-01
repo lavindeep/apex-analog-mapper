@@ -223,7 +223,8 @@ public sealed class KeyboardViewModelTests : IDisposable
         keyboard.Tick(rest + 100);
 
         Assert.False(keyboard.IsChecking);
-        Assert.StartsWith("The sensors respond to key presses.", keyboard.CheckText);
+        Assert.StartsWith("The sensors respond to key presses. Sensor 16 moved, the one the app maps to W.", keyboard.CheckText);
+        Assert.True(keyboard.OffersExport);
         Assert.False(_h.Sensor.Wanted);
 
         _h.Dialogs.SavePath = _h.File("capture.json");
@@ -235,10 +236,12 @@ public sealed class KeyboardViewModelTests : IDisposable
         };
         keyboard.Export.Execute(null);
 
-        Assert.Equal("Saved. Attach the file to a new issue on GitHub.", keyboard.CheckText);
+        Assert.StartsWith("Saved. Press Open a new issue.", keyboard.CheckText);
         Assert.True(keyboard.Exported);
+        Assert.False(keyboard.OffersExport);
+        // Filled in for the board exported, though it is gone now.
         keyboard.OpenIssue.Execute(null);
-        Assert.Equal([KeyboardViewModel.NewIssuePage], _h.Opened);
+        Assert.Equal([SupportIssue.Url("Apex Pro TKL Gen 3", 0x1642, "1.0", SensorSupport.Unverified, SensorCheckResult.Passed, "0.5.0")], _h.Opened);
         var export = CaptureExport.FromJson(File.ReadAllText(_h.Dialogs.SavePath), out var error);
 
         Assert.Null(error);
@@ -278,6 +281,22 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.Null(error);
         Assert.Equal((0x1614, 64, 32), (export!.ProductId, export.InputReportLength, export.OutputReportLength));
         Assert.DoesNotContain(export.Replies, reply => reply.Label is "at rest" or "key held");
+    }
+
+    [Fact]
+    public void A_pass_from_a_key_other_than_w_says_so_and_asks_for_w_again()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        var rest = CheckAtRest(keyboard);
+        _h.Sensor.Reading = AppHarness.Holding(17, 3000);
+        keyboard.Tick(rest + 100);
+
+        Assert.False(keyboard.IsChecking);
+        Assert.StartsWith("The sensors respond to key presses. Sensor 17 moved, which the app maps to E, not W. Run the check again and hold only W.", keyboard.CheckText);
+        Assert.True(keyboard.OffersExport);
+        // The key held stays out of the log.
+        Assert.Contains("Sensor check: The sensors respond to key presses.", _h.Log);
     }
 
     [Fact]
