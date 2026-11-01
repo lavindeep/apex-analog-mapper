@@ -9,10 +9,10 @@ public enum SensorCheckResult
 }
 
 /// <summary>
-/// The link to a new keyboard support issue with every field the app knows filled in, so
-/// a reporter only picks the connection and attaches the capture. Field ids and dropdown
-/// labels match .github/ISSUE_TEMPLATE/keyboard_support.yml. GitHub leaves a dropdown
-/// empty when the value matches no option, so a value with no matching option is left out.
+/// The link to a new keyboard support issue with every field the app knows filled in.
+/// Field ids and dropdown labels match .github/ISSUE_TEMPLATE/keyboard_support.yml.
+/// GitHub leaves a dropdown empty when the value matches no option, so a value with no
+/// matching option is left out.
 /// </summary>
 public static class SupportIssue
 {
