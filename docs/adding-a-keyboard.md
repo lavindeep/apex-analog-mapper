@@ -42,8 +42,8 @@ You need the latest release and the keyboard. No code.
 4. Keep holding W until the card says "The sensors respond to key presses." If it says
    anything else, follow [If the check fails](#if-the-check-fails).
 5. Read which sensor the card says moved. If it says "the one the app maps to W", go on.
-   If it names another key, run the check again and hold only W. If W moves that other
-   sensor again, go on anyway. The capture shows where W sits on your model.
+   If it says anything else, run the check again and hold only W. If the same sensor
+   moves again, go on anyway. The capture shows where W sits on your model.
 6. Press **Export a capture** under the message and save the file. The card lists what
    the file holds. It has no record of your typing. Each reading shows which keys were
    down at that moment, which should be W alone.
