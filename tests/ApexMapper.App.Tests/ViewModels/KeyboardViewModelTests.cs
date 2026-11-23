@@ -41,7 +41,7 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.Equal(AppHarness.Tkl, keyboard.Selected?.Id);
         Assert.Equal(AppHarness.Tkl, _h.SavedSettings.Keyboard);
         Assert.Equal([AppHarness.Tkl], _h.FirmwareRequests);
-        Assert.Equal("Firmware 4.16.8", keyboard.FirmwareText);
+        Assert.Equal("4.16.8", keyboard.FirmwareText);
         Assert.Null(keyboard.FirmwareWarning);
         Assert.False(keyboard.IsUnverified);
         Assert.False(keyboard.NeedsConsent);
@@ -56,6 +56,7 @@ public sealed class KeyboardViewModelTests : IDisposable
 
         Assert.Equal("Not plugged in", keyboard.Summary);
         Assert.Equal("Plug in your Apex Pro. It shows up here as soon as Windows finds it.", keyboard.Missing);
+        Assert.True(keyboard.NoBoards);
         Assert.Empty(_h.FirmwareRequests);
     }
 
@@ -66,7 +67,7 @@ public sealed class KeyboardViewModelTests : IDisposable
         var keyboard = Create();
         Assert.Null(keyboard.Selected);
         Assert.Equal("No keyboard chosen", keyboard.Summary);
-        Assert.Equal("Choose your keyboard.", keyboard.Missing);
+        Assert.Equal("More than one keyboard is plugged in. Choose the one to use.", keyboard.Missing);
         Assert.Null(_h.Workspace.Board);
         var raised = new List<string?>();
         keyboard.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
@@ -140,6 +141,19 @@ public sealed class KeyboardViewModelTests : IDisposable
 
         Assert.Equal(AppHarness.Tkl, keyboard.Selected?.Id);
         Assert.False(keyboard.CanChoose);
+        Assert.Equal("Stop mapping to choose another keyboard", keyboard.ChoiceText);
+
+        _h.Workspace.Session = SessionState.Paused;
+        Assert.False(keyboard.CanChoose);
+        Assert.Equal("Plug the Apex Pro TKL back in to resume mapping", keyboard.ChoiceText);
+        // Unplugged while paused: the session keeps its board, so the page offers no help for an unknown model.
+        _h.Boards.Clear();
+        keyboard.OnKeyboards(_h.Boards);
+        Assert.False(keyboard.NoBoards);
+        // Another keyboard in the list can't be chosen while paused, so the picker hides.
+        _h.Boards.Add(AppHarness.Gen3Info);
+        keyboard.OnKeyboards(_h.Boards);
+        Assert.False(keyboard.ShowPicker);
     }
 
     [Fact]
@@ -149,7 +163,7 @@ public sealed class KeyboardViewModelTests : IDisposable
 
         var keyboard = Create();
 
-        Assert.Equal("Firmware 4.20.0", keyboard.FirmwareText);
+        Assert.Equal("4.20.0", keyboard.FirmwareText);
         Assert.StartsWith("The app has not been tested with firmware 4.20.0.", keyboard.FirmwareWarning);
         Assert.True(_h.Workspace.Board!.CanReadSensors);
     }
@@ -191,6 +205,7 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.False(keyboard.NeedsConsent);
         Assert.False(keyboard.CanCheck);
         Assert.False(_h.Workspace.Board!.CanReadSensors);
+        Assert.StartsWith("The app could not read this keyboard's firmware", keyboard.CheckBlocked);
         // The reply is still worth sending in.
         Assert.True(keyboard.Export.CanExecute(null));
     }
@@ -218,6 +233,7 @@ public sealed class KeyboardViewModelTests : IDisposable
 
         // Enter clicked the button and is still on its way up: not a reading at rest.
         keyboard.Check.Execute(null);
+        Assert.False(keyboard.Export.CanExecute(null));
         _h.Sensor.Reading = AppHarness.Holding(50, 3000);
         keyboard.Tick(_h.Now);
         var rest = CheckAtRest(keyboard);
@@ -228,7 +244,7 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.False(keyboard.IsChecking);
         Assert.StartsWith("The sensors respond to key presses. Sensor 16 moved, the one the app maps to W.", keyboard.CheckText);
         Assert.Equal("Apex Pro Gen 3 · Sensor check passed", keyboard.Description);
-        Assert.True(keyboard.OffersExport);
+        Assert.True(keyboard.CheckPassed);
         Assert.False(_h.Sensor.Wanted);
 
         _h.Dialogs.SavePath = _h.File("capture.json");
@@ -240,9 +256,8 @@ public sealed class KeyboardViewModelTests : IDisposable
         };
         keyboard.Export.Execute(null);
 
-        Assert.StartsWith("Saved. Press Open a new issue.", keyboard.CheckText);
+        Assert.Matches(@"^Saved capture\.json in [^.]+\. Press Open a new issue\.", keyboard.ExportText);
         Assert.True(keyboard.Exported);
-        Assert.False(keyboard.OffersExport);
         // Filled in for the board exported, though it is gone now.
         keyboard.OpenIssue.Execute(null);
         Assert.Equal([SupportIssue.Url("Apex Pro Gen 3", 0x1640, "1.0", SensorSupport.Unverified, SensorCheckResult.Passed, "0.5.0")], _h.Opened);
@@ -288,6 +303,27 @@ public sealed class KeyboardViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Step_3_says_what_a_capture_lacks_until_a_check_runs()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var keyboard = Create(consented: [AppHarness.Gen3]);
+        Assert.StartsWith("No check has collected readings on this keyboard yet", keyboard.ExportNote);
+
+        // A check cut short before its first reading leaves the note.
+        keyboard.Check.Execute(null);
+        Assert.Null(keyboard.ExportNote);
+        keyboard.StopCheck("Stopped.");
+        Assert.NotNull(keyboard.ExportNote);
+
+        var rest = CheckAtRest(keyboard);
+        _h.Sensor.Reading = AppHarness.Holding(16, 3000);
+        keyboard.Tick(rest + 100);
+
+        Assert.Null(keyboard.ExportNote);
+        Assert.True(keyboard.CheckPassed);
+    }
+
+    [Fact]
     public void A_pass_from_a_key_other_than_w_says_so_and_asks_for_w_again()
     {
         _h.Boards[0] = AppHarness.Gen3Info;
@@ -297,9 +333,9 @@ public sealed class KeyboardViewModelTests : IDisposable
         keyboard.Tick(rest + 100);
 
         Assert.False(keyboard.IsChecking);
-        Assert.Equal("The sensors respond to key presses. Sensor 17 moved, which the app maps to E, not W. " +
-            "Run the check again holding only W. If the same sensor moves, export the capture anyway.", keyboard.CheckText);
-        Assert.True(keyboard.OffersExport);
+        Assert.Equal("The sensors respond to key presses. Sensor 17 moved, which the app maps to E, not W.", keyboard.CheckText);
+        Assert.StartsWith("Run the check again holding only W to be sure.", keyboard.NextStep);
+        Assert.True(keyboard.CheckPassed);
         // The key held stays out of the log.
         Assert.Equal(["Sensor check: The sensors respond to key presses."], _h.Log.Where(line => line.StartsWith("Sensor check", StringComparison.Ordinal)));
     }
@@ -317,6 +353,9 @@ public sealed class KeyboardViewModelTests : IDisposable
 
         Assert.False(keyboard.IsChecking);
         Assert.StartsWith("No sensor moved", keyboard.CheckText);
+        Assert.StartsWith("Run it again and hold W", keyboard.NextStep);
+        // The key to hold stays out of the log.
+        Assert.Contains("Sensor check: No sensor moved during the check.", _h.Log);
     }
 
     [Fact]
@@ -333,7 +372,12 @@ public sealed class KeyboardViewModelTests : IDisposable
         // The check stopped the poller, and the reply went with it.
         _h.Sensor.Rejected = null;
 
-        Assert.Equal("The keyboard's sensors could not be read: Reply padding was not zero.", keyboard.CheckText);
+        Assert.Equal("The keyboard's replies were not sensor readings the app could use.", keyboard.CheckText);
+        Assert.Equal("Run the check again. If it still fails, share a capture in step 3.", keyboard.NextStep);
+        Assert.Contains("Sensor check problem: Reply padding was not zero.", _h.Log);
+        // Step 2 just ran, so step 3 doesn't send the user back to it.
+        Assert.Equal("No check has collected readings on this keyboard yet, so a capture holds no sensor readings, only the reply the app couldn't read.", keyboard.ExportNote);
+        Assert.Equal("Check again", keyboard.CheckLabel);
         _h.Dialogs.SavePath = _h.File("capture.json");
         keyboard.Export.Execute(null);
         var export = CaptureExport.FromJson(File.ReadAllText(_h.Dialogs.SavePath), out var error);
@@ -342,6 +386,26 @@ public sealed class KeyboardViewModelTests : IDisposable
     }
 
     /// <summary>A replug cancels the check before it times out. The reply rejected during it still goes in the capture.</summary>
+    [Fact]
+    public void A_capture_saved_for_another_board_shows_as_saved_for_it()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        _h.Boards.Add(AppHarness.TklInfo);
+        var keyboard = Create(remembered: AppHarness.Gen3, consented: [AppHarness.Gen3]);
+        _h.Dialogs.SavePath = _h.File("capture.json");
+        keyboard.Export.Execute(null);
+        Assert.True(keyboard.Exported);
+
+        keyboard.Selected = keyboard.Boards.Single(b => b.Info == AppHarness.TklInfo);
+        Assert.False(keyboard.Exported);
+        var raised = new List<string?>();
+        keyboard.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+        keyboard.Export.Execute(null);
+
+        Assert.True(keyboard.Exported);
+        Assert.Contains(nameof(keyboard.Exported), raised);
+    }
+
     [Fact]
     public void A_check_cut_short_by_a_replug_still_exports_its_rejected_reply()
     {
@@ -352,7 +416,9 @@ public sealed class KeyboardViewModelTests : IDisposable
         _h.Sensor.Rejected = rejected;
 
         keyboard.OnKeyboards([]);
+        Assert.False(keyboard.IsChecking);
         keyboard.OnKeyboards([AppHarness.Gen3Info]);
+        Assert.Equal("The check stopped because the keyboard was unplugged or changed. Run it again.", keyboard.CheckText);
         _h.Dialogs.SavePath = _h.File("capture.json");
         keyboard.Export.Execute(null);
 
@@ -447,6 +513,8 @@ public sealed class KeyboardViewModelTests : IDisposable
         keyboard.OnKeyboards([]);
         keyboard.OnKeyboards([AppHarness.Gen3Info]);
         Assert.Equal("Apex Pro Gen 3 · Not tested yet", keyboard.Description);
+        Assert.Null(keyboard.CheckText);
+        Assert.False(keyboard.CheckPassed);
         _h.Dialogs.SavePath = _h.File("capture.json");
         keyboard.Export.Execute(null);
 
@@ -512,7 +580,7 @@ public sealed class KeyboardViewModelTests : IDisposable
         _h.Workspace.Session = SessionState.Starting;
         Assert.False(keyboard.IsChecking);
         Assert.False(_h.Sensor.Wanted);
-        Assert.Equal("The check stopped when mapping started. Run it again once mapping stops.", keyboard.CheckText);
+        Assert.Equal("The check stopped when mapping started. Run it again.", keyboard.CheckText);
     }
 
     [Fact]
@@ -522,7 +590,7 @@ public sealed class KeyboardViewModelTests : IDisposable
 
         var keyboard = Create();
 
-        Assert.Equal("The firmware could not be read. The device is busy.", keyboard.FirmwareText);
+        Assert.Equal("Could not be read. Unplug the keyboard and plug it back in to try again.", keyboard.FirmwareText);
         Assert.False(_h.Workspace.Board!.CanReadSensors);
     }
 }

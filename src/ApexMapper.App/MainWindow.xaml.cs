@@ -150,6 +150,6 @@ public partial class MainWindow : FluentWindow
     protected override void OnDeactivated(EventArgs e)
     {
         base.OnDeactivated(e);
-        _main?.Profile.CancelCapture.Execute(null);
+        _main?.OnDeactivated();
     }
 }

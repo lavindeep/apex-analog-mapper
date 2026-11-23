@@ -8,71 +8,211 @@
              xmlns:views="clr-namespace:ApexMapper.App.Views"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:KeyboardViewModel}">
-  <ui:Card Padding="20" VerticalContentAlignment="Top">
-    <StackPanel>
+  <UserControl.Resources>
+    <!-- A try-it step's marker: its number until it is done, then a check mark. -->
+    <Style x:Key="StepNumber" TargetType="Border">
+      <Setter Property="Width" Value="28" />
+      <Setter Property="Height" Value="28" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="BorderThickness" Value="1.5" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+      <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+    <Style x:Key="StepDone" TargetType="ui:SymbolIcon">
+      <Setter Property="Symbol" Value="CheckmarkCircle24" />
+      <Setter Property="Filled" Value="True" />
+      <Setter Property="FontSize" Value="28" />
+      <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+      <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+    <Style x:Key="StepNumberText" TargetType="ui:TextBlock">
+      <Setter Property="FontTypography" Value="BodyStrong" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <!-- A step after step 1: grey until step 1 is done, so one accent ring marks where to begin. -->
+    <Style x:Key="LaterStepNumber" TargetType="Border" BasedOn="{StaticResource StepNumber}">
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding NeedsConsent}" Value="True">
+          <Setter Property="BorderBrush" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="LaterStepNumberText" TargetType="ui:TextBlock" BasedOn="{StaticResource StepNumberText}">
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding NeedsConsent}" Value="True">
+          <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="StepTitle" TargetType="ui:TextBlock">
+      <Setter Property="FontTypography" Value="BodyStrong" />
+      <Setter Property="Margin" Value="0,4,0,8" />
+    </Style>
+    <!-- One line of a capture's contents. -->
+    <DataTemplate x:Key="Bullet">
+      <DockPanel Margin="0,0,0,4">
+        <ui:TextBlock DockPanel.Dock="Left" Margin="0,0,8,0" Text="•" />
+        <ui:TextBlock Text="{Binding}" TextWrapping="Wrap" />
+      </DockPanel>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <StackPanel>
+    <ui:CardControl Icon="{ui:SymbolIcon Keyboard24}">
+      <ui:CardControl.Header>
+        <StackPanel>
+          <ui:TextBlock Text="Keyboard" />
+          <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding ChoiceText}" views:Live.Text="{Binding ChoiceText}" />
+        </StackPanel>
+      </ui:CardControl.Header>
+      <Grid Visibility="{Binding ShowPicker, Converter={StaticResource ShowWhenTrue}}">
       <ComboBox ItemsSource="{Binding Boards}" SelectedItem="{Binding Selected}" IsEnabled="{Binding CanChoose}"
-                MinWidth="320" HorizontalAlignment="Left" AutomationProperties.Name="Keyboard"
-                Visibility="{Binding Boards, Converter={StaticResource ShowWhenPresent}}">
+                Width="300" AutomationProperties.Name="Keyboard">
         <ComboBox.ItemTemplate>
           <DataTemplate DataType="vm:BoardItem">
             <StackPanel>
-              <TextBlock Text="{Binding Name}" />
+              <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
               <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Detail}" />
             </StackPanel>
           </DataTemplate>
         </ComboBox.ItemTemplate>
       </ComboBox>
-      <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Paragraph}" Text="{Binding Missing}"
-                    Visibility="{Binding Missing, Converter={StaticResource ShowWhenPresent}}" />
-
-      <ui:TextBlock Margin="0,8,0,0" Text="{Binding FirmwareText}" TextWrapping="Wrap"
-                    Visibility="{Binding FirmwareText, Converter={StaticResource ShowWhenPresent}}" />
-      <ui:InfoBar Style="{StaticResource Warning}" Severity="Informational" Message="{Binding FirmwareWarning}"
-                  Visibility="{Binding FirmwareWarning, Converter={StaticResource ShowWhenPresent}}" />
-      <ui:InfoBar Style="{StaticResource Warning}" Title="Not supported" Message="{x:Static vm:KeyboardViewModel.UnsupportedText}"
-                  Visibility="{Binding IsUnsupported, Converter={StaticResource ShowWhenTrue}}" />
-
-      <!-- The try-it flow for a model the app has not been tested on (H6). -->
-      <StackPanel Visibility="{Binding IsUnverified, Converter={StaticResource ShowWhenTrue}}">
-        <ui:InfoBar Style="{StaticResource Warning}" Title="Not tested yet"
-                    Message="This model has not been tested with the app. You can try it: the steps below check that its sensors answer, and a capture you share on GitHub lets it join the tested list." />
-
-        <StackPanel Margin="0,12,0,0" Visibility="{Binding NeedsConsent, Converter={StaticResource ShowWhenTrue}}">
-          <ui:TextBlock Style="{StaticResource Paragraph}" Text="{x:Static vm:KeyboardViewModel.ConsentText}" />
-          <ui:Button Appearance="Primary" Content="Accept the risk and read the sensors" Command="{Binding Consent}" />
-        </StackPanel>
-
-        <!-- Spelled out before Export so no one attaches a file without knowing what is in it. -->
-        <ui:TextBlock Style="{StaticResource FieldLabel}" Text="What a capture holds" />
-        <ItemsControl Margin="8,0,0,0" ItemsSource="{x:Static vm:KeyboardViewModel.CaptureHolds}" Focusable="False"
-                      AutomationProperties.Name="What a capture holds">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate>
-              <DockPanel Margin="0,0,0,4">
-                <ui:TextBlock DockPanel.Dock="Left" Margin="0,0,8,0" Text="•" />
-                <ui:TextBlock Text="{Binding}" TextWrapping="Wrap" />
-              </DockPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-        <ui:TextBlock Margin="0,4,0,0" Style="{StaticResource Paragraph}" Text="{x:Static vm:KeyboardViewModel.CaptureLimits}" />
-
-        <StackPanel Margin="0,4,0,0" Orientation="Horizontal">
-          <ui:Button Content="Check the sensors" Icon="{ui:SymbolIcon Pulse24}" Command="{Binding Check}" />
-          <!-- Hidden while the same button shows under the check's message. -->
-          <ui:Button Margin="8,0,0,0" Content="Export a capture" Icon="{ui:SymbolIcon Save24}" Command="{Binding Export}"
-                     Visibility="{Binding OffersExport, Converter={StaticResource ShowWhenAbsent}}" />
-          <ui:ProgressRing Margin="12,0,0,0" Width="20" Height="20" IsIndeterminate="True"
-                           Visibility="{Binding IsChecking, Converter={StaticResource ShowWhenTrue}}" />
-        </StackPanel>
-        <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Paragraph}" Text="{Binding CheckText}" views:Live.Text="{Binding CheckText}"
-                      Visibility="{Binding CheckText, Converter={StaticResource ShowWhenPresent}}" />
-        <!-- The next step after a check, where the reporter is already reading. -->
-        <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Save24}" Content="Export a capture" Command="{Binding Export}"
-                   Visibility="{Binding OffersExport, Converter={StaticResource ShowWhenTrue}}" />
-        <ui:Button Icon="{ui:SymbolIcon Open24}" Content="Open a new issue" Command="{Binding OpenIssue}"
-                   Visibility="{Binding Exported, Converter={StaticResource ShowWhenTrue}}" />
-      </StackPanel>
+      <ui:TextBlock Margin="12,0,36,0" VerticalAlignment="Center" IsHitTestVisible="False" Text="Choose a keyboard"
+                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                    Visibility="{Binding Selected, Converter={StaticResource ShowWhenAbsent}}" />
+      </Grid>
+    </ui:CardControl>
+    <StackPanel Margin="0,12,0,0" Visibility="{Binding NoBoards, Converter={StaticResource ShowWhenTrue}}">
+      <ui:TextBlock Margin="4,0,0,8" Style="{StaticResource Note}"
+                    Text="Already plugged in? The app lists only the Apex Pro models it knows. The guide shows how to add yours." />
+      <ui:Button Icon="{ui:SymbolIcon Open24}" Content="How to add a model" Command="{Binding OpenAddGuide}" />
     </StackPanel>
-  </ui:Card>
+
+    <ui:CardControl Margin="0,4,0,0" Icon="{ui:SymbolIcon DeveloperBoard24}"
+                    Visibility="{Binding FirmwareText, Converter={StaticResource ShowWhenPresent}}">
+      <ui:CardControl.Header>
+        <StackPanel>
+          <ui:TextBlock Text="Firmware" />
+          <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding FirmwareText}" views:Live.Text="{Binding FirmwareText}" />
+        </StackPanel>
+      </ui:CardControl.Header>
+    </ui:CardControl>
+    <ui:InfoBar Style="{StaticResource Warning}" Severity="Informational" Message="{Binding FirmwareWarning}" views:Live.Text="{Binding FirmwareWarning}"
+                Visibility="{Binding FirmwareWarning, Converter={StaticResource ShowWhenPresent}}" />
+    <StackPanel Visibility="{Binding IsUnsupported, Converter={StaticResource ShowWhenTrue}}">
+      <ui:InfoBar Style="{StaticResource Warning}" Title="Not supported" Message="{Binding UnsupportedNote}" views:Live.Text="{Binding UnsupportedNote}" />
+      <ui:Button Margin="0,8,0,0" Icon="{ui:SymbolIcon Open24}" Content="How to report this model" Command="{Binding OpenReportGuide}" />
+    </StackPanel>
+
+    <!-- The try-it flow for a model the app has not been tested on (H6), one step at a time. -->
+    <StackPanel Visibility="{Binding IsUnverified, Converter={StaticResource ShowWhenTrue}}">
+      <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Try this keyboard" />
+      <ui:TextBlock Margin="4,0,0,12" Style="{StaticResource Note}"
+                    Text="This model is not on the app's tested list yet. These steps check that its sensors answer on your keyboard. A capture you share on GitHub lets it join the list." />
+      <ui:InfoBar Style="{StaticResource Warning}" Margin="0,0,0,4" Severity="Informational" Message="{Binding CheckBlocked}" views:Live.Text="{Binding CheckBlocked}"
+                  Visibility="{Binding CheckBlocked, Converter={StaticResource ShowWhenPresent}}" />
+
+      <StackPanel Visibility="{Binding CheckBlocked, Converter={StaticResource ShowWhenAbsent}}">
+      <ui:Card Padding="20" VerticalContentAlignment="Top" AutomationProperties.Name="{Binding Step1Name}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border Style="{StaticResource StepNumber}" Visibility="{Binding HasConsented, Converter={StaticResource ShowWhenAbsent}}">
+            <ui:TextBlock Style="{StaticResource StepNumberText}" Text="1" />
+          </Border>
+          <ui:SymbolIcon Style="{StaticResource StepDone}" Visibility="{Binding HasConsented, Converter={StaticResource ShowWhenTrue}}" />
+          <StackPanel Grid.Column="1" Margin="16,0,0,0">
+            <ui:TextBlock Style="{StaticResource StepTitle}" Text="Let the app read the sensors" />
+            <StackPanel Visibility="{Binding HasConsented, Converter={StaticResource ShowWhenAbsent}}">
+              <ui:TextBlock Style="{StaticResource Paragraph}" Text="{x:Static vm:KeyboardViewModel.ConsentText}" />
+              <ui:TextBlock Style="{StaticResource Paragraph}" FontWeight="SemiBold"
+                            Text="The app remembers this permission for this keyboard. Pressing the button starts the check in step 2. Take your hands off the keyboard right after." />
+              <ui:Button Appearance="Primary" Content="Accept the risk and read the sensors" Command="{Binding Consent}" />
+            </StackPanel>
+            <ui:TextBlock Style="{StaticResource Note}" Text="{Binding ConsentNote}" views:Live.Text="{Binding ConsentNote}"
+                          Visibility="{Binding ConsentNote, Converter={StaticResource ShowWhenPresent}}" />
+          </StackPanel>
+        </Grid>
+      </ui:Card>
+
+      <ui:Card x:Name="CheckStep" Margin="0,4,0,0" Padding="20" VerticalContentAlignment="Top" Focusable="True"
+               AutomationProperties.Name="{Binding Step2Name}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border Style="{StaticResource LaterStepNumber}" Visibility="{Binding CheckPassed, Converter={StaticResource ShowWhenAbsent}}">
+            <ui:TextBlock Style="{StaticResource LaterStepNumberText}" Text="2" />
+          </Border>
+          <ui:SymbolIcon Style="{StaticResource StepDone}" Visibility="{Binding CheckPassed, Converter={StaticResource ShowWhenTrue}}" />
+          <StackPanel Grid.Column="1" Margin="16,0,0,0">
+            <ui:TextBlock Style="{StaticResource StepTitle}" Text="Check the sensors" />
+            <ui:TextBlock Style="{StaticResource Paragraph}"
+                          Text="{Binding CheckHowTo}" />
+            <StackPanel Orientation="Horizontal">
+              <ui:Button Content="{Binding CheckLabel}" Icon="{ui:SymbolIcon Pulse24}" Command="{Binding Check}" />
+              <ui:ProgressRing Margin="12,0,0,0" Width="20" Height="20" IsIndeterminate="True"
+                               Visibility="{Binding IsChecking, Converter={StaticResource ShowWhenTrue}}" />
+            </StackPanel>
+            <ui:TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding CheckText}" views:Live.Text="{Binding CheckText}"
+                          Visibility="{Binding CheckText, Converter={StaticResource ShowWhenPresent}}">
+              <ui:TextBlock.Style>
+                <Style TargetType="ui:TextBlock">
+                  <Style.Triggers>
+                    <!-- While the check runs, this line is what to do right now. -->
+                    <DataTrigger Binding="{Binding IsChecking}" Value="True">
+                      <Setter Property="FontTypography" Value="BodyStrong" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </ui:TextBlock.Style>
+            </ui:TextBlock>
+            <ui:TextBlock Margin="0,8,0,0" TextWrapping="Wrap" FontWeight="SemiBold" Text="{Binding NextStep}" views:Live.Text="{Binding NextStep}"
+                          Visibility="{Binding NextStep, Converter={StaticResource ShowWhenPresent}}" />
+            <ui:Button Margin="0,8,0,0" Icon="{ui:SymbolIcon Gauge24}" Content="Open Calibration"
+                       Command="{Binding DataContext.OpenCalibration, RelativeSource={RelativeSource AncestorType=Window}}"
+                       Visibility="{Binding CheckPassed, Converter={StaticResource ShowWhenTrue}}" />
+          </StackPanel>
+        </Grid>
+      </ui:Card>
+
+      </StackPanel>
+
+      <ui:Card Margin="0,4,0,0" Padding="20" VerticalContentAlignment="Top" AutomationProperties.Name="Step 3 of 3: share a capture (optional)">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border Style="{StaticResource LaterStepNumber}">
+            <ui:TextBlock Style="{StaticResource LaterStepNumberText}" Text="3" />
+          </Border>
+          <StackPanel Grid.Column="1" Margin="16,0,0,0">
+            <ui:TextBlock Style="{StaticResource StepTitle}" Text="Share a capture (optional)" />
+            <!-- Spelled out before Export so no one attaches a file without knowing what is in it. -->
+            <ui:TextBlock Style="{StaticResource Paragraph}" Text="A capture is a file that holds:" />
+            <ItemsControl Margin="8,0,0,0" ItemsSource="{x:Static vm:KeyboardViewModel.CaptureHolds}" Focusable="False"
+                          AutomationProperties.Name="What a capture holds" ItemTemplate="{StaticResource Bullet}" />
+            <ItemsControl Margin="32,0,0,4" ItemsSource="{x:Static vm:KeyboardViewModel.CheckHolds}" Focusable="False"
+                          AutomationProperties.Name="What a capture holds from the last check" ItemTemplate="{StaticResource Bullet}" />
+            <ui:TextBlock Style="{StaticResource Note}" Text="{x:Static vm:KeyboardViewModel.CaptureLimits}" />
+            <ui:TextBlock Margin="0,0,0,4" TextWrapping="Wrap" FontWeight="SemiBold" Text="{Binding ExportNote}" views:Live.Text="{Binding ExportNote}"
+                          Visibility="{Binding ExportNote, Converter={StaticResource ShowWhenPresent}}" />
+            <WrapPanel>
+              <ui:Button Margin="0,4,8,0" Content="Export a capture" Icon="{ui:SymbolIcon Save24}" Command="{Binding Export}" />
+              <ui:Button Margin="0,4,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Open24}" Content="Open a new issue" Command="{Binding OpenIssue}"
+                         Visibility="{Binding Exported, Converter={StaticResource ShowWhenTrue}}" />
+            </WrapPanel>
+            <ui:TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding ExportText}" views:Live.Text="{Binding ExportText}"
+                          Visibility="{Binding ExportText, Converter={StaticResource ShowWhenPresent}}" />
+          </StackPanel>
+        </Grid>
+      </ui:Card>
+    </StackPanel>
+  </StackPanel>
 </UserControl>

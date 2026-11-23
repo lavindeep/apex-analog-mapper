@@ -22,14 +22,14 @@ and how to report a vulnerability.
 - Capture files. The sensor check for an untested model keeps the keyboard's answers
   in memory. The app writes them to a file only when you press Export a capture and
   choose where to save it, and never uploads the file. It holds the app version, the
-  time, the keyboard's model, product ID, firmware, Windows container ID and report
+  file's format version, the time, the keyboard's model, product ID, firmware, Windows container ID and report
   sizes, its answer to the firmware query, the sensor readings from the last check
   with no key held and with one key held, and any answer the app couldn't read. It
   holds no record of typing. Each reading is a single moment and shows which keys were
   down right then.
 - Issue links. After you export a capture, Open a new issue opens GitHub's keyboard
   support form in your browser. The link carries the keyboard's model, product ID and
-  firmware, the card's status, the sensor check's result and the app version, so the
+  firmware, the keyboard's status, the sensor check's result and the app version, so the
   form arrives filled in. Your browser sends that link to GitHub when you press the
   button. The capture itself goes up only if you attach it, and nothing is posted until
   you submit the form.

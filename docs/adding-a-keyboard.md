@@ -10,7 +10,7 @@ it can't, it is an issue with what your keyboard told the app.
 
 ## Find your path
 
-Choose your keyboard on the keyboard card, then follow the path for what the card says.
+Open the Keyboard page from Home, choose your keyboard, then follow the path for what the page says.
 
 - **Not tested yet.** The app knows the model, but nobody has checked it. Follow
   [Check a model the app knows](#check-a-model-the-app-knows). If the check passes, the
@@ -24,7 +24,7 @@ Choose your keyboard on the keyboard card, then follow the path for what the car
 
 An agent on your PC can build the app and run the tests. With your agreement, it can run
 the five hardware tests in [AGENTS.md](../AGENTS.md#hardware-tests), which only read the
-keyboard, and it can start your build and read the cards' text. It can't press keys, so the
+keyboard, and it can start your build and read the window's text. It can't press keys, so the
 capture and the clip need your hands.
 
 ## Check a model the app knows
@@ -33,23 +33,24 @@ capture and the clip need your hands.
 
 You need the latest release and the keyboard. No code.
 
-1. On the keyboard card, read the text above **Accept the risk and read the sensors**,
-   then press it. If you already accepted the risk, press **Check the sensors** instead.
-2. When the card says "Keep your hands off the keyboard for a moment", let go of it.
-3. When the card says "Press any key all the way down and hold it", hold **W** all the way
-   down. Use W and no other key. The tests check that W moved the sensor the app expects
-   for W.
-4. Keep holding W until the card says "The sensors respond to key presses." If it says
+1. On the Keyboard page, in step 1 of "Try this keyboard", read the text above
+   **Accept the risk and read the sensors**, then press it. It starts the check in step 2.
+   If you already accepted the risk, press **Check the sensors** in step 2 instead.
+2. When step 2 says "Keep your hands off the keyboard for a moment", let go of it.
+3. When it says "Hold W all the way down", hold **W** all the way down. Use W and no other
+   key. The tests check that W moved the sensor the app expects for W. The page names the
+   key as your layout prints it, such as Z on AZERTY. In this guide, W means that key.
+4. Keep holding W until step 2 says "The sensors respond to key presses." If it says
    anything else, follow [If the check fails](#if-the-check-fails).
-5. Read which sensor the card says moved. If it says "the one the app maps to W", go on.
+5. Read which sensor step 2 says moved. If it says "the one the app maps to W", go on.
    If it says anything else, run the check again and hold only W. If the same sensor
    moves again, go on anyway. The capture shows where W sits on your model.
-6. Press **Export a capture** under the message and save the file. The card lists what
-   the file holds. It has no record of your typing. Each reading shows which keys were
-   down at that moment, which should be W alone.
+6. In step 3, press **Export a capture** and save the file. Step 3 lists what the file
+   holds. It has no record of your typing. Each reading shows which keys were down at
+   that moment, which should be W alone.
 
-If you'd rather not change code, stop here. Press **Open a new issue** on the card. It
-opens the keyboard support form with the model, hardware ID, firmware, card status,
+If you'd rather not change code, stop here. Press **Open a new issue** in step 3. It
+opens the keyboard support form with the model, hardware ID, firmware, keyboard status,
 check result and app version filled in. Choose the connection, attach the capture, and
 submit it. Anyone who builds the app can take it from there.
 
@@ -90,8 +91,8 @@ that aside first.
 4. Start recording. Any screen recorder works, such as the Snipping Tool's video mode. A
    phone video that shows your hand and the screen together is stronger evidence. Keep
    the clip under 10 MB so GitHub accepts it.
-5. Open the keyboard card. It names your model, says "Tested" under it, and shows the
-   firmware.
+5. Open the Keyboard page from Home. It names your model, says "Tested" under it, and
+   shows the firmware.
 6. On the profile card, press **New**. It makes a profile named "Profile 2", or the next
    free number, with the default Forza keys, and selects it. Your own profiles stay as
    they are.
@@ -117,18 +118,18 @@ summary if your agent ran them.
 
 ## If the check fails
 
-Run it once more. The keyboard card offers the check only while the app treats the model
+Run it once more. The Keyboard page offers the check only while the app treats the model
 as untested. If your build already marks the model `Verified`, use the installed release
 when it shows the model as "Not tested yet". Otherwise set the model back to
 `SensorSupport.Unverified` in your build and build it again. Press **Check the sensors**,
-keep your hands off until the card asks for a key, then hold W all the way down until the
-card answers. If you are fixing a failed test, export the new capture, replace the old
+keep your hands off until step 2 asks for W, then hold W all the way down until step 2
+answers. If you are fixing a failed test, export the new capture, replace the old
 one, and mark the model `Verified` again.
 
 If it fails again, the keyboard answers differently from the TKL, or its keys sit on
 different sensors. Press **Export a capture**, then **Open a new issue**, which fills in
 the form as in [Take a capture](#take-a-capture).
-Paste the exact message the card or the test showed, and attach the capture. If the
+Paste the exact message the page or the test showed, and attach the capture. If the
 keyboard sent a reply the app couldn't read, the capture holds it. Together with the
 message, that tells me which of the two it is.
 
@@ -147,9 +148,9 @@ with:
 - The model's name as SteelSeries sells it.
 - Its Hardware Ids line from Device Manager. [Add a model the app doesn't know](#add-a-model-the-app-doesnt-know)
   says where to find it.
-- The firmware the keyboard card shows.
+- The firmware the Keyboard page shows.
 - How it was connected: USB cable, wireless receiver, or Bluetooth.
-- The capture, if the card offered **Export a capture**.
+- The capture, if the page offered **Export a capture**.
 
 If you study SteelSeries firmware, [HallJoy's firmware research](https://github.com/PashOK7/HallJoy/blob/056ba64f9db5f918bf16dc4a89df4b52234c8d24/docs/current/STEELSERIES_FAMILY_REVIEW_2026-09-25.md)
 maps the command tables of several families. A request is worth proposing when a command
@@ -176,5 +177,5 @@ Once a request ships in one, it needs the same capture and clip as
 4. Close the installed app and copy your app data somewhere safe with the `Copy-Item`
    command in step 2 of [Prove it on your keyboard](#prove-it-on-your-keyboard). Your
    build reads and writes the same folder.
-5. Build and start the app. The keyboard card now shows the model as "Not tested yet".
+5. Build and start the app. The Keyboard page now shows the model as "Not tested yet".
    Follow [Check a model the app knows](#check-a-model-the-app-knows) with your build.

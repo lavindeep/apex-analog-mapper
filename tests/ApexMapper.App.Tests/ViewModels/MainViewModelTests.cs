@@ -67,6 +67,29 @@ public sealed class MainViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Leaving_the_keyboard_page_or_the_window_ends_a_sensor_check()
+    {
+        _h.Boards[0] = AppHarness.Gen3Info;
+        var main = new MainViewModel(_h.Services, _h.Workspace, new AppSettings(ConsentedKeyboards: [AppHarness.Gen3]));
+        main.Keyboard.OnKeyboards(_h.Boards);
+        main.Page = Page.Keyboard;
+        main.Keyboard.Check.Execute(null);
+        Assert.True(main.Keyboard.IsChecking);
+
+        main.GoHome.Execute(null);
+
+        Assert.False(main.Keyboard.IsChecking);
+        Assert.Equal("The check stopped when you left the Keyboard page. Run it again.", main.Keyboard.CheckText);
+
+        main.Page = Page.Keyboard;
+        main.Keyboard.Check.Execute(null);
+        main.OnDeactivated();
+
+        Assert.False(main.Keyboard.IsChecking);
+        Assert.Equal("The check stopped when you switched to another window. Run it again.", main.Keyboard.CheckText);
+    }
+
+    [Fact]
     public void A_tick_hands_key_presses_to_key_capture()
     {
         var main = new MainViewModel(_h.Services, _h.Workspace, new AppSettings());

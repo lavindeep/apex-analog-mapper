@@ -55,6 +55,7 @@ public sealed class WindowRenderingTests
     private static readonly Scenario[] Scenarios =
     [
         new("first-run", h => h.Boards.Clear(), Game: null),
+        new("two-keyboards", h => h.Boards.Add(AppHarness.Gen3Info)),
         new("no-game", h => h.CalibrateForza(), Game: null),
         new("ready", Ready),
         new("ready-narrow", Ready, Narrow: true),
@@ -92,7 +93,10 @@ public sealed class WindowRenderingTests
         new("paused", Ready, async (main, h) =>
         {
             await main.Status.StartAsync();
+            // The keyboard was unplugged, which is what pauses a session.
             h.Session.Move(SessionState.Paused);
+            h.Boards.Clear();
+            main.Keyboard.OnKeyboards(h.Boards);
             main.Status.Tick(h.Now);
         }),
         new("mapping-background-narrow", Ready, async (main, h) =>
@@ -120,6 +124,98 @@ public sealed class WindowRenderingTests
             h.Sensor.Reading = AppHarness.Holding(16, 3000);
             main.Keyboard.Tick(h.Now + CalibrationViewModel.SettleMs + 100);
             return Task.CompletedTask;
+        }),
+        new("untested-board-check-other-sensor", h =>
+        {
+            h.Boards[0] = AppHarness.Gen3Info;
+            h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
+        }, (main, h) =>
+        {
+            main.Page = Page.Keyboard;
+            main.Keyboard.Consent.Execute(null);
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Keyboard.Tick(h.Now + CalibrationViewModel.SettleMs);
+            h.Sensor.Reading = AppHarness.Holding(17, 3000);
+            main.Keyboard.Tick(h.Now + CalibrationViewModel.SettleMs + 100);
+            return Task.CompletedTask;
+        }, Narrow: true),
+        new("untested-board-check-failed", h =>
+        {
+            h.Boards[0] = AppHarness.Gen3Info;
+            h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
+        }, (main, h) =>
+        {
+            main.Page = Page.Keyboard;
+            main.Keyboard.Consent.Execute(null);
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Keyboard.Tick(h.Now + CalibrationViewModel.SettleMs);
+            main.Keyboard.Tick(h.Now + CalibrationViewModel.SettleMs + KeyboardViewModel.CheckTimeoutMs + 1);
+            return Task.CompletedTask;
+        }),
+        new("untested-board-check-unreadable", h =>
+        {
+            h.Boards[0] = AppHarness.Gen3Info;
+            h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
+        }, (main, h) =>
+        {
+            main.Page = Page.Keyboard;
+            main.Keyboard.Consent.Execute(null);
+            h.Sensor.Problem = "Reply padding was not zero.";
+            main.Keyboard.Tick(h.Now + KeyboardViewModel.CheckTimeoutMs + 1);
+            return Task.CompletedTask;
+        }),
+        new("untested-board-checking", h =>
+        {
+            h.Boards[0] = AppHarness.Gen3Info;
+            h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
+        }, (main, h) =>
+        {
+            main.Page = Page.Keyboard;
+            main.Keyboard.Consent.Execute(null);
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Keyboard.Tick(h.Now + CalibrationViewModel.SettleMs);
+            return Task.CompletedTask;
+        }),
+        new("untested-board-exported", h =>
+        {
+            h.Boards[0] = AppHarness.Gen3Info;
+            h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
+            Directory.CreateDirectory(h.File("Downloads"));
+            h.Dialogs.SavePath = h.File(@"Downloads\capture.json");
+        }, (main, h) =>
+        {
+            main.Page = Page.Keyboard;
+            main.Keyboard.Consent.Execute(null);
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Keyboard.Tick(h.Now + CalibrationViewModel.SettleMs);
+            h.Sensor.Reading = AppHarness.Holding(16, 3000);
+            main.Keyboard.Tick(h.Now + CalibrationViewModel.SettleMs + 100);
+            main.Keyboard.Export.Execute(null);
+            return Task.CompletedTask;
+        }, Narrow: true),
+        new("untested-board-mapping", h =>
+        {
+            Ready(h);
+            h.CalibrateForza(AppHarness.Gen3, "1.2.0");
+            h.Boards[0] = AppHarness.Gen3Info;
+            h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
+        }, async (main, h) =>
+        {
+            // An untested board maps only after consent, which also starts a check that mapping then ends.
+            main.Keyboard.Consent.Execute(null);
+            await main.Status.StartAsync();
+            main.Page = Page.Keyboard;
+        }),
+        new("untested-board-no-firmware", h =>
+        {
+            h.Boards[0] = AppHarness.Gen3Info;
+            h.FirmwareOf = _ => new FirmwareReading(null, null, "The device is busy.");
+        }),
+        new("untested-firmware", h => h.FirmwareOf = _ => new FirmwareReading("9.9.9", null, null)),
+        new("no-sensor-interface", h =>
+        {
+            h.Boards[0] = AppHarness.TklInfo with { HasVendorInterface = false };
+            h.FirmwareOf = _ => new FirmwareReading(null, null, "No vendor interface found for the selected keyboard.");
         }),
         new("unsupported-board", h =>
         {

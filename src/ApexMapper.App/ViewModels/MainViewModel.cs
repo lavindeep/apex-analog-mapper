@@ -53,7 +53,8 @@ public sealed class MainViewModel : ObservableObject
 
     /// <summary>
     /// The page on show. The profile and calibration pages read the keyboard only while
-    /// they show, and leaving the profile page ends a key capture.
+    /// they show, leaving the profile page ends a key capture, and leaving the keyboard
+    /// page ends a sensor check, whose prompt shows only there.
     /// </summary>
     public Page Page
     {
@@ -67,6 +68,10 @@ public sealed class MainViewModel : ObservableObject
             if (value != Page.Profile)
             {
                 Profile.CancelCapture.Execute(null);
+            }
+            if (value != Page.Keyboard)
+            {
+                Keyboard.StopCheck("The check stopped when you left the Keyboard page. Run it again.");
             }
             Profile.IsOpen = value == Page.Profile;
             Calibration.IsOpen = value == Page.Calibration;
@@ -118,6 +123,13 @@ public sealed class MainViewModel : ObservableObject
         Game.OnActivated();
         Profile.ForgetHeldKeys();
         Calibration.ForgetHeldKeys();
+    }
+
+    /// <summary>Another window came to the front: what it types belongs to it, so a key capture and a sensor check end.</summary>
+    public void OnDeactivated()
+    {
+        Profile.CancelCapture.Execute(null);
+        Keyboard.StopCheck("The check stopped when you switched to another window. Run it again.");
     }
 
     public int TickIntervalMs => Calibration.IsOpen || Profile.IsOpen || Profile.IsCapturing || Keyboard.IsChecking ? FastTickMs : SlowTickMs;

@@ -19,6 +19,12 @@
     <Setter Property="FontTypography" Value="Caption" />
     <Setter Property="Appearance" Value="Secondary" />
     <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Style.Triggers>
+      <!-- Inside a disabled picker, so the line under the name never stands out more than the name. -->
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="Appearance" Value="Disabled" />
+      </Trigger>
+    </Style.Triggers>
   </Style>
 
   <!-- A row's second line on Home, which wraps rather than cut off beside the row's controls. -->
