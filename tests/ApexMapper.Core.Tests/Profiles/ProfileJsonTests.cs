@@ -12,6 +12,16 @@ public class ProfileJsonTests
         [new(DefaultProfiles.Key.W, PadTarget.RightTrigger, Core.Response.Response.Create(2f, 0.85f, 0.15f), 25f, 40f)],
         [new(DefaultProfiles.Key.A, DefaultProfiles.Key.D, PadTarget.LeftStickX, Core.Response.Response.Create(0.7f, 0.9f, 0f), 10f, 20f, ConflictRule.Neutral, AxisMode.Rate, 123f, 77f)]);
 
+    /// <summary>The profile store recognises an unedited 0.5.0-alpha profile by these bindings, so they must match what that version wrote.</summary>
+    [Fact]
+    public void The_0_5_0_alpha_forza_bindings_are_the_ones_in_the_file_that_version_wrote()
+    {
+        var written = ProfileJson.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures", "forza-0.5.0-alpha.json"))).Value!;
+        var old = DefaultProfiles.Forza050Alpha();
+        Assert.Equal(old.Keys, written.Keys);
+        Assert.Equal(old.Axes, written.Axes);
+    }
+
     [Fact]
     public void Forza_round_trips()
     {

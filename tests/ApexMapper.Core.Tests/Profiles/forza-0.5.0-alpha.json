@@ -1,0 +1,158 @@
+{
+  "version": 1,
+  "payload": {
+    "id": "forza",
+    "name": "Forza",
+    "keys": [
+      {
+        "key": "0x11",
+        "target": "right_trigger",
+        "response": {
+          "exponent": 1.6,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0
+      },
+      {
+        "key": "0x1F",
+        "target": "left_trigger",
+        "response": {
+          "exponent": 1.6,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0
+      },
+      {
+        "key": "0x39",
+        "target": "button_a",
+        "response": {
+          "exponent": 1,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0
+      },
+      {
+        "key": "0x13",
+        "target": "button_y",
+        "response": {
+          "exponent": 1,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0
+      },
+      {
+        "key": "0x12",
+        "target": "button_b",
+        "response": {
+          "exponent": 1,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0
+      },
+      {
+        "key": "0x10",
+        "target": "button_x",
+        "response": {
+          "exponent": 1,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0
+      },
+      {
+        "key": "0x2A",
+        "target": "left_bumper",
+        "response": {
+          "exponent": 1,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0
+      },
+      {
+        "key": "0x0F",
+        "target": "right_bumper",
+        "response": {
+          "exponent": 1,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0
+      },
+      {
+        "key": "0x22",
+        "target": "left_stick_click",
+        "response": {
+          "exponent": 1,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0
+      }
+    ],
+    "axes": [
+      {
+        "negative_key": "0x1E",
+        "positive_key": "0x20",
+        "target": "left_stick_x",
+        "response": {
+          "exponent": 1.6,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0,
+        "conflict": "last_input_wins",
+        "mode": "position",
+        "rate_ms": 150,
+        "return_ms": 100
+      },
+      {
+        "negative_key": "0xE04B",
+        "positive_key": "0xE04D",
+        "target": "right_stick_x",
+        "response": {
+          "exponent": 1,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0,
+        "conflict": "last_input_wins",
+        "mode": "position",
+        "rate_ms": 150,
+        "return_ms": 100
+      },
+      {
+        "negative_key": "0xE050",
+        "positive_key": "0xE048",
+        "target": "right_stick_y",
+        "response": {
+          "exponent": 1,
+          "saturation": 1,
+          "deadzone": 0
+        },
+        "press_ramp_ms": 0,
+        "release_ramp_ms": 0,
+        "conflict": "last_input_wins",
+        "mode": "position",
+        "rate_ms": 150,
+        "return_ms": 100
+      }
+    ]
+  }
+}

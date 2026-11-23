@@ -12,29 +12,38 @@ public static class DefaultProfiles
     /// Forza's Default Layout 1 controller mapping with WASD driving, for the game's
     /// deadzone settings the README shows.
     /// </summary>
-    public static Profile Forza()
+    public static Profile Forza() => Forza(Response.Response.Default, Response.Response.Default);
+
+    /// <summary>
+    /// The Forza profile as 0.5.0-alpha shipped it: curve 1.6 on steering, throttle and
+    /// brake, which left the first third of a press doing nothing (issue #9), and a straight
+    /// curve on the other rows. A saved profile with exactly these bindings was never
+    /// edited, so the profile store moves it to <see cref="Forza()"/>.
+    /// </summary>
+    public static Profile Forza050Alpha() => Forza(new Response.Response(1.6f, 1f, 0f), new Response.Response(1f, 1f, 0f));
+
+    private static Profile Forza(Response.Response driving, Response.Response other)
     {
-        var response = Response.Response.Default;
         return new Profile(
             ForzaId,
             "Forza",
             Keys:
             [
-                new(Key.W, PadTarget.RightTrigger, response, 0f, 0f),
-                new(Key.S, PadTarget.LeftTrigger, response, 0f, 0f),
-                new(Key.Space, PadTarget.ButtonA, response, 0f, 0f),
-                new(Key.R, PadTarget.ButtonY, response, 0f, 0f),
-                new(Key.E, PadTarget.ButtonB, response, 0f, 0f),
-                new(Key.Q, PadTarget.ButtonX, response, 0f, 0f),
-                new(Key.LeftShift, PadTarget.LeftBumper, response, 0f, 0f),
-                new(Key.Tab, PadTarget.RightBumper, response, 0f, 0f),
-                new(Key.G, PadTarget.LeftStickClick, response, 0f, 0f),
+                new(Key.W, PadTarget.RightTrigger, driving, 0f, 0f),
+                new(Key.S, PadTarget.LeftTrigger, driving, 0f, 0f),
+                new(Key.Space, PadTarget.ButtonA, other, 0f, 0f),
+                new(Key.R, PadTarget.ButtonY, other, 0f, 0f),
+                new(Key.E, PadTarget.ButtonB, other, 0f, 0f),
+                new(Key.Q, PadTarget.ButtonX, other, 0f, 0f),
+                new(Key.LeftShift, PadTarget.LeftBumper, other, 0f, 0f),
+                new(Key.Tab, PadTarget.RightBumper, other, 0f, 0f),
+                new(Key.G, PadTarget.LeftStickClick, other, 0f, 0f),
             ],
             Axes:
             [
-                new(Key.A, Key.D, PadTarget.LeftStickX, response, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
-                new(Key.Left, Key.Right, PadTarget.RightStickX, response, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
-                new(Key.Down, Key.Up, PadTarget.RightStickY, response, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
+                new(Key.A, Key.D, PadTarget.LeftStickX, driving, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
+                new(Key.Left, Key.Right, PadTarget.RightStickX, other, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
+                new(Key.Down, Key.Up, PadTarget.RightStickY, other, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
             ]);
     }
 

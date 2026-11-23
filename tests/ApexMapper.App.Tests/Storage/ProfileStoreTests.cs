@@ -68,6 +68,25 @@ public class ProfileStoreTests
     }
 
     [Fact]
+    public void A_profile_still_on_the_0_5_0_alpha_bindings_gets_todays_and_an_edited_one_is_kept()
+    {
+        using var dir = new TempDirectory();
+        var old = DefaultProfiles.Forza050Alpha();
+        var edited = old with { Id = "mine", Keys = [old.Keys[0] with { PressRampMs = 10f }, .. old.Keys.Skip(1)] };
+        File.WriteAllText(dir.File("forza.json"), ProfileJson.Serialize(old with { Name = "My Forza" }));
+        File.WriteAllText(dir.File("mine.json"), ProfileJson.Serialize(edited));
+        var store = new ProfileStore(dir.Path);
+
+        var forza = store.Load("forza")!;
+
+        Assert.Null(forza.Problem);
+        Assert.Equal(ProfileJson.Serialize(DefaultProfiles.Forza() with { Name = "My Forza" }), ProfileJson.Serialize(forza.Profile!));
+        Assert.Equal(ProfileJson.Serialize(forza.Profile!), File.ReadAllText(dir.File("forza.json")));
+        Assert.Equal(ProfileJson.Serialize(old with { Name = "My Forza" }), File.ReadAllText(dir.File("forza.json.bak")));
+        Assert.Equal(ProfileJson.Serialize(edited), ProfileJson.Serialize(store.Load("mine")!.Profile!));
+    }
+
+    [Fact]
     public void A_saved_profile_round_trips_and_saving_it_unchanged_writes_nothing()
     {
         using var dir = new TempDirectory();

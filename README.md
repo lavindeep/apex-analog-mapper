@@ -122,11 +122,13 @@ deadzone on top of that leaves the start of the press doing nothing.
 
 For the same reason, steering, throttle and brake in the Forza profile use the Default
 response, which turns those small early readings into output. It gives about half the
-output a fifth of the way into the press and three quarters at halfway. A profile you
-already saved keeps the curves it has, and a row on one of the old presets now shows
-Custom. If the wheel stays still for the first third of the press, select the steering
-row on the profile card and choose Default under Response. Do the same for the throttle
-and brake rows.
+output a fifth of the way into the press and three quarters at halfway. A profile
+that still has the bindings 0.5.0-alpha shipped moves to Default the first time this
+version loads it, and the old file stays beside it as `.bak`. A profile you edited keeps
+the curves it has, and a row on one of the old presets shows Custom. If the wheel stays
+still for the first third of the press in one of those, select the steering row on the
+profile card and choose Default under Response. Do the same for the throttle and brake
+rows.
 
 ## Sharing setups
 

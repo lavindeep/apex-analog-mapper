@@ -10,5 +10,7 @@
     <Content Include="..\ApexMapper.Windows.Tests\fixtures\*.hex" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- Contributors' captures from the app's sensor check, one per tested model and firmware. -->
     <Content Include="Captures\*.json" Link="captures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The Forza profile as 0.5.0-alpha wrote it on the maintainer's PC. -->
+    <Content Include="Profiles\forza-0.5.0-alpha.json" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
