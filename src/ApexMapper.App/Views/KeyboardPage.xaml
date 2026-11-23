@@ -9,27 +9,13 @@
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:KeyboardViewModel}">
   <UserControl.Resources>
-    <!-- A try-it step's marker: its number until it is done, then a check mark. -->
-    <Style x:Key="StepNumber" TargetType="Border">
-      <Setter Property="Width" Value="28" />
-      <Setter Property="Height" Value="28" />
-      <Setter Property="CornerRadius" Value="14" />
-      <Setter Property="BorderThickness" Value="1.5" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
-      <Setter Property="VerticalAlignment" Value="Top" />
-    </Style>
+    <!-- A try-it step that is done: a check mark in place of its number. -->
     <Style x:Key="StepDone" TargetType="ui:SymbolIcon">
       <Setter Property="Symbol" Value="CheckmarkCircle24" />
       <Setter Property="Filled" Value="True" />
       <Setter Property="FontSize" Value="28" />
       <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
       <Setter Property="VerticalAlignment" Value="Top" />
-    </Style>
-    <Style x:Key="StepNumberText" TargetType="ui:TextBlock">
-      <Setter Property="FontTypography" Value="BodyStrong" />
-      <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
-      <Setter Property="HorizontalAlignment" Value="Center" />
-      <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <!-- A step after step 1: grey until step 1 is done, so one accent ring marks where to begin. -->
     <Style x:Key="LaterStepNumber" TargetType="Border" BasedOn="{StaticResource StepNumber}">
@@ -45,10 +31,6 @@
           <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
         </DataTrigger>
       </Style.Triggers>
-    </Style>
-    <Style x:Key="StepTitle" TargetType="ui:TextBlock">
-      <Setter Property="FontTypography" Value="BodyStrong" />
-      <Setter Property="Margin" Value="0,4,0,8" />
     </Style>
     <!-- One line of a capture's contents. -->
     <DataTemplate x:Key="Bullet">

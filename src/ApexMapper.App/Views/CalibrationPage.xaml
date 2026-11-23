@@ -9,49 +9,116 @@
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:CalibrationViewModel}">
   <UserControl.Resources>
-    <!-- A saved reading marked on the bar. -->
+    <!-- A saved reading marked on the bar, taller than the dot so it shows past a key resting on it. -->
     <Style x:Key="Mark" TargetType="Rectangle">
       <Setter Property="Width" Value="2" />
-      <Setter Property="Height" Value="14" />
-      <Setter Property="Margin" Value="-1,-3,0,0" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="Margin" Value="-1,-6,0,0" />
       <Setter Property="Fill" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+    </Style>
+    <!-- A step's number greys out while its button is off, so the accent ring marks the step to do. -->
+    <Style x:Key="Step" TargetType="Border" BasedOn="{StaticResource StepNumber}">
+      <Style.Triggers>
+        <Trigger Property="IsEnabled" Value="False">
+          <Setter Property="BorderBrush" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+    <!-- A step's title goes secondary while its button is off, and stays readable as the instruction for later. -->
+    <Style x:Key="StepLabel" TargetType="ui:TextBlock" BasedOn="{StaticResource StepTitle}">
+      <Style.Triggers>
+        <Trigger Property="IsEnabled" Value="False">
+          <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+    <!-- The button of the step to do now is the primary one: step 2 once a released reading waits for it, else
+         step 1 on a key that still needs calibrating. A calibrated key opened to look has no primary step. -->
+    <Style x:Key="ReleasedButton" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+      <Setter Property="Appearance" Value="Primary" />
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding PressedIsNext}" Value="True">
+          <Setter Property="Appearance" Value="Secondary" />
+        </DataTrigger>
+        <DataTrigger Binding="{Binding IsCalibrated}" Value="True">
+          <Setter Property="Appearance" Value="Secondary" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="PressedButton" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding PressedIsNext}" Value="True">
+          <Setter Property="Appearance" Value="Primary" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="StepText" TargetType="ui:TextBlock" BasedOn="{StaticResource StepNumberText}">
+      <Style.Triggers>
+        <Trigger Property="IsEnabled" Value="False">
+          <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </Trigger>
+      </Style.Triggers>
     </Style>
   </UserControl.Resources>
 
-  <ui:Card Padding="20" VerticalContentAlignment="Top" x:Name="Root">
-    <StackPanel>
-      <ui:TextBlock Style="{StaticResource Note}"
-                    Text="Calibrate each key in two steps: press Set released with the key up, then hold it all the way down and press Set fully pressed. Keep the other keys up. The bar is the key's sensor reading now, which is not zero at rest; the marks are the saved readings." />
-      <ui:TextBlock Style="{StaticResource Paragraph}" Text="{Binding Blocker}" views:Live.Text="{Binding Blocker}"
-                    Visibility="{Binding Blocker, Converter={StaticResource ShowWhenPresent}}" />
-      <ui:InfoBar Style="{StaticResource Warning}" Message="{Binding Problem}"
-                  Visibility="{Binding Problem, Converter={StaticResource ShowWhenPresent}}" />
-      <ui:InfoBar Style="{StaticResource Warning}" Severity="Error" Message="{Binding SensorProblem}"
-                  Visibility="{Binding SensorProblem, Converter={StaticResource ShowWhenPresent}}" />
+  <StackPanel x:Name="Root">
+    <ui:CardControl Icon="{ui:SymbolIcon Gauge24}">
+      <ui:CardControl.Header>
+        <StackPanel>
+          <ui:TextBlock Text="{Binding Summary}" views:Live.Text="{Binding Summary}" />
+          <ui:TextBlock Style="{StaticResource RowDescription}"
+                        Text="The app saves where each key rests and where it bottoms out, so it can tell how far the key is pressed. It keeps them for this keyboard and its firmware." />
+        </StackPanel>
+      </ui:CardControl.Header>
+    </ui:CardControl>
+    <ui:InfoBar Style="{StaticResource Warning}" Severity="Informational" Message="{Binding Blocker}" views:Live.Text="{Binding Blocker}"
+                Visibility="{Binding Blocker, Converter={StaticResource ShowWhenPresent}}" />
+    <ui:Button Margin="0,8,0,0" Icon="{ui:SymbolIcon Keyboard24}" Content="Open Keyboard"
+               Command="{Binding DataContext.OpenKeyboard, RelativeSource={RelativeSource AncestorType=Window}}"
+               Visibility="{Binding BlockerOpensKeyboard, Converter={StaticResource ShowWhenTrue}}" />
+    <ui:InfoBar Style="{StaticResource Warning}" Message="{Binding Problem}" views:Live.Text="{Binding Problem}"
+                Visibility="{Binding Problem, Converter={StaticResource ShowWhenPresent}}" />
+    <ui:InfoBar Style="{StaticResource Warning}" Severity="Error" Message="{Binding SensorProblem}" views:Live.Text="{Binding SensorProblem}"
+                Visibility="{Binding SensorProblem, Converter={StaticResource ShowWhenPresent}}" />
 
-      <ItemsControl ItemsSource="{Binding Rows}" Margin="0,8,0,0" IsEnabled="{Binding CanCalibrate}" AutomationProperties.Name="Calibration keys">
-        <ItemsControl.ItemTemplate>
-          <DataTemplate DataType="vm:CalibrationRowViewModel">
-            <Border Padding="0,10" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+    <!-- The keys, one open at a time. Each bar is the key's sensor reading now; the marks are the saved readings. -->
+    <StackPanel Visibility="{Binding ShowsKeys, Converter={StaticResource ShowWhenTrue}}">
+    <ui:TextBlock Style="{StaticResource SectionTitle}" Margin="4,20,0,8" Text="Keys" />
+    <ui:TextBlock Margin="4,0,0,12" Style="{StaticResource Note}" Text="{Binding KeysNote}" views:Live.Text="{Binding KeysNote}"
+                  Visibility="{Binding KeysNote, Converter={StaticResource ShowWhenPresent}}" />
+    <ItemsControl x:Name="Keys" ItemsSource="{Binding Rows}" Focusable="False" Grid.IsSharedSizeScope="True" IsEnabled="{Binding CanCalibrate}"
+                  AutomationProperties.Name="Calibration keys">
+      <!-- Locked while mapping runs: the whole list dims, so no part of a row looks like it opens. -->
+      <ItemsControl.Style>
+        <Style TargetType="ItemsControl">
+          <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Opacity" Value="0.5" />
+            </Trigger>
+          </Style.Triggers>
+        </Style>
+      </ItemsControl.Style>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate DataType="vm:CalibrationRowViewModel">
+          <ui:CardExpander Margin="0,0,0,4" IsExpanded="{Binding IsExpanded}" AutomationProperties.Name="{Binding Summary}">
+            <ui:CardExpander.Header>
               <Grid>
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="72" />
+                  <ColumnDefinition Width="Auto" MinWidth="64" SharedSizeGroup="Keys" />
                   <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="56" />
+                  <ColumnDefinition Width="Auto" MinWidth="110" SharedSizeGroup="State" />
                 </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <ui:TextBlock VerticalAlignment="Center" FontTypography="Subtitle" Text="{Binding Name}" />
-
-                <Grid Grid.Column="1" VerticalAlignment="Center" x:Name="Bar">
-                  <ProgressBar Minimum="0" Maximum="1" Value="{Binding Fill, Mode=OneWay}" Height="8"
-                               AutomationProperties.Name="{Binding Name, StringFormat='{}{0} sensor reading'}" />
-                  <Canvas>
-                    <Rectangle Style="{StaticResource Mark}" ToolTip="Saved released reading"
+                <Border Style="{StaticResource Keycap}" HorizontalAlignment="Left">
+                  <ui:TextBlock Style="{StaticResource KeycapText}" Text="{Binding Name}" />
+                </Border>
+                <!-- A key whose sensor is not known yet has nothing to show on its bar, so the bar waits for Find sensor. -->
+                <UserControl Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Focusable="False" Background="Transparent" ToolTip="{Binding BarText}"
+                             Visibility="{Binding NeedsSensor, Converter={StaticResource ShowWhenAbsent}}"
+                             AutomationProperties.Name="{Binding Name, StringFormat='{}{0} sensor reading'}" AutomationProperties.ItemStatus="{Binding ReadingText}">
+                <Grid x:Name="Bar" Height="14">
+                  <Border Height="4" CornerRadius="2" VerticalAlignment="Center" Background="{DynamicResource ControlStrongFillColorDefaultBrush}" />
+                  <Canvas Margin="0,3,0,0">
+                    <Rectangle Style="{StaticResource Mark}"
                                Visibility="{Binding RestMark, Converter={StaticResource ShowWhenPresent}}">
                       <Canvas.Left>
                         <MultiBinding Converter="{StaticResource FractionOfLength}">
@@ -60,7 +127,7 @@
                         </MultiBinding>
                       </Canvas.Left>
                     </Rectangle>
-                    <Rectangle Style="{StaticResource Mark}" ToolTip="Saved fully pressed reading"
+                    <Rectangle Style="{StaticResource Mark}"
                                Visibility="{Binding FullMark, Converter={StaticResource ShowWhenPresent}}">
                       <Canvas.Left>
                         <MultiBinding Converter="{StaticResource FractionOfLength}">
@@ -69,34 +136,106 @@
                         </MultiBinding>
                       </Canvas.Left>
                     </Rectangle>
+                    <Ellipse Width="12" Height="12" Margin="-6,-2,0,0" Fill="{DynamicResource AccentFillColorDefaultBrush}"
+                             Visibility="{Binding Raw, Converter={StaticResource ShowWhenPresent}}">
+                      <Canvas.Left>
+                        <MultiBinding Converter="{StaticResource FractionOfLength}">
+                          <Binding Path="Fill" />
+                          <Binding Path="ActualWidth" ElementName="Bar" />
+                        </MultiBinding>
+                      </Canvas.Left>
+                    </Ellipse>
                   </Canvas>
                 </Grid>
-
-                <ui:TextBlock Grid.Column="2" VerticalAlignment="Center" TextAlignment="Right" Text="{Binding Raw, TargetNullValue='-'}" />
-
-                <WrapPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,8,0,0">
-                  <ui:Button Margin="0,0,8,0" Content="Set released" Command="{Binding SetReleased}"
-                             AutomationProperties.Name="{Binding Name, StringFormat='Set {0} released'}" />
-                  <ui:Button Margin="0,0,8,0" Content="Set fully pressed" Command="{Binding SetPressed}"
-                             AutomationProperties.Name="{Binding Name, StringFormat='Set {0} fully pressed'}" />
-                  <ui:Button Content="Learn" ToolTip="Find which sensor this key reads" Command="{Binding Learn}"
-                             AutomationProperties.Name="{Binding Name, StringFormat='Find the sensor {0} reads'}" />
-                </WrapPanel>
-
-                <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,6,0,0">
-                  <ui:TextBlock Style="{StaticResource CardSummary}" TextWrapping="Wrap" TextTrimming="None" Text="{Binding Status}"
-                                Visibility="{Binding DataContext.CanCalibrate, ElementName=Root, Converter={StaticResource ShowWhenTrue}}" />
-                  <DockPanel Visibility="{Binding Message, Converter={StaticResource ShowWhenPresent}}">
-                    <ui:ProgressRing DockPanel.Dock="Left" Width="14" Height="14" Margin="0,2,6,0" VerticalAlignment="Top" IsIndeterminate="True"
-                                     Visibility="{Binding IsBusy, Converter={StaticResource ShowWhenTrue}}" />
-                    <ui:TextBlock TextWrapping="Wrap" Text="{Binding Message}" views:Live.Text="{Binding Message}" />
-                  </DockPanel>
-                </StackPanel>
+                </UserControl>
+                <ui:TextBlock Grid.Column="2" Margin="0,0,16,0" VerticalAlignment="Center" Style="{StaticResource CardSummary}" Text="{Binding StateText}" views:Live.Text="{Binding StateText}" />
               </Grid>
-            </Border>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+            </ui:CardExpander.Header>
+
+            <StackPanel>
+              <ui:TextBlock Margin="0,0,0,12" Style="{StaticResource Note}" Text="{Binding Status}" views:Live.Text="{Binding Status}"
+                            Visibility="{Binding ShowsStatus, Converter={StaticResource ShowWhenTrue}}" />
+              <!-- The number behind the dot, for checking a sensor. It changes every tick, so it is not announced. -->
+              <ui:TextBlock Margin="0,0,0,12" Style="{StaticResource Note}" Text="{Binding ReadingText, StringFormat='Reading now: {0}.'}"
+                            Visibility="{Binding ShowsReading, Converter={StaticResource ShowWhenTrue}}" />
+
+              <!-- The step in progress, or how the last one ended, above the steps so a result shows where its prompt was. -->
+              <DockPanel x:Name="StepMessage" Visibility="{Binding Message, Converter={StaticResource ShowWhenPresent}}">
+                <!-- While a step runs its message is all the key shows, so nothing below needs the gap. -->
+                <DockPanel.Style>
+                  <Style TargetType="DockPanel">
+                    <Setter Property="Margin" Value="0,0,0,16" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                        <Setter Property="Margin" Value="0" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </DockPanel.Style>
+                <ui:ProgressRing DockPanel.Dock="Left" Width="14" Height="14" Margin="0,2,8,0" VerticalAlignment="Top" IsIndeterminate="True"
+                                 Visibility="{Binding IsBusy, Converter={StaticResource ShowWhenTrue}}" />
+                <ui:TextBlock FontWeight="SemiBold" TextWrapping="Wrap" Text="{Binding Message}" views:Live.Text="{Binding Message}" />
+              </DockPanel>
+
+              <!-- The sensor is not known yet, so the steps wait for it. -->
+              <StackPanel Visibility="{Binding ShowsSensorStep, Converter={StaticResource ShowWhenTrue}}">
+                <ui:TextBlock Style="{StaticResource Paragraph}"
+                              Text="{Binding Name, StringFormat='The app does not know which sensor {0} reads on this keyboard yet. Press Find sensor, take your hands off the keyboard, then hold {0} all the way down when asked.'}" />
+                <ui:Button Appearance="Primary" Content="Find sensor" Command="{Binding Learn}"
+                           AutomationProperties.Name="{Binding Name, StringFormat='Find sensor for {0}'}" />
+              </StackPanel>
+
+              <ui:TextBlock Margin="0,0,0,16" Style="{StaticResource Note}" Text="{Binding WaitingText}" views:Live.Text="{Binding WaitingText}"
+                            Visibility="{Binding WaitingText, Converter={StaticResource ShowWhenPresent}}" />
+              <!-- A step needs readings to measure, so the steps stay off until they come. -->
+              <StackPanel Visibility="{Binding ShowsSteps, Converter={StaticResource ShowWhenTrue}}" IsEnabled="{Binding HasReading}">
+                <Grid Margin="0,0,0,16">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <Border Style="{StaticResource Step}" IsEnabled="{Binding IsEnabled, ElementName=SetReleasedButton}">
+                    <Grid>
+                      <!-- Step 1 is done while its reading waits for step 2. -->
+                      <ui:TextBlock Style="{StaticResource StepText}" Text="1" Visibility="{Binding PressedIsNext, Converter={StaticResource ShowWhenAbsent}}" />
+                      <ui:SymbolIcon Symbol="Checkmark16" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                                     Visibility="{Binding PressedIsNext, Converter={StaticResource ShowWhenTrue}}" AutomationProperties.Name="Step 1 done" />
+                    </Grid>
+                  </Border>
+                  <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                    <ui:TextBlock Style="{StaticResource StepLabel}" IsEnabled="{Binding IsEnabled, ElementName=SetReleasedButton}" TextWrapping="Wrap" Text="{Binding Name, StringFormat='With {0} up, press Set released'}" />
+                    <ui:Button x:Name="SetReleasedButton" Style="{StaticResource ReleasedButton}" Content="Set released" Command="{Binding SetReleased}"
+                               AutomationProperties.Name="{Binding Name, StringFormat='Set released for {0}'}" />
+                  </StackPanel>
+                </Grid>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <Border Style="{StaticResource Step}" IsEnabled="{Binding IsEnabled, ElementName=SetPressedButton}">
+                    <ui:TextBlock Style="{StaticResource StepText}" Text="2" />
+                  </Border>
+                  <StackPanel Grid.Column="1" Margin="16,0,0,0">
+                    <ui:TextBlock Style="{StaticResource StepLabel}" IsEnabled="{Binding IsEnabled, ElementName=SetPressedButton}" TextWrapping="Wrap" Text="{Binding Name, StringFormat='Hold {0} all the way down, then press Set fully pressed'}" />
+                    <ui:Button x:Name="SetPressedButton" Style="{StaticResource PressedButton}" Content="Set fully pressed" Command="{Binding SetPressed}"
+                               AutomationProperties.Name="{Binding Name, StringFormat='Set fully pressed for {0}'}" />
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
+
+              <!-- For a key whose bar does not follow it. -->
+              <DockPanel Margin="0,16,0,0" Visibility="{Binding ShowsSensorHint, Converter={StaticResource ShowWhenTrue}}">
+                <ui:Button DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Center" Content="Find sensor" Command="{Binding Learn}"
+                           AutomationProperties.Name="{Binding Name, StringFormat='Find sensor for {0}'}" />
+                <ui:TextBlock VerticalAlignment="Center" Style="{StaticResource Note}" Margin="0"
+                              Text="{Binding Name, StringFormat='If the bar does not move when you press {0}, find the sensor it reads.'}" />
+              </DockPanel>
+            </StackPanel>
+          </ui:CardExpander>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
     </StackPanel>
-  </ui:Card>
+  </StackPanel>
 </UserControl>

@@ -27,7 +27,7 @@ public sealed record BoardItem(KeyboardInfo Info, string Detail)
 /// firmware request is the only thing sent until the user agrees to the risk, then a
 /// check that its sensors move when a key is pressed, which names the sensor that
 /// moved, and a capture export for a GitHub issue whose form the page fills in. The
-/// Calibration page's learn step finds each key's sensor. An unsupported model is told so and never
+/// Calibration page's Find sensor step finds each key's sensor. An unsupported model is told so and never
 /// gets the sensor request. The firmware is never asked while a session runs: the
 /// session's poller has the board open.
 /// </summary>
@@ -216,10 +216,10 @@ public sealed class KeyboardViewModel : ObservableObject
     /// null. Another sensor than W's asks for a retry first.
     /// </summary>
     public string? NextStep => !CheckPassed ? (_checkResult == SensorCheckResult.Failed && _workspace.Board is not null && ResultsHere ? _retry : null)
-        : _movedW ? "To drive with this keyboard, calibrate each key. The learn step finds each key's sensor. " +
+        : _movedW ? "To drive with this keyboard, calibrate each key. Calibration finds each key's sensor first. " +
             "To help this model join the tested list, share a capture in step 3."
         : $"Run the check again holding only {_services.KeyName(DefaultProfiles.Key.W)} to be sure. If the same sensor moves again, that sensor is " +
-          $"{_services.KeyName(DefaultProfiles.Key.W)} on this model. Either way, the learn step in Calibration finds each key's sensor, so you can calibrate to drive.";
+          $"{_services.KeyName(DefaultProfiles.Key.W)} on this model. Either way, Calibration finds each key's sensor, so you can calibrate to drive.";
 
     // The last passed check moved the sensor the app maps to W.
     private bool _movedW;
@@ -266,7 +266,6 @@ public sealed class KeyboardViewModel : ObservableObject
     /// <summary>The last capture was saved from the chosen board as it is now, or no board is chosen.</summary>
     private bool ExportedHere => _workspace.Board is not { } board || _exportedFrom == (board.Info, board.Firmware.Version);
 
-    /// <summary>Try-it step 2: whether the sensors respond to a key press.</summary>
     /// <summary>Step 2's button: once a check has a result here, the next press runs it again.</summary>
     public string CheckLabel => _checkResult is not null && ResultsHere && !IsChecking ? "Check again" : "Check the sensors";
 

@@ -56,6 +56,42 @@
     <Setter Property="Margin" Value="0,12,0,4" />
   </Style>
 
+  <!-- A key as it looks on the keyboard. -->
+  <Style x:Key="Keycap" TargetType="Border">
+    <Setter Property="MinWidth" Value="32" />
+    <Setter Property="Padding" Value="8,2" />
+    <Setter Property="Margin" Value="0,0,6,0" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="BorderThickness" Value="1,1,1,2" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+    <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="KeycapText" TargetType="ui:TextBlock">
+    <Setter Property="FontTypography" Value="BodyStrong" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+
+  <!-- A numbered step's marker, and its title. -->
+  <Style x:Key="StepNumber" TargetType="Border">
+    <Setter Property="Width" Value="28" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="CornerRadius" Value="14" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style x:Key="StepNumberText" TargetType="ui:TextBlock">
+    <Setter Property="FontTypography" Value="BodyStrong" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="StepTitle" TargetType="ui:TextBlock">
+    <Setter Property="FontTypography" Value="BodyStrong" />
+    <Setter Property="Margin" Value="0,4,0,8" />
+  </Style>
+
   <!-- A warning that stays until its cause goes: no close button. -->
   <Style x:Key="Warning" TargetType="ui:InfoBar" BasedOn="{StaticResource {x:Type ui:InfoBar}}">
     <Setter Property="Severity" Value="Warning" />

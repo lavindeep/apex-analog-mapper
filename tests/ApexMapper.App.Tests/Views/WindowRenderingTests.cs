@@ -47,6 +47,23 @@ public sealed class WindowRenderingTests
 
     private const string SteamGame = @"C:\Program Files (x86)\Steam\steamapps\common\ForzaHorizon6\ForzaHorizon6.exe";
 
+    /// <summary>W calibrated and the rest not, with Forza found.</summary>
+    private static void Calibrating(AppHarness h)
+    {
+        h.Windows = [new GameWindow("Forza Horizon 6", AppHarness.Game, Elevation.Visible)];
+        h.Services.Calibrations.Put(AppHarness.Tkl, AppHarness.Firmware, DefaultProfiles.Key.W, KeyCalibration.Create(850, 3900, 40, 16));
+    }
+
+    /// <summary>Ticks the window's timer for <paramref name="ms"/> of the harness clock.</summary>
+    private static void Advance(MainViewModel main, AppHarness h, int ms)
+    {
+        var end = h.Now + ms;
+        for (; h.Now <= end; h.Now += 50)
+        {
+            main.Tick();
+        }
+    }
+
     private static void Ready(AppHarness h)
     {
         h.Windows = [new GameWindow("Forza Horizon 6", AppHarness.Game, Elevation.Visible)];
@@ -76,6 +93,74 @@ public sealed class WindowRenderingTests
             main.Tick();
             return Task.CompletedTask;
         }),
+        new("calibration-open", Ready, (main, h) =>
+        {
+            main.Page = Page.Calibration;
+            main.Calibration.Rows.First(r => r.Key == DefaultProfiles.Key.W).IsExpanded = true;
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Tick();
+            return Task.CompletedTask;
+        }),
+        // The poller gave up with a reason while the page reads the keyboard, with W open.
+        new("calibration-sensor-problem", Ready, (main, h) =>
+        {
+            main.Page = Page.Calibration;
+            main.Calibration.Rows.First(r => r.Key == DefaultProfiles.Key.W).IsExpanded = true;
+            h.Sensor.Reading = null;
+            h.Sensor.Problem = "Reply padding was not zero.";
+            main.Tick();
+            return Task.CompletedTask;
+        }),
+        // The keyboard's firmware changed since W was calibrated, and W is open.
+        new("calibration-other-firmware", h =>
+        {
+            h.Windows = [new GameWindow("Forza Horizon 6", AppHarness.Game, Elevation.Visible)];
+            h.Services.Calibrations.Put(AppHarness.Tkl, "4.9.1", DefaultProfiles.Key.W, KeyCalibration.Create(850, 3900, 40, 16));
+        }, (main, h) =>
+        {
+            main.Page = Page.Calibration;
+            main.Calibration.Rows.First(r => r.Key == DefaultProfiles.Key.W).IsExpanded = true;
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Tick();
+            return Task.CompletedTask;
+        }),
+        // S's released reading taken, so step 2 is the one to do.
+        new("calibration-released", Calibrating, (main, h) =>
+        {
+            main.Page = Page.Calibration;
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Tick();
+            main.Calibration.Rows.First(r => r.Key == DefaultProfiles.Key.S).SetReleased.Execute(null);
+            Advance(main, h, CalibrationViewModel.ReleasedMs);
+            return Task.CompletedTask;
+        }, Narrow: true),
+        // S saved, and A named as the key to do next.
+        new("calibration-saved", Calibrating, (main, h) =>
+        {
+            main.Page = Page.Calibration;
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Tick();
+            var s = main.Calibration.Rows.First(r => r.Key == DefaultProfiles.Key.S);
+            s.SetReleased.Execute(null);
+            Advance(main, h, CalibrationViewModel.ReleasedMs);
+            h.Sensor.Reading = AppHarness.Holding(s.SensorIndex!.Value, 3900);
+            s.SetPressed.Execute(null);
+            Advance(main, h, CalibrationViewModel.PressedMs);
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Tick();
+            return Task.CompletedTask;
+        }, Narrow: true),
+        new("calibration-step", Ready, (main, h) =>
+        {
+            main.Page = Page.Calibration;
+            var w = main.Calibration.Rows.First(r => r.Key == DefaultProfiles.Key.W);
+            w.IsExpanded = true;
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Tick();
+            w.SetReleased.Execute(null);
+            main.Tick();
+            return Task.CompletedTask;
+        }, Narrow: true),
         new("mapping", Ready, async (main, h) =>
         {
             await main.Status.StartAsync();
