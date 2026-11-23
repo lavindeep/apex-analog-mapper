@@ -25,6 +25,17 @@ public sealed class PresenceToVisibility : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
+/// <summary>Visible on the page given as the parameter. <see cref="Invert"/> shows it on every other page instead.</summary>
+public sealed class PageToVisibility : IValueConverter
+{
+    public bool Invert { get; set; }
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        Equals(value, parameter) != Invert ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 /// <summary>A fraction of a length: the first value is the fraction, the second the length, such as a bar's width.</summary>
 public sealed class FractionOfLength : IMultiValueConverter
 {

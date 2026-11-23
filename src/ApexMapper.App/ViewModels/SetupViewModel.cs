@@ -19,20 +19,12 @@ public sealed class SetupViewModel : ObservableObject
     private readonly AppServices _services;
     private readonly Workspace _workspace;
     private DriverState _driver;
-    private bool _isOpen;
 
     public SetupViewModel(AppServices services, Workspace workspace, AppSettings settings)
     {
         _services = services;
         _workspace = workspace;
         Updates = new UpdatesViewModel(services, workspace, settings);
-        Updates.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(UpdatesViewModel.Available))
-            {
-                Raise(nameof(Summary));
-            }
-        };
         OpenDriverPage = new Command(() => _services.Open(DriverPage));
         OpenDataFolder = new Command(() => _services.Open(_services.DataFolder));
         Recheck();
@@ -48,18 +40,10 @@ public sealed class SetupViewModel : ObservableObject
 
     public bool DriverMissing => _driver == DriverState.Missing;
 
-    /// <summary>The card is expanded. It opens by itself while the driver is missing or not running, since nothing works without it.</summary>
-    public bool IsOpen
-    {
-        get => _isOpen;
-        set => Set(ref _isOpen, value);
-    }
-
     public string Summary => _driver switch
     {
         DriverState.Missing => "The controller driver is not installed",
         DriverState.NotStarted => "The controller driver is not running yet",
-        _ when Updates.Available is { } version => $"Version {version} is available",
         _ => "Controller driver, Steam, updates, and where the app keeps its files",
     };
 
@@ -89,10 +73,6 @@ public sealed class SetupViewModel : ObservableObject
             Raise(nameof(DriverMissing));
             Raise(nameof(DriverReady));
             Raise(nameof(Summary));
-            if (state is DriverState.Missing or DriverState.NotStarted)
-            {
-                IsOpen = true;
-            }
         }
         _workspace.Driver = state;
     }

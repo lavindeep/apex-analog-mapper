@@ -11,12 +11,20 @@
   <views:PresenceToVisibility x:Key="ShowWhenPresent" />
   <views:PresenceToVisibility x:Key="ShowWhenAbsent" Invert="True" />
   <views:FractionOfLength x:Key="FractionOfLength" />
+  <views:PageToVisibility x:Key="ShowOnPage" />
+  <views:PageToVisibility x:Key="HideOnPage" Invert="True" />
 
   <!-- A card's second header line: what is chosen, or what is missing. -->
   <Style x:Key="CardSummary" TargetType="ui:TextBlock">
     <Setter Property="FontTypography" Value="Caption" />
     <Setter Property="Appearance" Value="Secondary" />
     <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+
+  <!-- A row's second line on Home, which wraps rather than cut off beside the row's controls. -->
+  <Style x:Key="RowDescription" TargetType="ui:TextBlock" BasedOn="{StaticResource CardSummary}">
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="TextTrimming" Value="None" />
   </Style>
 
   <!-- Body text that wraps, with room below it. -->
@@ -27,6 +35,12 @@
 
   <Style x:Key="Note" TargetType="ui:TextBlock" BasedOn="{StaticResource Paragraph}">
     <Setter Property="Appearance" Value="Secondary" />
+  </Style>
+
+  <!-- A heading over a group of cards. -->
+  <Style x:Key="SectionTitle" TargetType="ui:TextBlock">
+    <Setter Property="FontTypography" Value="BodyStrong" />
+    <Setter Property="Margin" Value="4,28,0,8" />
   </Style>
 
   <!-- A label above a control in the editors. -->

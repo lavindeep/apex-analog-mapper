@@ -128,6 +128,7 @@ public sealed class KeyboardViewModel : ObservableObject
             _selected = value;
             Raise(nameof(Selected));
             Raise(nameof(Summary));
+            Raise(nameof(Description));
             Raise(nameof(Missing));
             Sync();
         }
@@ -137,6 +138,13 @@ public sealed class KeyboardViewModel : ObservableObject
 
     /// <summary>The card header: the chosen board, or why there is none.</summary>
     public string Summary => _selected?.Name ?? (_boards.Count == 0 ? "Not plugged in" : "No keyboard chosen");
+
+    /// <summary>The home page's line: the chosen board and whether it is tested, or why there is none. A passed check counts only for the board and firmware it ran on.</summary>
+    public string Description => _selected is not { } board ? Summary
+        : $"{board.Name} · {(!IsUnverified ? board.Detail
+            : _checkResult == SensorCheckResult.Passed && _workspace.Board is { } ran && _capturedFrom == (ran.Info, ran.Firmware.Version) ? "Sensor check passed"
+            : _workspace.Board is { CanReadSensors: true } ? "Not tested yet"
+            : board.Detail)}";
 
     /// <summary>What to do while no board is chosen, or null.</summary>
     public string? Missing => _selected is not null ? null
@@ -213,6 +221,7 @@ public sealed class KeyboardViewModel : ObservableObject
         _selected = Boards.FirstOrDefault(b => b.Id == _remembered);
         Raise(nameof(Selected));
         Raise(nameof(Summary));
+        Raise(nameof(Description));
         Raise(nameof(Missing));
         Sync();
     }
@@ -277,7 +286,7 @@ public sealed class KeyboardViewModel : ObservableObject
         };
         return moved is null
             ? $"Sensor {sensor} moved, the one the app maps to {w}. Export the capture below to share it. " +
-              "Calibrate each key on the calibration card; the learn step finds its sensor."
+              "Calibrate each key on the Calibration page; the learn step finds its sensor."
             : $"{moved} Run the check again holding only {w}. If the same sensor moves, export the capture anyway.";
     }
 
@@ -329,6 +338,7 @@ public sealed class KeyboardViewModel : ObservableObject
         switch (e.PropertyName)
         {
             case nameof(Workspace.Board):
+                Raise(nameof(Description));
                 Raise(nameof(FirmwareText));
                 Raise(nameof(FirmwareWarning));
                 Raise(nameof(IsUnverified));
@@ -443,6 +453,7 @@ public sealed class KeyboardViewModel : ObservableObject
         _heldCapture = null;
         _rejectedCapture = null;
         _checkResult = null;
+        Raise(nameof(Description));
         OffersExport = false;
         _rejectedBefore = _services.Sensor.Rejected;
         _capturedFrom = _workspace.Board is { } board ? (board.Info, board.Firmware.Version) : null;
@@ -457,6 +468,7 @@ public sealed class KeyboardViewModel : ObservableObject
     {
         CancelCheck();
         _checkResult = result;
+        Raise(nameof(Description));
         OffersExport = result is not null;
         CheckText = detail is null ? text : text + " " + detail;
         _services.Log("Sensor check: " + text);

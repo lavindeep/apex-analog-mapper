@@ -114,8 +114,9 @@ public sealed class ProfileViewModel : ObservableObject
     public bool CanSwitch => !_dirty && !_workspace.SessionActive && _capture is null && !_busy;
 
     /// <summary>Why the profile list is locked, or null.</summary>
-    public string? SwitchHint => _workspace.SessionActive ? "Stop mapping to switch profiles."
-        : _dirty ? "Save or discard your changes to switch profiles."
+    public string? SwitchHint => _workspace.SessionActive ? "Stop mapping to switch profiles"
+        : _dirty ? "Save or discard your changes to switch profiles"
+        : _capture is not null ? "Press the key or Esc to switch profiles"
         : null;
 
     /// <summary>Why Delete is unavailable for the Forza profile.</summary>
@@ -625,6 +626,7 @@ public sealed class ProfileViewModel : ObservableObject
     {
         if (Set(ref _dirty, dirty, nameof(IsDirty)))
         {
+            _workspace.ProfileUnsaved = dirty;
             Raise(nameof(CanSwitch));
             Raise(nameof(SwitchHint));
             Raise(nameof(SaveNote));
@@ -679,6 +681,8 @@ public sealed class ProfileViewModel : ObservableObject
     private void RefreshCommands()
     {
         Raise(nameof(CanEdit));
+        Raise(nameof(CanSwitch));
+        Raise(nameof(SwitchHint));
         foreach (var command in new[] { Save, Discard, New, Delete, Reset, AddKey, AddAxis, Remove, CaptureKey, CaptureNegativeKey, CancelCapture })
         {
             command.Refresh();

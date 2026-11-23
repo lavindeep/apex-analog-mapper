@@ -1,4 +1,4 @@
-<UserControl x:Class="ApexMapper.App.Views.CalibrationCard"
+<UserControl x:Class="ApexMapper.App.Views.CalibrationPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -18,13 +18,7 @@
     </Style>
   </UserControl.Resources>
 
-  <ui:CardExpander Icon="{ui:SymbolIcon Gauge24}" IsExpanded="{Binding IsOpen}" AutomationProperties.Name="Calibration" x:Name="Root">
-    <ui:CardExpander.Header>
-      <StackPanel>
-        <ui:TextBlock FontTypography="BodyStrong" Text="Calibration" />
-        <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Summary}" />
-      </StackPanel>
-    </ui:CardExpander.Header>
+  <ui:Card Padding="20" VerticalContentAlignment="Top" x:Name="Root">
     <StackPanel>
       <ui:TextBlock Style="{StaticResource Note}"
                     Text="Calibrate each key in two steps: press Set released with the key up, then hold it all the way down and press Set fully pressed. Keep the other keys up. The bar is the key's sensor reading now, which is not zero at rest; the marks are the saved readings." />
@@ -104,5 +98,5 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
     </StackPanel>
-  </ui:CardExpander>
+  </ui:Card>
 </UserControl>

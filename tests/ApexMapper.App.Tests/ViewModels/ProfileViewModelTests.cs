@@ -231,6 +231,7 @@ public sealed class ProfileViewModelTests : IDisposable
 
         w.Deadzone = 0.1;
         Assert.True(profile.IsDirty);
+        Assert.True(_h.Workspace.ProfileUnsaved);
         Assert.True(profile.Save.CanExecute(null));
         Assert.False(profile.CanSwitch);
         Assert.Equal(ResponsePreset.Custom, w.Preset);

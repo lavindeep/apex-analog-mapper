@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Threading;
 using ApexMapper.App.ViewModels;
 using ApexMapper.App.Views;
 using Wpf.Ui.Controls;
@@ -9,14 +10,16 @@ using Wpf.Ui.Controls;
 namespace ApexMapper.App;
 
 /// <summary>
-/// The one window: six cards in a scrolling column. While the profile card waits for a
-/// key, the window swallows key presses so Space or Enter cannot also press a button;
-/// the key itself arrives through Raw Input. Losing focus cancels the wait, since Raw
-/// Input also sees keys typed into other windows.
+/// The one window: Home, and a page for each of the keyboard, profile, calibration and
+/// settings, one at a time in a scrolling column. While the profile page waits for a key,
+/// the window swallows key presses so Space or Enter cannot also press a button; the key
+/// itself arrives through Raw Input. Losing focus cancels the wait, since Raw Input also
+/// sees keys typed into other windows.
 /// </summary>
 public partial class MainWindow : FluentWindow
 {
     private MainViewModel? _main;
+    private IInputElement? _openedFrom;
     private bool _closed;
 
     public MainWindow()
@@ -25,20 +28,12 @@ public partial class MainWindow : FluentWindow
         Loaded += (_, _) => NameTemplateButtons();
     }
 
-    /// <summary>
-    /// WPF-UI's templates leave some buttons without a name for a screen reader: each
-    /// card's expand button takes its card's name, and the title bar's buttons say what
-    /// they do.
-    /// </summary>
+    /// <summary>WPF-UI's title bar leaves its buttons without a name for a screen reader, so each says what it does.</summary>
     private void NameTemplateButtons()
     {
         foreach (var element in VisualTree.Descendants(this))
         {
-            if (element is CardExpander card && card.Template?.FindName("ExpanderToggleButton", card) is DependencyObject toggle)
-            {
-                AutomationProperties.SetName(toggle, AutomationProperties.GetName(card));
-            }
-            else if (element is TitleBarButton button)
+            if (element is TitleBarButton button)
             {
                 BindingOperations.SetBinding(button, AutomationProperties.NameProperty, new Binding(nameof(TitleBarButton.ButtonType)) { Source = button });
             }
@@ -49,14 +44,52 @@ public partial class MainWindow : FluentWindow
     {
         _main = main;
         DataContext = main;
-        main.CardRequested += card =>
+        main.PropertyChanged += (_, e) =>
         {
-            if (card == main.Calibration)
+            if (e.PropertyName == nameof(MainViewModel.Page))
             {
-                CalibrationCard.BringIntoView();
+                OnPageChanged(main.Page);
             }
         };
         Show();
+    }
+
+    /// <summary>
+    /// A page opens at its top with focus on its back arrow, so the keyboard does not stay on
+    /// a control the page hid. Going back Home returns focus to whatever opened the page,
+    /// or to Home's first control when that one is gone, such as Calibrate once every key is.
+    /// </summary>
+    private void OnPageChanged(Page page)
+    {
+        Scroller.ScrollToTop();
+        IInputElement? target;
+        if (page == Page.Home)
+        {
+            target = _openedFrom;
+            _openedFrom = null;
+        }
+        else
+        {
+            _openedFrom ??= Keyboard.FocusedElement;
+            target = BackButton;
+        }
+        // Once the page is laid out, since a collapsed control cannot take focus.
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            if (target?.Focus() != true && page == Page.Home)
+            {
+                Home.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
+            }
+        });
+    }
+
+    /// <summary>The page header's Stop hides once mapping stops, so the keyboard moves to the back arrow instead of nowhere.</summary>
+    private void OnStopVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is false && StopButton.IsKeyboardFocused)
+        {
+            BackButton.Focus();
+        }
     }
 
     /// <summary>Another launch asked for the window. One that asked just as this window closed is too late.</summary>
@@ -87,7 +120,25 @@ public partial class MainWindow : FluentWindow
             e.Handled = true;
             return;
         }
+        var altLeft = e.Key == Key.System && e.SystemKey == Key.Left && Keyboard.Modifiers == ModifierKeys.Alt;
+        if ((altLeft || e.Key == Key.BrowserBack) && _main is { Page: not Page.Home })
+        {
+            _main.GoHome.Execute(null);
+            e.Handled = true;
+            return;
+        }
         base.OnPreviewKeyDown(e);
+    }
+
+    /// <summary>The mouse's back button goes back to Home, as in a browser. Alt+Left does it from the keyboard.</summary>
+    protected override void OnPreviewMouseUp(MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.XButton1 && _main is { Page: not Page.Home })
+        {
+            _main.GoHome.Execute(null);
+            e.Handled = true;
+        }
+        base.OnPreviewMouseUp(e);
     }
 
     protected override void OnActivated(EventArgs e)

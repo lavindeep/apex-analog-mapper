@@ -168,10 +168,12 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.False(keyboard.CanCheck);
         Assert.False(_h.Workspace.Board!.CanReadSensors);
         Assert.False(_h.Sensor.Wanted);
+        Assert.Equal("Apex Pro Gen 3 · Not tested yet: try it", keyboard.Description);
 
         keyboard.Consent.Execute(null);
 
         Assert.True(_h.Workspace.Board!.CanReadSensors);
+        Assert.Equal("Apex Pro Gen 3 · Not tested yet", keyboard.Description);
         Assert.Equal([AppHarness.Gen3], _h.SavedSettings.ConsentedKeyboards);
         Assert.True(keyboard.IsChecking);
         Assert.True(_h.Sensor.Wanted);
@@ -212,6 +214,7 @@ public sealed class KeyboardViewModelTests : IDisposable
         byte[] firmwareReply = [0x00, 0x31, 0x2E, 0x30];
         _h.FirmwareOf = _ => new FirmwareReading("1.0", firmwareReply, null);
         var keyboard = Create(consented: [AppHarness.Gen3]);
+        Assert.Equal("Apex Pro Gen 3 · Not tested yet", keyboard.Description);
 
         // Enter clicked the button and is still on its way up: not a reading at rest.
         keyboard.Check.Execute(null);
@@ -224,6 +227,7 @@ public sealed class KeyboardViewModelTests : IDisposable
 
         Assert.False(keyboard.IsChecking);
         Assert.StartsWith("The sensors respond to key presses. Sensor 16 moved, the one the app maps to W.", keyboard.CheckText);
+        Assert.Equal("Apex Pro Gen 3 · Sensor check passed", keyboard.Description);
         Assert.True(keyboard.OffersExport);
         Assert.False(_h.Sensor.Wanted);
 
@@ -436,11 +440,13 @@ public sealed class KeyboardViewModelTests : IDisposable
         var rest = CheckAtRest(keyboard);
         _h.Sensor.Reading = AppHarness.Holding(16, 3000);
         keyboard.Tick(rest + 100);
+        Assert.Equal("Apex Pro Gen 3 · Sensor check passed", keyboard.Description);
 
         // Updated in GG, then plugged back in.
         _h.FirmwareOf = _ => new FirmwareReading("4.17.0", null, null);
         keyboard.OnKeyboards([]);
         keyboard.OnKeyboards([AppHarness.Gen3Info]);
+        Assert.Equal("Apex Pro Gen 3 · Not tested yet", keyboard.Description);
         _h.Dialogs.SavePath = _h.File("capture.json");
         keyboard.Export.Execute(null);
 

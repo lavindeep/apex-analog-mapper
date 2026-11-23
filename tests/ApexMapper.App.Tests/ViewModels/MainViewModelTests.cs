@@ -34,18 +34,36 @@ public sealed class MainViewModelTests : IDisposable
     }
 
     [Fact]
-    public void The_calibration_link_opens_the_calibration_card_and_speeds_up_the_timer()
+    public void The_calibration_link_shows_the_calibration_page_and_speeds_up_the_timer()
     {
         var main = new MainViewModel(_h.Services, _h.Workspace, new AppSettings());
-        object? requested = null;
-        main.CardRequested += card => requested = card;
         Assert.Equal(MainViewModel.SlowTickMs, main.TickIntervalMs);
 
         main.Status.GoToCalibration.Execute(null);
 
+        Assert.Equal(Page.Calibration, main.Page);
         Assert.True(main.Calibration.IsOpen);
-        Assert.Same(main.Calibration, requested);
         Assert.Equal(MainViewModel.FastTickMs, main.TickIntervalMs);
+
+        main.GoHome.Execute(null);
+
+        Assert.False(main.Calibration.IsOpen);
+        Assert.Equal(MainViewModel.SlowTickMs, main.TickIntervalMs);
+    }
+
+    [Fact]
+    public void Leaving_the_profile_page_ends_a_key_capture()
+    {
+        var main = new MainViewModel(_h.Services, _h.Workspace, new AppSettings());
+        main.OpenProfile.Execute(null);
+        Assert.True(main.Profile.IsOpen);
+        main.Profile.AddKey.Execute(null);
+        Assert.True(main.Profile.IsCapturing);
+
+        main.GoHome.Execute(null);
+
+        Assert.False(main.Profile.IsCapturing);
+        Assert.False(main.Profile.IsOpen);
     }
 
     [Fact]

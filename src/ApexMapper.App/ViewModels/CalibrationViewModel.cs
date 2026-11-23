@@ -197,10 +197,10 @@ public sealed class CalibrationViewModel : ObservableObject
 
     /// <summary>Why calibration cannot run now, or null.</summary>
     public string? Blocker => _workspace.SessionActive ? "Stop mapping to calibrate."
-        : _workspace.Board is not { } board ? (_workspace.ReadingFirmware ? "Reading the keyboard's firmware." : "Plug in your Apex Pro and choose it on the keyboard card.")
+        : _workspace.Board is not { } board ? (_workspace.ReadingFirmware ? "Reading the keyboard's firmware." : "Plug in your Apex Pro and choose it on the Keyboard page.")
         : board.Firmware.Version is null ? "The keyboard's firmware could not be read, so its sensors are not read either."
         : board.Unsupported ? "The app cannot read this keyboard's sensors."
-        : !board.CanReadSensors ? "Try this keyboard on the keyboard card first."
+        : !board.CanReadSensors ? "Try this keyboard on the Keyboard page first."
         : _rows.Count == 0 ? "The active profile has no analog keys."
         : null;
 
@@ -224,7 +224,11 @@ public sealed class CalibrationViewModel : ObservableObject
         get
         {
             var done = _rows.Count(r => r.Stored is not null && _workspace.Calibration?.FromOtherFirmware.Contains(r.Key) != true);
-            return _rows.Count == 0 ? "No analog keys" : $"{done} of {_rows.Count} analog keys calibrated";
+            return _workspace.Board is not { } board ? (_workspace.ReadingFirmware ? "Reading the keyboard's firmware" : "Connect a keyboard first")
+                : board.Unsupported || board.Firmware.Version is null ? "Unavailable for this keyboard"
+                : !board.CanReadSensors ? "Waiting for the keyboard check"
+                : _rows.Count == 0 ? "No analog keys"
+                : $"{done} of {_rows.Count} analog keys calibrated";
         }
     }
 
@@ -571,6 +575,7 @@ public sealed class CalibrationViewModel : ObservableObject
                 break;
             case nameof(Workspace.ReadingFirmware):
                 Raise(nameof(Blocker));
+                Raise(nameof(Summary));
                 break;
             case nameof(Workspace.SessionActive):
                 CancelRun();

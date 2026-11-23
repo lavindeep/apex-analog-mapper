@@ -22,8 +22,8 @@ public sealed record GameItem(string Title, string ImagePath, Elevation Elevatio
 /// The game card: the programs with a window, and the remembered game, which stays
 /// listed and chosen while it is not running so Start works before the game is
 /// launched. Until a chosen game is seen running it looks again every
-/// <see cref="RescanMs"/> and whenever the window comes back to the front, and the
-/// refresh button looks at once.
+/// <see cref="RescanMs"/>. It also looks whenever the window comes back to the front, so
+/// a game closed or relaunched meanwhile shows as it is, and the refresh button looks at once.
 /// </summary>
 public sealed class GameViewModel : ObservableObject
 {
@@ -40,7 +40,7 @@ public sealed class GameViewModel : ObservableObject
         _services = services;
         _workspace = workspace;
         _workspace.GamePath = remembered;
-        Refresh = new Command(Rescan);
+        Refresh = new Command(Rescan, () => CanChoose);
         _workspace.PropertyChanged += OnWorkspaceChanged;
     }
 
@@ -61,10 +61,12 @@ public sealed class GameViewModel : ObservableObject
                 return;
             }
             _selected = value;
+            _workspace.GameElevation = value.Elevation;
             Raise(nameof(Selected));
             Raise(nameof(Summary));
             Raise(nameof(Warning));
             Raise(nameof(Hint));
+            Raise(nameof(RowText));
             if (!string.Equals(_workspace.GamePath, value.ImagePath, StringComparison.OrdinalIgnoreCase))
             {
                 _workspace.GamePath = value.ImagePath;
@@ -83,12 +85,24 @@ public sealed class GameViewModel : ObservableObject
         var game => game.Title + ", not running",
     };
 
-    public string? Hint => _selected is null
-        ? "Start the game once so it shows up here, then choose it. The app remembers it, so next time you can press Start first."
+    /// <summary>The Game row's line: how to choose one, what the game is for, or why the list is off while mapping.</summary>
+    public string RowText => !CanChoose ? "Stop mapping to choose a different game"
+        : _selected is null ? "Launch your game, then choose its window from the list"
+        : "Mapping works while this game is in front";
+
+    /// <summary>
+    /// For a game in a Steam library, turning off Steam Input, since Steam can hide or remap
+    /// the controller. The row's own line says how to choose a game.
+    /// </summary>
+    public string? Hint => _selected is { } game && game.ImagePath.Contains(@"\steamapps\", StringComparison.OrdinalIgnoreCase)
+        ? "This game runs through Steam. Turn off Steam Input for it in Steam, or Steam may hide or remap the controller."
         : null;
 
-    /// <summary>The hook cannot see an elevated game's input unless the mapper is elevated too (B10).</summary>
-    public string? Warning => _selected is { } game ? Wording.RunAsAdministrator(game.Elevation, game.Title) : null;
+    /// <summary>
+    /// The hook cannot see an elevated game's input unless the mapper is elevated too (B10).
+    /// Before Start only: while mapping, the status card says so from the session's own reading.
+    /// </summary>
+    public string? Warning => _selected is { } game && CanChoose ? Wording.RunAsAdministrator(game.Elevation, game.Title) : null;
 
     public Command Refresh { get; }
 
@@ -107,10 +121,10 @@ public sealed class GameViewModel : ObservableObject
         }
     }
 
-    /// <summary>The window came back to the front, likely from starting the game. Looks again if still waiting for it.</summary>
+    /// <summary>The window came back to the front, likely from the game, which may have started, closed or restarted since.</summary>
     public void OnActivated()
     {
-        if (Waiting)
+        if (!IsListOpen)
         {
             Rescan();
         }
@@ -139,10 +153,12 @@ public sealed class GameViewModel : ObservableObject
         }
         Games = items;
         _selected = chosen;
+        _workspace.GameElevation = chosen?.Elevation ?? Elevation.Visible;
         Raise(nameof(Selected));
         Raise(nameof(Summary));
         Raise(nameof(Warning));
         Raise(nameof(Hint));
+        Raise(nameof(RowText));
     }
 
     private void OnWorkspaceChanged(object? sender, PropertyChangedEventArgs e)
@@ -150,6 +166,9 @@ public sealed class GameViewModel : ObservableObject
         if (e.PropertyName == nameof(Workspace.SessionActive))
         {
             Raise(nameof(CanChoose));
+            Raise(nameof(RowText));
+            Raise(nameof(Warning));
+            Refresh.Refresh();
         }
     }
 }

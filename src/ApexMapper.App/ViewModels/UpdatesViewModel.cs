@@ -33,6 +33,7 @@ public sealed class UpdatesViewModel : ObservableObject
     private bool _checkOnLaunch;
     private Step _step;
     private bool _checked;
+    private bool _offered;
     private string? _found;
     private int _percent;
     private string? _problem;
@@ -57,10 +58,19 @@ public sealed class UpdatesViewModel : ObservableObject
         Act = new Command(OnAct, () => _step switch
         {
             Step.Idle when _found is null => true,
-            Step.Idle or Step.Ready => !_workspace.SessionActive,
+            Step.Idle => !_workspace.SessionActive,
+            Step.Ready => !_workspace.SessionActive && !_workspace.ProfileUnsaved,
             _ => false,
         });
         workspace.PropertyChanged += OnWorkspaceChanged;
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Text))
+            {
+                Raise(nameof(Notice));
+                Raise(nameof(NoticeSpoken));
+            }
+        };
         if (!CanUpdate || !_checkOnLaunch || workspace.SettingsUnread)
         {
             return;
@@ -70,6 +80,7 @@ public sealed class UpdatesViewModel : ObservableObject
         {
             _checked = true;
             _found = Newer(settings.UpdateFound);
+            _offered = _found is not null;
         }
         else
         {
@@ -87,7 +98,8 @@ public sealed class UpdatesViewModel : ObservableObject
         Step.Checking => "Looking for a newer version.",
         Step.Downloading => $"Downloading version {_found}: {_percent}%.",
         Step.Ready => $"Version {_found} is downloaded. Restart the app to install it, or it installs the next time the app starts."
-            + (_workspace.SessionActive ? " Stop mapping first." : ""),
+            + (_workspace.SessionActive ? " Stop mapping first."
+                : _workspace.ProfileUnsaved ? " Save or discard your profile changes first." : ""),
         Step.Installing => $"Closing to install version {_found}.",
         _ when _ciBuild => "This is a test build from CI, so it does not look for updates.",
         _ when !_services.Updates.Installed => "This copy was not installed with Setup.exe, so it cannot update itself.",
@@ -98,6 +110,11 @@ public sealed class UpdatesViewModel : ObservableObject
 
     /// <summary>What a screen reader announces: the text without the percent, which changes all through a download.</summary>
     public string? Spoken => _step is Step.Downloading ? $"Downloading version {_found}." : Text;
+
+    /// <summary>Home's line from the first time a newer version is offered, so what happens to it later shows there too; else null.</summary>
+    public string? Notice => CanUpdate && _offered ? Text : null;
+
+    public string? NoticeSpoken => Notice is null ? null : Spoken;
 
     /// <summary>The button's label, or null when it is hidden.</summary>
     public string? ActText => _step switch
@@ -203,6 +220,10 @@ public sealed class UpdatesViewModel : ObservableObject
         try
         {
             _found = Newer(await _services.Updates.DownloadAsync(OfferPrereleases, OnProgress));
+            if (_found is null)
+            {
+                _problem = "That version is no longer available. This is the newest version.";
+            }
             Move(_found is null ? Step.Idle : Step.Ready);
         }
         catch (Exception e)
@@ -224,7 +245,7 @@ public sealed class UpdatesViewModel : ObservableObject
 
     private void InstallAndRestart()
     {
-        if (_workspace.SessionActive)
+        if (_workspace.SessionActive || _workspace.ProfileUnsaved)
         {
             return;
         }
@@ -254,6 +275,7 @@ public sealed class UpdatesViewModel : ObservableObject
     private void Move(Step step)
     {
         _step = step;
+        _offered |= _found is not null;
         Raise(nameof(Text));
         Raise(nameof(Spoken));
         Raise(nameof(ActText));
@@ -263,7 +285,7 @@ public sealed class UpdatesViewModel : ObservableObject
 
     private void OnWorkspaceChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(Workspace.SessionActive))
+        if (e.PropertyName is nameof(Workspace.SessionActive) or nameof(Workspace.ProfileUnsaved))
         {
             Raise(nameof(Text));
             Raise(nameof(Spoken));

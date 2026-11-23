@@ -23,9 +23,9 @@ using Xunit;
 namespace ApexMapper.App.Tests.Views;
 
 /// <summary>
-/// Shows the real window offscreen, over fake services, in a few states and in light
-/// and dark, and fails on any binding WPF could not resolve. Nothing reaches a keyboard
-/// or the driver. Set APEX_SCREENSHOTS to a folder to keep an image of every card.
+/// Shows the real window offscreen, over fake services, on every page in a few states and
+/// in light and dark, and fails on any binding WPF could not resolve. Nothing reaches a
+/// keyboard or the driver. Set APEX_SCREENSHOTS to a folder to keep an image of every page.
 /// </summary>
 public sealed class WindowRenderingTests
 {
@@ -37,13 +37,32 @@ public sealed class WindowRenderingTests
     /// <summary>Long enough for layout and every binding to resolve.</summary>
     private const int BindingsMs = 50;
 
+    /// <param name="Act">Runs before the window shows. It may leave the window on a page other than Home.</param>
     /// <param name="Narrow">Shown at the window's minimum width.</param>
     /// <param name="Version">The app's version, when it is not the harness's.</param>
-    private sealed record Scenario(string Name, Action<AppHarness> Arrange, Func<MainViewModel, AppHarness, Task>? Act = null, bool Narrow = false, string? Version = null);
+    /// <param name="Game">The game saved from an earlier run, or null for none.</param>
+    private sealed record Scenario(string Name, Action<AppHarness> Arrange, Func<MainViewModel, AppHarness, Task>? Act = null, bool Narrow = false, string? Version = null,
+        string? Game = AppHarness.Game);
+
+    private const string SteamGame = @"C:\Program Files (x86)\Steam\steamapps\common\ForzaHorizon6\ForzaHorizon6.exe";
+
+    private static void Ready(AppHarness h)
+    {
+        h.Windows = [new GameWindow("Forza Horizon 6", AppHarness.Game, Elevation.Visible)];
+        h.CalibrateForza();
+    }
 
     private static readonly Scenario[] Scenarios =
     [
-        new("first-run", h => h.Boards.Clear()),
+        new("first-run", h => h.Boards.Clear(), Game: null),
+        new("no-game", h => h.CalibrateForza(), Game: null),
+        new("ready", Ready),
+        new("ready-narrow", Ready, Narrow: true),
+        new("steam-game", h =>
+        {
+            h.Windows = [new GameWindow("Forza Horizon 6", SteamGame, Elevation.Visible)];
+            h.CalibrateForza();
+        }, Game: SteamGame),
         new("calibrating", h =>
         {
             h.Windows = [new GameWindow("Forza Horizon 6", AppHarness.Game, Elevation.Visible)];
@@ -51,18 +70,16 @@ public sealed class WindowRenderingTests
             h.Sensor.Reading = AppHarness.Holding(16, 2400);
         }, (main, _) =>
         {
-            main.Profile.IsOpen = true;
-            main.Calibration.IsOpen = true;
+            main.Page = Page.Calibration;
             main.Tick();
             return Task.CompletedTask;
         }),
-        new("mapping", h =>
-        {
-            h.Windows = [new GameWindow("Forza Horizon 6", AppHarness.Game, Elevation.Visible)];
-            h.CalibrateForza();
-        }, async (main, h) =>
+        new("mapping", Ready, async (main, h) =>
         {
             await main.Status.StartAsync();
+            // The game has not started yet, as the session says below.
+            h.Windows = [];
+            main.Game.Rescan();
             var status = new SessionStatus(SessionState.Running, null, GameRunning: false, GameHasFocus: false, GameElevation: Elevation.Visible, FallbackKeys: 1,
                 SensorProblem: "The keyboard stopped answering.", KeysAwaitingRelease: false, SubmitCount: 0, HookReinstalls: 1, RestartRequired: false,
                 CycleP50Ms: 1.5f, CycleP99Ms: 2.9f, KeysAtLimit: [DefaultProfiles.Key.S]);
@@ -72,6 +89,19 @@ public sealed class WindowRenderingTests
                 main.Status.Tick(h.Now + ms);
             }
         }),
+        new("paused", Ready, async (main, h) =>
+        {
+            await main.Status.StartAsync();
+            h.Session.Move(SessionState.Paused);
+            main.Status.Tick(h.Now);
+        }),
+        new("mapping-background-narrow", Ready, async (main, h) =>
+        {
+            await main.Status.StartAsync();
+            h.Session.NextStatus = new SessionStatus(SessionState.Running, null, GameRunning: true, GameHasFocus: false, GameElevation: Elevation.Visible, FallbackKeys: 0,
+                SensorProblem: null, KeysAwaitingRelease: false, SubmitCount: 0, HookReinstalls: 0, RestartRequired: false, CycleP50Ms: 1.5f, CycleP99Ms: 2.9f);
+            main.Status.Tick(h.Now);
+        }, Narrow: true),
         new("untested-board", h =>
         {
             h.Boards[0] = AppHarness.Gen3Info;
@@ -83,6 +113,7 @@ public sealed class WindowRenderingTests
             h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
         }, (main, h) =>
         {
+            main.Page = Page.Keyboard;
             main.Keyboard.Consent.Execute(null);
             h.Sensor.Reading = FakeSensor.AtRest();
             main.Keyboard.Tick(h.Now + CalibrationViewModel.SettleMs);
@@ -104,24 +135,29 @@ public sealed class WindowRenderingTests
         }),
         new("axis-capture", _ => { }, (main, _) =>
         {
-            main.Profile.IsOpen = true;
+            main.Page = Page.Profile;
             main.Profile.SelectedRow = main.Profile.Rows.First(r => r.IsAxis);
             main.Profile.CaptureNegativeKey.Execute(null);
             return Task.CompletedTask;
         }, Narrow: true),
         new("custom-response", _ => { }, (main, _) =>
         {
-            main.Profile.IsOpen = true;
+            main.Page = Page.Profile;
             var row = main.Profile.Rows.First(r => r.ShapesOutput);
             row.Preset = ResponsePreset.Custom;
             main.Profile.SelectedRow = row;
             return Task.CompletedTask;
         }),
+        new("update-available", h =>
+        {
+            Ready(h);
+            h.Updates.Newest = "0.6.0";
+        }),
         new("ci-build", h => h.Updates.Newest = "0.5.1-alpha", Version: "0.1.0-ci.137"),
     ];
 
     [Fact]
-    public void Every_card_shows_with_no_binding_errors_in_light_and_dark()
+    public void Every_page_shows_with_no_binding_errors_in_light_and_dark()
     {
         var folder = Environment.GetEnvironmentVariable("APEX_SCREENSHOTS");
         var errors = OnStaThread(() => RenderAll(folder));
@@ -158,12 +194,13 @@ public sealed class WindowRenderingTests
         return errors.Messages;
     }
 
+    /// <summary>Shows the page the scenario left open, then every other page, ending on Home.</summary>
     private static void Render(Scenario scenario, ApplicationTheme theme, string? folder)
     {
         using var h = scenario.Version is { } version ? new AppHarness(version) : new AppHarness();
         scenario.Arrange(h);
         h.Keyboards.Refresh();
-        var main = new MainViewModel(h.Services, h.Workspace, new AppSettings(GamePath: AppHarness.Game));
+        var main = new MainViewModel(h.Services, h.Workspace, new AppSettings(GamePath: scenario.Game));
         if (scenario.Act is { } act)
         {
             // Everything the fakes do completes at once, so this never waits.
@@ -184,48 +221,19 @@ public sealed class WindowRenderingTests
         window.Show(main);
         try
         {
-            ExpandAll(window, true);
-            Settle(folder is null ? BindingsMs : AnimationsMs);
-            // The cards with live readings only read the keyboard while open, so their expanders must drive it both ways.
-            Assert.True(main.Calibration.IsOpen && main.Profile.IsOpen, $"{scenario.Name}: expanding did not open the cards");
-            // The selected binding's buttons say which key each one changes, in text a screen reader reads too.
-            if (main.Profile.SelectedRow is { } row)
+            var first = main.Page;
+            var pages = Enum.GetValues<Page>().Where(page => page != first && page != Page.Home).Prepend(first).Append(Page.Home).Distinct();
+            foreach (var page in pages)
             {
-                var labels = Descendants<Button>(window).Select(button => button.Content).OfType<string>().ToList();
-                Assert.Contains(row.ChangeKeyText, labels);
-                Assert.True(!row.IsAxis || labels.Contains(row.ChangeNegativeKeyText), $"{scenario.Name}: no button says {row.ChangeNegativeKeyText}");
-                // The Default response can't be edited, so its sliders show only for Custom.
-                var curveShows = Descendants<System.Windows.Controls.Slider>(window).Any(slider => AutomationProperties.GetName(slider) == "Curve" && slider.IsVisible);
-                Assert.True(curveShows == (row.ShapesOutput && row.IsCustom), $"{scenario.Name}: the curve slider {(curveShows ? "shows" : "is hidden")}");
-            }
-            // A screen reader reads each live text by the name it gives its element: the state at least, and the capture prompt while it shows.
-            var live = Descendants<FrameworkElement>(window).Where(e => !string.IsNullOrEmpty(Live.GetText(e))).ToList();
-            Assert.All(live, e => Assert.Equal((Live.GetText(e), AutomationLiveSetting.Polite), (AutomationProperties.GetName(e), AutomationProperties.GetLiveSetting(e))));
-            Assert.All(live.Where(e => e.IsVisible), e => Assert.Equal((Live.GetText(e), AutomationLiveSetting.Polite),
-                Live.PeerFor(e, Live.GetText(e)!) is { } peer ? (peer.GetName(), peer.GetLiveSetting()) : default));
-            Assert.Contains(live, e => Live.GetText(e) == main.Status.StateText);
-            Assert.True(main.Profile.Prompt is null || live.Any(e => Live.GetText(e) == main.Profile.Prompt), $"{scenario.Name}: the capture prompt is not live");
-            // The window names the buttons WPF-UI's templates leave unnamed.
-            Assert.All(Descendants<CardExpander>(window), card =>
-                Assert.Equal(AutomationProperties.GetName(card), AutomationProperties.GetName((DependencyObject)card.Template.FindName("ExpanderToggleButton", card))));
-            Assert.All(Descendants<TitleBarButton>(window).Where(button => button.IsVisible), button =>
-                Assert.Equal(button.ButtonType.ToString(), AutomationProperties.GetName(button)));
-            if (folder is not null)
-            {
-                Directory.CreateDirectory(folder);
-                var background = (Brush)Application.Current.Resources["ApplicationBackgroundBrush"];
-                var column = (System.Windows.Controls.Panel)Descendants<System.Windows.Controls.ScrollViewer>(window).First().Content;
-                var index = 0;
-                foreach (FrameworkElement card in column.Children)
+                main.Page = page;
+                Settle(folder is null ? BindingsMs : AnimationsMs);
+                Check(window, main, $"{scenario.Name}, {page}", page);
+                if (folder is not null)
                 {
-                    index++;
-                    var name = $"{scenario.Name}-{theme.ToString().ToLowerInvariant()}-{index}-{card.GetType().Name}.png";
-                    Save(Snapshot(card, background), Path.Combine(folder, name));
+                    Directory.CreateDirectory(folder);
+                    SaveWindow(window, Path.Combine(folder, $"{scenario.Name}-{theme.ToString().ToLowerInvariant()}-{(int)page}-{page}.png"));
                 }
             }
-            ExpandAll(window, false);
-            Settle(BindingsMs);
-            Assert.False(main.Calibration.IsOpen || main.Profile.IsOpen, $"{scenario.Name}: collapsing did not close the cards");
         }
         finally
         {
@@ -233,12 +241,32 @@ public sealed class WindowRenderingTests
         }
     }
 
-    private static void ExpandAll(Window window, bool expanded)
+    private static void Check(MainWindow window, MainViewModel main, string where, Page page)
     {
-        foreach (var expander in Descendants<CardExpander>(window))
+        // The pages with live readings read the keyboard only while they show.
+        Assert.True(main.Calibration.IsOpen == (page == Page.Calibration) && main.Profile.IsOpen == (page == Page.Profile), $"{where}: the wrong page reads the keyboard");
+        // The selected binding's buttons say which key each one changes, in text a screen reader reads too.
+        if (page == Page.Profile && main.Profile.SelectedRow is { } row)
         {
-            expander.IsExpanded = expanded;
+            var labels = Descendants<Button>(window).Where(button => button.IsVisible).Select(button => button.Content).OfType<string>().ToList();
+            Assert.Contains(row.ChangeKeyText, labels);
+            Assert.True(!row.IsAxis || labels.Contains(row.ChangeNegativeKeyText), $"{where}: no button says {row.ChangeNegativeKeyText}");
+            // The Default response can't be edited, so its sliders show only for Custom.
+            var curveShows = Descendants<System.Windows.Controls.Slider>(window).Any(slider => AutomationProperties.GetName(slider) == "Curve" && slider.IsVisible);
+            Assert.True(curveShows == (row.ShapesOutput && row.IsCustom), $"{where}: the curve slider {(curveShows ? "shows" : "is hidden")}");
         }
+        // A screen reader reads each live text by the name it gives its element: the state on Home, and the capture prompt while it shows.
+        var live = Descendants<FrameworkElement>(window).Where(e => !string.IsNullOrEmpty(Live.GetText(e))).ToList();
+        Assert.All(live, e => Assert.Equal((Live.GetText(e), AutomationLiveSetting.Polite), (AutomationProperties.GetName(e), AutomationProperties.GetLiveSetting(e))));
+        Assert.All(live.Where(e => e.IsVisible), e => Assert.Equal((Live.GetText(e), AutomationLiveSetting.Polite),
+            Live.PeerFor(e, Live.GetText(e)!) is { } peer ? (peer.GetName(), peer.GetLiveSetting()) : default));
+        Assert.True(page != Page.Home || live.Any(e => e.IsVisible && Live.GetText(e) == main.Status.StateText), $"{where}: the state is not live");
+        Assert.True(main.Profile.Prompt is null || live.Any(e => e.IsVisible && Live.GetText(e) == main.Profile.Prompt), $"{where}: the capture prompt is not live");
+        // A button with no text of its own has a name for a screen reader.
+        Assert.All(Descendants<Button>(window).Where(button => button.IsVisible && button.Content is not string), button =>
+            Assert.False(string.IsNullOrEmpty(AutomationProperties.GetName(button)), $"{where}: a button has no name"));
+        Assert.All(Descendants<TitleBarButton>(window).Where(button => button.IsVisible), button =>
+            Assert.Equal(button.ButtonType.ToString(), AutomationProperties.GetName(button)));
     }
 
     /// <summary>Runs the dispatcher for a while: layout, bindings, Loaded handlers, and the expand and open animations.</summary>
@@ -271,22 +299,36 @@ public sealed class WindowRenderingTests
         }
     }
 
-    /// <summary>The element alone, at its laid-out size, over the window background.</summary>
-    private static BitmapSource Snapshot(FrameworkElement element, Brush background)
+    /// <summary>
+    /// What sits above the scroll area (the title bar, and a page's header) over the whole
+    /// scrolling column. Windows keeps a window no taller than the screen, so the column is
+    /// drawn on its own rather than through the scroll viewer.
+    /// </summary>
+    private static void SaveWindow(Window window, string path)
     {
-        var size = new Rect(0, 0, element.ActualWidth, element.ActualHeight);
-        // The brush draws the element where its parent placed it, and draws whatever overhangs
-        // its layout slot, so the view box picks out the slot itself.
-        var slot = new Rect((Point)VisualTreeHelper.GetOffset(element), size.Size);
+        var root = (FrameworkElement)window.Content;
+        var scroller = Descendants<System.Windows.Controls.ScrollViewer>(window).First();
+        var column = (FrameworkElement)scroller.Content;
+        var top = scroller.TranslatePoint(default, root).Y;
+        var margin = column.Margin;
+        var left = column.TranslatePoint(default, root).X - margin.Left;
+        // A visual brush draws an element where its parent placed it, so the view starts at the column's offset.
+        var offset = VisualTreeHelper.GetOffset(column);
+        // Desired, not actual: the scroll viewer stretches the column to fill it.
+        var slot = new Rect(left, top, column.ActualWidth + margin.Left + margin.Right, column.DesiredSize.Height);
+        var height = slot.Bottom;
         var visual = new DrawingVisual();
         using (var context = visual.RenderOpen())
         {
-            context.DrawRectangle(background, null, size);
-            context.DrawRectangle(new VisualBrush(element) { Viewbox = slot, ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None }, null, size);
+            var above = new Rect(0, 0, root.ActualWidth, top);
+            context.DrawRectangle((Brush)Application.Current.Resources["ApplicationBackgroundBrush"], null, new Rect(0, 0, root.ActualWidth, height));
+            context.DrawRectangle(new VisualBrush(root) { Viewbox = above, ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None }, null, above);
+            var view = new Rect(offset.X - margin.Left, offset.Y - margin.Top, slot.Width, slot.Height);
+            context.DrawRectangle(new VisualBrush(column) { Viewbox = view, ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.None }, null, slot);
         }
-        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(size.Width * Scale), (int)Math.Ceiling(size.Height * Scale), 96 * Scale, 96 * Scale, PixelFormats.Pbgra32);
+        var bitmap = new RenderTargetBitmap((int)Math.Ceiling(root.ActualWidth * Scale), (int)Math.Ceiling(height * Scale), 96 * Scale, 96 * Scale, PixelFormats.Pbgra32);
         bitmap.Render(visual);
-        return bitmap;
+        Save(bitmap, path);
     }
 
     private static void Save(BitmapSource image, string path)

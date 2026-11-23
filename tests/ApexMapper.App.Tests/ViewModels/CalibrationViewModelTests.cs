@@ -67,6 +67,22 @@ public sealed class CalibrationViewModelTests : IDisposable
     }
 
     [Fact]
+    public void The_summary_says_when_there_is_nothing_to_calibrate_yet()
+    {
+        var calibration = Open();
+
+        _h.Workspace.Board = null;
+        Assert.Equal("Connect a keyboard first", calibration.Summary);
+        _h.Workspace.ReadingFirmware = true;
+        Assert.Equal("Reading the keyboard's firmware", calibration.Summary);
+        _h.Workspace.ReadingFirmware = false;
+        _h.Workspace.Board = new Board(AppHarness.Gen3Info, new FirmwareReading("1.0", null, null), Consented: false);
+        Assert.Equal("Waiting for the keyboard check", calibration.Summary);
+        _h.Workspace.Board = new Board(AppHarness.Gen3Info with { ProductId = 0x1646 }, new FirmwareReading("3.2.1", null, null), Consented: false);
+        Assert.Equal("Unavailable for this keyboard", calibration.Summary);
+    }
+
+    [Fact]
     public void Set_released_records_every_group_s_signature_and_set_pressed_saves_the_key()
     {
         var calibration = Open();

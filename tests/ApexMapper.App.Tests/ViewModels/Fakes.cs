@@ -42,6 +42,9 @@ internal sealed class FakeSession : IMappingSession
     /// <summary>When set, a start throws it and stays idle, as one that unwound after a fault.</summary>
     public Exception? StartFault { get; set; }
 
+    /// <summary>When set, a start returns it and stays idle, as one the session refused.</summary>
+    public SessionEnd? StartRefusal { get; set; }
+
     public Task<SessionEnd?> StartAsync(SessionRequest request)
     {
         Starts.Add(request);
@@ -49,6 +52,11 @@ internal sealed class FakeSession : IMappingSession
         if (StartFault is { } fault)
         {
             return Task.FromException<SessionEnd?>(fault);
+        }
+        if (StartRefusal is { } refusal)
+        {
+            LastEnd = refusal;
+            return Task.FromResult<SessionEnd?>(refusal);
         }
         Move(SessionState.Running);
         return Task.FromResult<SessionEnd?>(null);

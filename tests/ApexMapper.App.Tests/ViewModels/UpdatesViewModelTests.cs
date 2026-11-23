@@ -29,7 +29,6 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.Equal("Version 0.5.1 is available.", updates.Text);
         Assert.Equal("Update", updates.ActText);
         Assert.Equal((_h.Clock, "0.5.1"), (_h.SavedSettings.UpdateCheckedAt, _h.SavedSettings.UpdateFound));
-        Assert.Equal("Version 0.5.1 is available", new SetupViewModel(_h.Services, _h.Workspace, _h.SavedSettings).Summary);
 
         _h.Clock += UpdatesViewModel.CacheFor - TimeSpan.FromMinutes(1);
         _h.Updates.Newest = "0.5.2";
@@ -57,9 +56,8 @@ public sealed class UpdatesViewModelTests : IDisposable
 
         _h.Updates.Hold.SetResult();
 
-        Assert.Equal("Version 0.5.1 is available", setup.Summary);
         Assert.Equal("Update", updates.ActText);
-        Assert.Contains(nameof(setup.Summary), raised);
+        Assert.Equal("Version 0.5.1 is available.", updates.Notice);
         Assert.Contains(nameof(updates.Text), raised);
         Assert.Contains(nameof(updates.Spoken), raised);
         Assert.Contains(nameof(updates.ActText), raised);
@@ -113,6 +111,7 @@ public sealed class UpdatesViewModelTests : IDisposable
         _h.Updates.Newest = "0.5.1";
         var updates = Create();
         _h.Updates.Hold = new TaskCompletionSource();
+        Assert.Equal("Version 0.5.1 is available.", updates.Notice);
 
         updates.Act.Execute(null);
         var raised = new List<string?>();
@@ -120,7 +119,10 @@ public sealed class UpdatesViewModelTests : IDisposable
         _h.Updates.Progress!(42);
         Assert.Equal("Downloading version 0.5.1: 42%.", updates.Text);
         Assert.Contains(nameof(updates.Text), raised);
+        Assert.Contains(nameof(updates.Notice), raised);
+        Assert.Equal("Downloading version 0.5.1: 42%.", updates.Notice);
         Assert.Equal("Downloading version 0.5.1.", updates.Spoken);
+        Assert.Equal(updates.Spoken, updates.NoticeSpoken);
         Assert.Null(updates.ActText);
         _h.Workspace.Session = SessionState.Running;
         _h.Updates.Hold.SetResult();
@@ -130,6 +132,11 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.False(updates.Act.CanExecute(null));
 
         _h.Workspace.Session = SessionState.Idle;
+        _h.Workspace.ProfileUnsaved = true;
+        Assert.EndsWith("installs the next time the app starts. Save or discard your profile changes first.", updates.Text);
+        Assert.False(updates.Act.CanExecute(null));
+
+        _h.Workspace.ProfileUnsaved = false;
         updates.Act.Execute(null);
         Assert.Equal((1, 1), (_h.Updates.Installs, _h.Closes));
         Assert.Equal("Closing to install version 0.5.1.", updates.Text);
@@ -198,8 +205,13 @@ public sealed class UpdatesViewModelTests : IDisposable
 
         updates.Act.Execute(null);
 
-        Assert.Equal("This is the newest version.", updates.Text);
+        Assert.Equal("That version is no longer available. This is the newest version.", updates.Text);
+        Assert.Equal(updates.Text, updates.Notice);
         Assert.Equal("Check for updates", updates.ActText);
+
+        updates.Act.Execute(null);
+        Assert.Equal("This is the newest version.", updates.Text);
+        Assert.Equal(updates.Text, updates.Notice);
     }
 
     [Fact]
@@ -293,6 +305,7 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.Null(updates.Available);
         Assert.Null(updates.ActText);
         Assert.False(updates.CanUpdate);
+        Assert.Null(updates.Notice);
         Assert.Equal("This is a test build from CI, so it does not look for updates.", updates.Text);
     }
 }

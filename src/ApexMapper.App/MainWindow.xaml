@@ -10,12 +10,13 @@
                  d:DataContext="{d:DesignInstance vm:MainViewModel}"
                  Title="Apex Analog Mapper"
                  Icon="pack://application:,,,/ApexAnalogMapper;component/Assets/app.ico"
-                 Width="900" Height="900" MinWidth="640" MinHeight="480"
+                 Width="900" Height="820" MinWidth="640" MinHeight="480"
                  WindowStartupLocation="CenterScreen"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica">
   <Grid>
     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
@@ -24,14 +25,32 @@
         <ui:ImageIcon Source="pack://application:,,,/ApexAnalogMapper;component/Assets/app.ico" />
       </ui:TitleBar.Icon>
     </ui:TitleBar>
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+    <!-- Every page but Home has its name and a way back, and Stop while mapping, which stay put while the page scrolls. -->
+    <Grid Grid.Row="1" Margin="24,4,24,12" MaxWidth="920"
+          Visibility="{Binding Page, Converter={StaticResource HideOnPage}, ConverterParameter={x:Static vm:Page.Home}}">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <ui:Button x:Name="BackButton" Appearance="Transparent" Icon="{ui:SymbolIcon ArrowLeft24}" Command="{Binding GoHome}" Padding="8" VerticalAlignment="Center"
+                 ToolTip="Back to Home" AutomationProperties.Name="Back to Home" />
+      <ui:TextBlock Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center" FontTypography="Title" Text="{Binding PageTitle}" views:Live.Text="{Binding PageTitle}" />
+      <ui:Button x:Name="StopButton" Grid.Column="2" Appearance="Primary" Icon="{ui:SymbolIcon Stop24}" Content="Stop mapping" VerticalAlignment="Center"
+                 Command="{Binding Status.Stop}" Visibility="{Binding Status.CanStop, Converter={StaticResource ShowWhenTrue}}"
+                 IsVisibleChanged="OnStopVisibleChanged" />
+    </Grid>
+    <ScrollViewer Grid.Row="2" x:Name="Scroller" VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="24,4,24,24" MaxWidth="920">
-        <views:StatusCard DataContext="{Binding Status}" />
-        <views:KeyboardCard DataContext="{Binding Keyboard}" Margin="0,12,0,0" />
-        <views:GameCard DataContext="{Binding Game}" Margin="0,8,0,0" />
-        <views:ProfileCard DataContext="{Binding Profile}" Margin="0,8,0,0" />
-        <views:CalibrationCard x:Name="CalibrationCard" DataContext="{Binding Calibration}" Margin="0,8,0,0" />
-        <views:SetupCard DataContext="{Binding Setup}" Margin="0,8,0,0" />
+        <views:HomePage x:Name="Home" Visibility="{Binding Page, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Home}}" />
+        <views:KeyboardPage DataContext="{Binding Keyboard}"
+                            Visibility="{Binding DataContext.Page, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Keyboard}}" />
+        <views:ProfilePage DataContext="{Binding Profile}"
+                           Visibility="{Binding DataContext.Page, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Profile}}" />
+        <views:CalibrationPage DataContext="{Binding Calibration}"
+                               Visibility="{Binding DataContext.Page, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Calibration}}" />
+        <views:SettingsPage DataContext="{Binding Setup}"
+                            Visibility="{Binding DataContext.Page, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Settings}}" />
       </StackPanel>
     </ScrollViewer>
   </Grid>
