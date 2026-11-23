@@ -56,7 +56,7 @@ submit it. Anyone who builds the app can take it from there.
 ### Make the change
 
 1. The app saves the capture as `apex-capture-<product id>.json`. Rename it to
-   `<product id>-<firmware>.json`, for example `1642-1.2.0.json`, and copy it unchanged
+   `<product id>-<firmware>.json`, for example `1640-4.16.8.json`, and copy it unchanged
    into `tests/ApexMapper.Core.Tests/Captures`. Create that folder if it isn't there.
 2. In `src/ApexMapper.Core/Sensors/KnownKeyboards.cs`, set the model to
    `SensorSupport.Verified` and add the firmware to the model's `VerifiedFirmware` list.

@@ -20,7 +20,7 @@ public readonly record struct SensorRequest
         Selector = selector;
     }
 
-    /// <summary>Firmware version query. The reply carries the version as ASCII at offset 1.</summary>
+    /// <summary>Firmware version query. <see cref="SensorProtocol.ParseFirmware"/> reads the reply.</summary>
     public static SensorRequest Firmware() => new(FirmwareCommand, 0);
 
     /// <summary>Read one group of fourteen sensors, group 1..5.</summary>

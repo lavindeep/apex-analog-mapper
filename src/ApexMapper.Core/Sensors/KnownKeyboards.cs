@@ -21,20 +21,22 @@ public static class KnownKeyboards
     public sealed record Model(ushort ProductId, string Name, SensorSupport Support, IReadOnlyList<string> VerifiedFirmware);
 
     /// <summary>
-    /// The wireless models run 3.x firmware, a different family from the original TKL's
-    /// 4.x. Research into SteelSeries firmware images (HallJoy) found no sensor request
-    /// in it, and a TKL Wireless Gen 3 on a cable answered 0xD7 with something other
-    /// than sensor data (issue #5), so they are unsupported rather than untested.
+    /// Only the original TKL's firmware family, 4.x, is known to answer the sensor read.
+    /// Research into SteelSeries firmware images (HallJoy) found no sensor request in the
+    /// other two, so their models are unsupported rather than untested. The wireless
+    /// models run 3.x, and a TKL Wireless Gen 3 on a cable answered 0xD7 with something
+    /// other than sensor data (issue #5). The wired TKL (2023) and TKL Gen 3 run 1.x, and
+    /// a TKL Gen 3 on 1.19.7 answered 0xD7 with status 0xFF and no data (issue #14).
     /// </summary>
     private static readonly Model[] Models =
     [
         new(0x1610, "Apex Pro", SensorSupport.Unverified, []),
         new(0x1614, "Apex Pro TKL", SensorSupport.Verified, ["4.9.1", "4.16.8"]),
-        new(0x1628, "Apex Pro TKL (2023)", SensorSupport.Unverified, []),
+        new(0x1628, "Apex Pro TKL (2023)", SensorSupport.Unsupported, []),
         new(0x1630, "Apex Pro TKL Wireless (2023)", SensorSupport.Unsupported, []),
         new(0x1632, "Apex Pro TKL Wireless (2023)", SensorSupport.Unsupported, []),
         new(0x1640, "Apex Pro Gen 3", SensorSupport.Unverified, []),
-        new(0x1642, "Apex Pro TKL Gen 3", SensorSupport.Unverified, []),
+        new(0x1642, "Apex Pro TKL Gen 3", SensorSupport.Unsupported, []),
         new(0x1644, "Apex Pro TKL Wireless Gen 3", SensorSupport.Unsupported, []),
         new(0x1646, "Apex Pro TKL Wireless Gen 3", SensorSupport.Unsupported, []),
     ];

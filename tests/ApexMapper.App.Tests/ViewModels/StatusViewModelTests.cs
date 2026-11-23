@@ -142,7 +142,7 @@ public sealed class StatusViewModelTests : IDisposable
         var status = Create();
 
         Assert.Null(status.Blocker);
-        Assert.Contains("The Apex Pro TKL Gen 3 has not been tested with this app.", status.Warnings);
+        Assert.Contains("The Apex Pro Gen 3 has not been tested with this app.", status.Warnings);
     }
 
     [Fact]

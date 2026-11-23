@@ -21,13 +21,14 @@ Xbox controller works.
 
 - Windows 10 or 11, 64-bit.
 - An Apex Pro. The sensor readout has been checked on the original Apex Pro TKL with
-  firmware 4.9.1 and 4.16.8. The Apex Pro TKL Wireless (2023) and Apex Pro TKL Wireless
-  Gen 3 don't work, on a cable or through their receiver. Their firmware has no request
-  for key depth that anyone has found, so the keyboard card says they aren't supported
-  and the app never reads them. Every other Apex Pro, the full-size one included, shows
-  up as untested. The app tells you the risk and asks before it reads its sensors, and
-  calibration learns where each key's sensor is. If you own one of them,
-  [Add support for your keyboard](docs/adding-a-keyboard.md) says how to get it tested.
+  firmware 4.9.1 and 4.16.8. The Apex Pro TKL (2023) and the Apex Pro TKL Gen 3 don't
+  work. Neither do their wireless versions, on a cable or through their receiver. Their
+  firmware has no request for key depth that anyone has found, so the keyboard card says
+  they aren't supported and the app never reads them. The full-size Apex Pro and Apex
+  Pro Gen 3 show up as untested. The app tells you the risk and asks before it reads
+  their sensors, and calibration learns where each key's sensor is. If you own one of
+  them, [Add support for your keyboard](docs/adding-a-keyboard.md) says how to get it
+  tested.
 - The ViGEmBus driver, which creates the virtual controller. See below.
 
 ## Install

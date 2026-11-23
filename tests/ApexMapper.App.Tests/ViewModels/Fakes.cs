@@ -234,7 +234,7 @@ internal sealed class AppHarness : IDisposable
     public static readonly Guid Tkl = new("27373de1-4206-11f1-b9e4-14ac60fcc13e");
     public static readonly Guid Gen3 = new("33333333-4206-11f1-b9e4-14ac60fcc13e");
     public static readonly KeyboardInfo TklInfo = new(Tkl, 0x1614, "Apex Pro TKL", Known: true, HasVendorInterface: true, 65, 65);
-    public static readonly KeyboardInfo Gen3Info = new(Gen3, 0x1642, "Apex Pro TKL Gen 3", Known: true, HasVendorInterface: true, 65, 65);
+    public static readonly KeyboardInfo Gen3Info = new(Gen3, 0x1640, "Apex Pro Gen 3", Known: true, HasVendorInterface: true, 65, 65);
     public const string Firmware = "4.16.8";
     public const string Game = @"C:\Games\ForzaHorizon6\ForzaHorizon6.exe";
 

@@ -76,6 +76,18 @@ public class SensorProtocolTests
         Assert.False(SensorProtocol.IsPlausibleGroup(same));
     }
 
+    /// <summary>The reply is the one a TKL Gen 3 on firmware 1.19.7 sent (issue #14).</summary>
+    [Fact]
+    public void A_firmware_reply_that_leads_with_the_command_and_a_zero_status_parses_to_its_version()
+    {
+        var reply = new byte[65];
+        Convert.FromHexString("009000312E31392E37").CopyTo(reply, 0);
+        Assert.Null(SensorProtocol.ParseFirmware(reply, out var version));
+        Assert.Equal("1.19.7", version);
+        reply[2] = 0xFF;
+        Assert.NotNull(SensorProtocol.ParseFirmware(reply, out _));
+    }
+
     [Fact]
     public void Firmware_parsing_rejects_non_version_replies()
     {
