@@ -41,13 +41,13 @@ public class EngineLoopTests
         rig.Engine.Step(now);
         Assert.Equal(PadReport.Neutral, rig.Driver.State);
 
-        // A fresh mapper hands over to the live depth on its fallback ramp: 0.5 in 25 ms.
+        // A fresh mapper hands over to the live depth on its fallback ramp: 0.5 in 25 ms, which the default curve maps to about 214.
         rig.Flag.IsGameForeground = true;
         for (var i = 1; i <= 40; i++)
         {
             rig.Engine.Step(now + i * OneMs);
         }
-        Assert.InRange(rig.Driver.State.RightTrigger, 50, 150);
+        Assert.InRange(rig.Driver.State.RightTrigger, 200, 230);
     }
 
     [Fact]
@@ -72,9 +72,9 @@ public class EngineLoopTests
             rig.Engine.Step(now + i * OneMs);
         }
 
-        // Ten live ticks from a reset ramp is 0.2, which the soft curve maps to about 19.
+        // Ten live ticks from a reset ramp is 0.2, which the default curve maps to about 171.
         // Without the reset the ramp, full after 100 ms of pause, would jump to 255.
-        Assert.InRange(rig.Driver.State.RightTrigger, 10, 30);
+        Assert.InRange(rig.Driver.State.RightTrigger, 150, 190);
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public class EngineLoopTests
         Assert.Equal(0, allocated);
         Assert.True(rig.Driver.Submits > 100);
 
-        // The same fresh snapshot, held live: W settles at 0.7, which the soft curve maps to about 145.
+        // The same fresh snapshot, held live: W settles at 0.7, which the default curve maps to about 233.
         rig.Flag.IsGameForeground = true;
         for (var i = 1100; i < 1140; i++)
         {
@@ -144,7 +144,7 @@ public class EngineLoopTests
             rig.Snapshot!.Publish(working);
             rig.Engine.Step(at);
         }
-        Assert.InRange(rig.Driver.State.RightTrigger, 120, 170);
+        Assert.InRange(rig.Driver.State.RightTrigger, 220, 245);
     }
 
     [Fact]

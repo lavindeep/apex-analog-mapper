@@ -11,9 +11,13 @@ public sealed record Response(float Exponent, float Saturation, float Deadzone)
     public const float MinExponent = 0.25f;
     public const float MaxExponent = 4f;
 
-    public static readonly Response Linear = new(1f, 1f, 0f);
-    public static readonly Response Soft = new(1.6f, 1f, 0f);
-    public static readonly Response Aggressive = new(0.7f, 0.9f, 0f);
+    /// <summary>
+    /// The one curve the app ships. A key's reading barely changes over the first part of
+    /// the press, so the most eager curve is what makes the output follow the finger: about
+    /// half the output a fifth of the way down and three quarters at halfway. Chosen by
+    /// driving Forza Horizon 6 on an Apex Pro TKL (issue #9).
+    /// </summary>
+    public static readonly Response Default = new(MinExponent, 1f, 0f);
 
     public static string? Validate(float exponent, float saturation, float deadzone)
     {

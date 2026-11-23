@@ -5,17 +5,16 @@ namespace ApexMapper.Core.Tests.Response;
 
 public class ResponseTests
 {
-    public static IEnumerable<object[]> Presets() =>
+    public static IEnumerable<object[]> Curves() =>
     [
-        [Core.Response.Response.Linear],
-        [Core.Response.Response.Soft],
-        [Core.Response.Response.Aggressive],
+        [Core.Response.Response.Default],
+        [Core.Response.Response.Create(1f, 1f, 0f)],
         [Core.Response.Response.Create(2f, 0.8f, 0.15f)],
     ];
 
     [Theory]
-    [MemberData(nameof(Presets))]
-    public void Presets_are_monotone_from_zero_to_one(Core.Response.Response response)
+    [MemberData(nameof(Curves))]
+    public void Curves_are_monotone_from_zero_to_one(Core.Response.Response response)
     {
         var last = -1f;
         for (var i = 0; i <= 100; i++)
@@ -29,14 +28,11 @@ public class ResponseTests
     }
 
     [Fact]
-    public void Presets_differ_at_mid_travel()
+    public void The_exponent_bends_the_curve_at_mid_travel()
     {
-        var linear = Core.Response.Response.Linear.Map(0.5f);
-        var soft = Core.Response.Response.Soft.Map(0.5f);
-        var aggressive = Core.Response.Response.Aggressive.Map(0.5f);
-        Assert.Equal(0.5f, linear);
-        Assert.Equal(0.3299f, soft, 0.001f);
-        Assert.Equal(0.6627f, aggressive, 0.001f);
+        Assert.Equal(0.5f, Core.Response.Response.Create(1f, 1f, 0f).Map(0.5f));
+        Assert.Equal(0.3299f, Core.Response.Response.Create(1.6f, 1f, 0f).Map(0.5f), 0.001f);
+        Assert.Equal(0.8409f, Core.Response.Response.Default.Map(0.5f), 0.001f);
     }
 
     [Fact]
@@ -75,6 +71,6 @@ public class ResponseTests
     [Fact]
     public void Non_finite_depth_maps_to_zero()
     {
-        Assert.Equal(0f, Core.Response.Response.Linear.Map(float.NaN));
+        Assert.Equal(0f, Core.Response.Response.Default.Map(float.NaN));
     }
 }

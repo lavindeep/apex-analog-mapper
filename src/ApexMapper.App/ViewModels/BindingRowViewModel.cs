@@ -8,9 +8,7 @@ namespace ApexMapper.App.ViewModels;
 
 public enum ResponsePreset
 {
-    Linear,
-    Soft,
-    Aggressive,
+    Default,
     Custom,
 }
 
@@ -54,6 +52,7 @@ public sealed class BindingRowViewModel : ObservableObject
     private double _exponent;
     private double _saturation;
     private double _deadzone;
+    private bool _custom;
     private double _pressRampMs;
     private double _releaseRampMs;
     private AxisMode _mode;
@@ -76,6 +75,7 @@ public sealed class BindingRowViewModel : ObservableObject
             _exponent = binding.Response.Exponent,
             _saturation = binding.Response.Saturation,
             _deadzone = binding.Response.Deadzone,
+            _custom = binding.Response != CoreResponse.Default,
             _pressRampMs = binding.PressRampMs,
             _releaseRampMs = binding.ReleaseRampMs,
             _rateMs = AxisBinding.DefaultRateMs,
@@ -91,6 +91,7 @@ public sealed class BindingRowViewModel : ObservableObject
             _exponent = binding.Response.Exponent,
             _saturation = binding.Response.Saturation,
             _deadzone = binding.Response.Deadzone,
+            _custom = binding.Response != CoreResponse.Default,
             _pressRampMs = binding.PressRampMs,
             _releaseRampMs = binding.ReleaseRampMs,
             _mode = binding.Mode,
@@ -141,47 +142,56 @@ public sealed class BindingRowViewModel : ObservableObject
     /// <summary>A button is on or off; only triggers and axes use the response and ramps.</summary>
     public bool ShapesOutput => !_target.IsButton();
 
+    /// <summary>
+    /// Default is the curve the app ships and can't be edited. Choosing Custom keeps the
+    /// current values and shows the sliders; choosing Default puts its values back.
+    /// </summary>
     public ResponsePreset Preset
     {
-        get => PresetOf(CurrentResponse);
+        get => _custom ? ResponsePreset.Custom : ResponsePreset.Default;
         set
         {
-            var response = value switch
+            if (value == Preset)
             {
-                ResponsePreset.Linear => CoreResponse.Linear,
-                ResponsePreset.Soft => CoreResponse.Soft,
-                ResponsePreset.Aggressive => CoreResponse.Aggressive,
-                _ => null,
-            };
-            if (response is not null && PresetOf(CurrentResponse) != value)
-            {
-                _exponent = response.Exponent;
-                _saturation = response.Saturation;
-                _deadzone = response.Deadzone;
-                Changed(nameof(Exponent), nameof(Saturation), nameof(Deadzone), nameof(Preset));
+                return;
             }
+            _custom = value == ResponsePreset.Custom;
+            if (_custom || CurrentResponse == CoreResponse.Default)
+            {
+                // The curve is the same until a slider moves, so there is nothing to save.
+                Raise(nameof(Preset));
+                Raise(nameof(IsCustom));
+                return;
+            }
+            _exponent = CoreResponse.Default.Exponent;
+            _saturation = CoreResponse.Default.Saturation;
+            _deadzone = CoreResponse.Default.Deadzone;
+            Changed(nameof(Exponent), nameof(Saturation), nameof(Deadzone), nameof(Preset), nameof(IsCustom));
         }
     }
+
+    /// <summary>The curve's sliders show only for a Custom response.</summary>
+    public bool IsCustom => _custom;
 
     /// <summary>1 is linear; above 1 is gentle at the start of travel, below 1 eager.</summary>
     public double Exponent
     {
         get => _exponent;
-        set => Change(ref _exponent, value, [nameof(Preset)]);
+        set => ChangeCurve(ref _exponent, value);
     }
 
     /// <summary>The depth at which the output reaches full.</summary>
     public double Saturation
     {
         get => _saturation;
-        set => Change(ref _saturation, value, [nameof(Preset)]);
+        set => ChangeCurve(ref _saturation, value);
     }
 
     /// <summary>The depth below which the output stays at zero.</summary>
     public double Deadzone
     {
         get => _deadzone;
-        set => Change(ref _deadzone, value, [nameof(Preset)]);
+        set => ChangeCurve(ref _deadzone, value);
     }
 
     public double PressRampMs
@@ -259,11 +269,15 @@ public sealed class BindingRowViewModel : ObservableObject
         _ => target.ToString(),
     };
 
-    private static ResponsePreset PresetOf(CoreResponse response) =>
-        response == CoreResponse.Linear ? ResponsePreset.Linear
-        : response == CoreResponse.Soft ? ResponsePreset.Soft
-        : response == CoreResponse.Aggressive ? ResponsePreset.Aggressive
-        : ResponsePreset.Custom;
+    /// <summary>An edited curve is Custom, even when the edit lands on Default's values.</summary>
+    private void ChangeCurve(ref double field, double value, [CallerMemberName] string? name = null)
+    {
+        if (field != value)
+        {
+            _custom = true;
+            Change(ref field, value, [nameof(Preset), nameof(IsCustom)], name);
+        }
+    }
 
     private void Change<T>(ref T field, T value, string[]? alsoChanged = null, [CallerMemberName] string? name = null)
     {

@@ -235,12 +235,33 @@ public sealed class ProfileViewModelTests : IDisposable
         Assert.False(profile.CanSwitch);
         Assert.Equal(ResponsePreset.Custom, w.Preset);
 
-        w.Preset = ResponsePreset.Aggressive;
-        Assert.Equal(CoreResponse.Aggressive, w.CurrentResponse);
-        Assert.Equal(ResponsePreset.Aggressive, w.Preset);
+        w.Preset = ResponsePreset.Default;
+        Assert.Equal(CoreResponse.Default, w.CurrentResponse);
+        Assert.Equal(ResponsePreset.Default, w.Preset);
 
         // What a screen reader says for the row in the list.
         Assert.Equal("W, Right trigger", w.ToString());
+    }
+
+    [Fact]
+    public void The_default_response_is_not_editable_until_the_row_is_set_to_custom()
+    {
+        var profile = Create();
+        var w = RowOf(profile, DefaultProfiles.Key.W);
+        Assert.False(w.IsCustom);
+
+        w.Preset = ResponsePreset.Custom;
+        Assert.True(w.IsCustom);
+        Assert.Equal(CoreResponse.Default, w.CurrentResponse);
+        w.Preset = ResponsePreset.Default;
+        Assert.False(w.IsCustom);
+        Assert.False(profile.IsDirty);
+
+        w.Exponent = 1;
+        Assert.True(w.IsCustom);
+        w.Preset = ResponsePreset.Default;
+        Assert.False(w.IsCustom);
+        Assert.Equal(CoreResponse.Default, w.CurrentResponse);
     }
 
     [Fact]

@@ -109,6 +109,14 @@ public sealed class WindowRenderingTests
             main.Profile.CaptureNegativeKey.Execute(null);
             return Task.CompletedTask;
         }, Narrow: true),
+        new("custom-response", _ => { }, (main, _) =>
+        {
+            main.Profile.IsOpen = true;
+            var row = main.Profile.Rows.First(r => r.ShapesOutput);
+            row.Preset = ResponsePreset.Custom;
+            main.Profile.SelectedRow = row;
+            return Task.CompletedTask;
+        }),
         new("ci-build", h => h.Updates.Newest = "0.5.1-alpha", Version: "0.1.0-ci.137"),
     ];
 
@@ -186,6 +194,9 @@ public sealed class WindowRenderingTests
                 var labels = Descendants<Button>(window).Select(button => button.Content).OfType<string>().ToList();
                 Assert.Contains(row.ChangeKeyText, labels);
                 Assert.True(!row.IsAxis || labels.Contains(row.ChangeNegativeKeyText), $"{scenario.Name}: no button says {row.ChangeNegativeKeyText}");
+                // The Default response can't be edited, so its sliders show only for Custom.
+                var curveShows = Descendants<System.Windows.Controls.Slider>(window).Any(slider => AutomationProperties.GetName(slider) == "Curve" && slider.IsVisible);
+                Assert.True(curveShows == (row.ShapesOutput && row.IsCustom), $"{scenario.Name}: the curve slider {(curveShows ? "shows" : "is hidden")}");
             }
             // A screen reader reads each live text by the name it gives its element: the state at least, and the capture prompt while it shows.
             var live = Descendants<FrameworkElement>(window).Where(e => !string.IsNullOrEmpty(Live.GetText(e))).ToList();

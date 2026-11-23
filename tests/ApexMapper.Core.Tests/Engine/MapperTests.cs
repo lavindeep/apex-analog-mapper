@@ -37,7 +37,7 @@ public class MapperTests
         store.SetDigital(SpaceSlot, true);
         mapper.Tick(snapshot, 11, 1f, ref report);
 
-        Fixtures.AssertTrigger(0.3299f, report.RightTrigger);
+        Fixtures.AssertTrigger(0.8409f, report.RightTrigger);
         Assert.Equal(0, report.LeftTrigger);
         Assert.Equal(-32767, report.LeftStickX);
         Assert.Equal(PadTarget.ButtonA.ButtonBit(), report.Buttons);
@@ -69,7 +69,7 @@ public class MapperTests
         Assert.Equal(0, report.RightTrigger);
 
         mapper.Tick(held, 5, 1f, ref report);
-        Fixtures.AssertTrigger(Core.Response.Response.Soft.Map(0.8f), report.RightTrigger);
+        Fixtures.AssertTrigger(Core.Response.Response.Default.Map(0.8f), report.RightTrigger);
     }
 
     [Fact]
@@ -184,7 +184,7 @@ public class MapperTests
         // The left arrow has no sensor, so it is digital with the binding's own 100 ms ramps.
         var profile = DefaultProfiles.Forza() with
         {
-            Keys = [new(DefaultProfiles.Key.Left, PadTarget.RightTrigger, Core.Response.Response.Linear, 100f, 100f)],
+            Keys = [new(DefaultProfiles.Key.Left, PadTarget.RightTrigger, Fixtures.Linear, 100f, 100f)],
             Axes = [],
         };
         var (mapper, store) = Build(profile);
@@ -210,7 +210,7 @@ public class MapperTests
     {
         var profile = DefaultProfiles.Forza() with
         {
-            Keys = [new(DefaultProfiles.Key.Space, PadTarget.ButtonA, Core.Response.Response.Soft, 200f, 200f)],
+            Keys = [new(DefaultProfiles.Key.Space, PadTarget.ButtonA, Core.Response.Response.Default, 200f, 200f)],
             Axes = [],
         };
         var (mapper, store) = Build(profile);
@@ -225,6 +225,18 @@ public class MapperTests
         store.SetDigital(SpaceSlot, true);
         mapper.Tick(null, 3, 1f, ref report);
         Assert.Equal(PadTarget.ButtonA.ButtonBit(), report.Buttons);
+    }
+
+    /// <summary>The wheel stayed still until A was a third of the way down, which is about a tenth of the sensor range (issue #9).</summary>
+    [Fact]
+    public void Forza_steering_passes_half_the_stick_within_the_first_tenth_of_the_sensor_range()
+    {
+        var (mapper, _) = Build();
+        var report = PadReport.Neutral;
+        mapper.Tick(Fixtures.Snapshot(0), 1, 1f, ref report);
+        var aLight = Fixtures.Snapshot(0, (Fixtures.A.SensorIndex, Fixtures.CountFor(Fixtures.A, 0.1f)));
+        mapper.Tick(aLight, 2, 1f, ref report);
+        Assert.InRange(report.LeftStickX, short.MinValue, PadReport.PackStick(-0.5f));
     }
 
     [Fact]
@@ -348,7 +360,7 @@ public class MapperTests
         var (_, store) = Build();
         var digitalOnly = DefaultProfiles.Forza() with
         {
-            Keys = [new(DefaultProfiles.Key.W, PadTarget.ButtonA, Core.Response.Response.Linear, 0f, 0f)],
+            Keys = [new(DefaultProfiles.Key.W, PadTarget.ButtonA, Fixtures.Linear, 0f, 0f)],
             Axes = [],
         };
         var (mapper, _) = Build(digitalOnly, store);
@@ -405,28 +417,28 @@ public class MapperTests
         {
             Keys =
             [
-                new(DefaultProfiles.Key.W, PadTarget.RightTrigger, Core.Response.Response.Soft, 0f, 0f),
-                new(DefaultProfiles.Key.S, PadTarget.LeftTrigger, Core.Response.Response.Soft, 0f, 0f),
-                new(new ScanCode(0x39), PadTarget.ButtonA, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x30), PadTarget.ButtonB, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x2D), PadTarget.ButtonX, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x15), PadTarget.ButtonY, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x2A), PadTarget.LeftBumper, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x0F), PadTarget.RightBumper, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x1C), PadTarget.Start, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x0E), PadTarget.Back, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x22), PadTarget.LeftStickClick, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x23), PadTarget.RightStickClick, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x24), PadTarget.Guide, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x02), PadTarget.DpadUp, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x03), PadTarget.DpadDown, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x04), PadTarget.DpadLeft, Core.Response.Response.Linear, 0f, 0f),
-                new(new ScanCode(0x05), PadTarget.DpadRight, Core.Response.Response.Linear, 0f, 0f),
+                new(DefaultProfiles.Key.W, PadTarget.RightTrigger, Core.Response.Response.Default, 0f, 0f),
+                new(DefaultProfiles.Key.S, PadTarget.LeftTrigger, Core.Response.Response.Default, 0f, 0f),
+                new(new ScanCode(0x39), PadTarget.ButtonA, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x30), PadTarget.ButtonB, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x2D), PadTarget.ButtonX, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x15), PadTarget.ButtonY, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x2A), PadTarget.LeftBumper, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x0F), PadTarget.RightBumper, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x1C), PadTarget.Start, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x0E), PadTarget.Back, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x22), PadTarget.LeftStickClick, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x23), PadTarget.RightStickClick, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x24), PadTarget.Guide, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x02), PadTarget.DpadUp, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x03), PadTarget.DpadDown, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x04), PadTarget.DpadLeft, Fixtures.Linear, 0f, 0f),
+                new(new ScanCode(0x05), PadTarget.DpadRight, Fixtures.Linear, 0f, 0f),
             ],
             Axes =
             [
                 forza.Axes[0],
-                new(new ScanCode(0x3B), new ScanCode(0x3C), PadTarget.LeftStickY, Core.Response.Response.Linear, 30f, 30f, ConflictRule.Neutral, AxisMode.Position, 150f, 100f),
+                new(new ScanCode(0x3B), new ScanCode(0x3C), PadTarget.LeftStickY, Fixtures.Linear, 30f, 30f, ConflictRule.Neutral, AxisMode.Position, 150f, 100f),
                 forza.Axes[1] with { Mode = AxisMode.Rate },
                 forza.Axes[2],
             ],
@@ -480,8 +492,8 @@ public class MapperTests
         var forza = DefaultProfiles.Forza();
         return forza with
         {
-            Keys = forza.Keys.Select(k => k with { Response = Core.Response.Response.Linear }).ToList(),
-            Axes = forza.Axes.Select(a => a with { Response = Core.Response.Response.Linear }).ToList(),
+            Keys = forza.Keys.Select(k => k with { Response = Fixtures.Linear }).ToList(),
+            Axes = forza.Axes.Select(a => a with { Response = Fixtures.Linear }).ToList(),
         };
     }
 
