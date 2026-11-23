@@ -344,11 +344,14 @@ public sealed class StatusViewModel : ObservableObject
         {
             TrackKeysAtLimit(now);
         }
-        foreach (var (key, was) in _recalibrate.ToList())
+        if (_workspace.Calibration is { } calibration)
         {
-            if (!Equals(_workspace.Calibration?.Keys.GetValueOrDefault(key), was))
+            foreach (var (key, was) in _recalibrate.ToList())
             {
-                _recalibrate.Remove(key);
+                if (!Equals(calibration.Keys.GetValueOrDefault(key), was))
+                {
+                    _recalibrate.Remove(key);
+                }
             }
         }
         var (blocker, fix) = _workspace.SessionActive ? (null, Fix.None) : FindBlocker();

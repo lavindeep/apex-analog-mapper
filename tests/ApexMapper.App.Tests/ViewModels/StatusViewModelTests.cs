@@ -417,6 +417,10 @@ public sealed class StatusViewModelTests : IDisposable
         await status.StopAsync();
         Assert.Contains(Reminder, status.Warnings);
         var calibration = _h.Workspace.Calibration!;
+        // Unplugged and back: the same readings return, so the reminder stays.
+        _h.Workspace.Calibration = null;
+        _h.Workspace.Calibration = calibration;
+        Assert.Contains(Reminder, status.Warnings);
         _h.Workspace.Calibration = calibration with
         {
             Keys = new Dictionary<ScanCode, KeyCalibration>(calibration.Keys) { [DefaultProfiles.Key.W] = KeyCalibration.Create(850, 4095, 40, 16) },
