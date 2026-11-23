@@ -20,20 +20,8 @@
           <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Notice}" views:Live.Text="{Binding NoticeSpoken}" />
         </StackPanel>
       </ui:CardControl.Header>
-      <!-- A download for the steps that install; the row's own arrows for a check. -->
-      <ui:Button Content="{Binding ActText}" Command="{Binding Act}"
-                 Visibility="{Binding ActText, Converter={StaticResource ShowWhenPresent}}">
-        <ui:Button.Style>
-          <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-            <Setter Property="Icon" Value="{ui:SymbolIcon ArrowDownload24}" />
-            <Style.Triggers>
-              <DataTrigger Binding="{Binding ActText}" Value="Check for updates">
-                <Setter Property="Icon" Value="{ui:SymbolIcon ArrowSync24}" />
-              </DataTrigger>
-            </Style.Triggers>
-          </Style>
-        </ui:Button.Style>
-      </ui:Button>
+      <ui:Button Style="{StaticResource UpdateAction}" Content="{Binding ActText}" Command="{Binding Act}"
+                 Visibility="{Binding ActText, Converter={StaticResource ShowWhenPresent}}" />
     </ui:CardControl>
 
     <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Your setup" />

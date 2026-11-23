@@ -57,7 +57,7 @@
                        Visibility="{Binding BlockedByKeyboard, Converter={StaticResource ShowWhenTrue}}" />
             <ui:Button Margin="0,8,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Gauge24}" Content="Calibrate" Command="{Binding GoToCalibration}"
                        Visibility="{Binding BlockedByCalibration, Converter={StaticResource ShowWhenTrue}}" />
-            <ui:Button Margin="0,8,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Open24}" Content="Open the ViGEmBus release page" Command="{Binding OpenDriverPage}"
+            <ui:Button Margin="0,8,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Open24}" Content="Open ViGEmBus releases" Command="{Binding OpenDriverPage}"
                        Visibility="{Binding BlockedByDriver, Converter={StaticResource ShowWhenTrue}}" />
             <ui:Button Margin="0,8,8,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Restart the app" Command="{Binding Restart}"
                        Visibility="{Binding RestartRequired, Converter={StaticResource ShowWhenTrue}}" />

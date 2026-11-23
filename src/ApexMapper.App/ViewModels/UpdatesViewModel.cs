@@ -7,7 +7,7 @@ using Velopack;
 namespace ApexMapper.App.ViewModels;
 
 /// <summary>
-/// The setup card's updates (U1, E7). At launch it asks GitHub for a newer version unless
+/// The Settings page's updates, and Home's update row (U1, E7). At launch it asks GitHub for a newer version unless
 /// it had an answer in the last six hours, which the settings keep, or the user turned the
 /// launch check off, or the settings that would say so could not be read; a launch check
 /// that fails is only logged. Test versions are offered while this copy is one, or when
@@ -37,6 +37,7 @@ public sealed class UpdatesViewModel : ObservableObject
     private string? _found;
     private int _percent;
     private string? _problem;
+    private bool _downloadFailed;
 
     private enum Step
     {
@@ -97,13 +98,17 @@ public sealed class UpdatesViewModel : ObservableObject
     {
         Step.Checking => "Looking for a newer version.",
         Step.Downloading => $"Downloading version {_found}: {_percent}%.",
-        Step.Ready => $"Version {_found} is downloaded. Restart the app to install it, or it installs the next time the app starts."
-            + (_workspace.SessionActive ? " Stop mapping first."
-                : _workspace.ProfileUnsaved ? " Save or discard your profile changes first." : ""),
+        Step.Ready => $"Version {_found} is downloaded. "
+            + (_workspace.SessionActive ? (_workspace.ProfileUnsaved ? "Stop mapping and save or discard your profile changes, then press" : "Stop mapping, then press")
+                : _workspace.ProfileUnsaved ? "Save or discard your profile changes, then press" : "Press")
+            + " Restart and update to install it now, or it installs the next time the app starts.",
         Step.Installing => $"Closing to install version {_found}.",
         _ when _ciBuild => "This is a test build from CI, so it does not look for updates.",
-        _ when !_services.Updates.Installed => "This copy was not installed with Setup.exe, so it cannot update itself.",
-        _ when _found is not null => $"Version {_found} is available." + (_workspace.SessionActive ? " Stop mapping to update." : ""),
+        _ when !_services.Updates.Installed => "This copy was not installed with Setup.exe, so it cannot update itself. To get updates, install the app with Setup.exe from its GitHub releases page.",
+        _ when _found is not null && _downloadFailed => "The download failed." + (_workspace.SessionActive ? " Stop mapping, then press Update to try again."
+            : " Press Update to try again."),
+        _ when _found is not null => $"Version {_found} is available." + (_workspace.SessionActive ? " Stop mapping to update."
+            : " Update downloads it, and it installs when you restart the app."),
         _ when _checked => "This is the newest version.",
         _ => null,
     };
@@ -185,6 +190,7 @@ public sealed class UpdatesViewModel : ObservableObject
     private async Task CheckAsync(bool byUser)
     {
         _problem = null;
+        _downloadFailed = false;
         Move(Step.Checking);
         try
         {
@@ -206,7 +212,7 @@ public sealed class UpdatesViewModel : ObservableObject
             _services.Log("Update check failed: " + e.Message);
             if (byUser)
             {
-                _problem = "Could not reach GitHub to look for a newer version: " + e.Message;
+                _problem = "Could not reach GitHub to look for a newer version. Check the connection and press Check for updates again.";
             }
         }
         Move(Step.Idle);
@@ -215,6 +221,7 @@ public sealed class UpdatesViewModel : ObservableObject
     private async Task DownloadAsync()
     {
         _problem = null;
+        _downloadFailed = false;
         _percent = 0;
         Move(Step.Downloading);
         try
@@ -229,7 +236,7 @@ public sealed class UpdatesViewModel : ObservableObject
         catch (Exception e)
         {
             _services.Log("Update download failed: " + e);
-            _problem = "The download failed: " + e.Message;
+            _downloadFailed = true;
             Move(Step.Idle);
         }
     }
@@ -256,7 +263,7 @@ public sealed class UpdatesViewModel : ObservableObject
         catch (Exception e)
         {
             _services.Log("Starting the updater failed: " + e);
-            _problem = "The update could not start: " + e.Message;
+            _problem = "The update could not start. Close the app and open it again to install it. The log says why it failed.";
             Raise(nameof(Text));
             Raise(nameof(Spoken));
             return;

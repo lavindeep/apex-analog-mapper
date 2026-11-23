@@ -309,6 +309,8 @@ public sealed class WindowRenderingTests
             h.FirmwareOf = _ => new FirmwareReading("3.2.1", null, null);
         }),
         new("driver-missing", h => h.DriverCheck = () => DriverState.Missing),
+        new("driver-not-started", h => h.DriverCheck = () => DriverState.NotStarted),
+        new("driver-missing-narrow", h => h.DriverCheck = () => DriverState.Missing, Narrow: true),
         new("restart-required", h =>
         {
             h.CalibrateForza();
@@ -380,6 +382,7 @@ public sealed class WindowRenderingTests
             h.Updates.Newest = "0.6.0";
         }),
         new("ci-build", h => h.Updates.Newest = "0.5.1-alpha", Version: "0.1.0-ci.137"),
+        new("not-installed", h => h.Updates.Installed = false),
     ];
 
     [Fact]
