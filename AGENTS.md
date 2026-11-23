@@ -119,6 +119,8 @@ The .NET 10 SDK from `global.json` builds the app, on Windows only.
   `--filter-method "<namespace>.<class>.<method>"` takes a full name and can repeat.
 - To see the window, set `APEX_SCREENSHOTS` to a folder and run `WindowRenderingTests`.
   It saves every card in light and dark.
+  CI does this on every run and keeps the images in the artifact
+  `window-screenshots-<run number>`.
 - CI packs every PR with Velopack. The artifact `apex-analog-mapper-ci-<run number>`
   holds `ApexAnalogMapper-win-Portable.zip`. Extract it into a new, empty folder and run
   `current\ApexAnalogMapper.exe`. The CI version is `0.1.0-ci.<run number>`, and a

@@ -24,7 +24,17 @@ jobs:
       - name: Build
         run: dotnet build ApexAnalogMapper.slnx -c Release --no-restore
       - name: Test
+        # WindowRenderingTests saves every card in light and dark to this folder.
+        env:
+          APEX_SCREENSHOTS: ${{ runner.temp }}\screenshots
         run: dotnet test ApexAnalogMapper.slnx -c Release --no-build
+      - name: Upload window screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: window-screenshots-${{ github.run_number }}
+          path: ${{ runner.temp }}\screenshots\
+          retention-days: 7
       - name: Pack
         # Velopack rejects versions below 0.0.1.
         run: scripts/pack.ps1 -Version "0.1.0-ci.${{ github.run_number }}"
