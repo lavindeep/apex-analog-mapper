@@ -9,10 +9,10 @@ requests are the only channels. I do not answer email about the project.
 Open an issue for a bug, a question, or a feature idea. Pick the matching template
 when there is one. A useful bug report has:
 
-- The app version, shown under Updates on the Setup card.
+- The app version, shown under Updates in Settings.
 - Your keyboard model and firmware version, and whether SteelSeries GG was running.
   For a model the app hasn't been tested with, the capture from Export a capture on
-  the keyboard card. [Add support for your keyboard](docs/adding-a-keyboard.md) covers
+  the Keyboard page. [Add support for your keyboard](docs/adding-a-keyboard.md) covers
   the whole path, and the Keyboard support form collects it.
 - The game and how it was launched (Steam, Store, Game Pass), and whether it runs as
   administrator.

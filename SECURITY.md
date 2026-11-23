@@ -40,7 +40,7 @@ and how to report a vulnerability.
 The app makes one kind of network request. It asks this repository's GitHub Releases
 whether there is a newer version when it starts, unless it had an answer in the last six
 hours, when you press Check for updates, and when you turn test versions on or off. The
-check on start can be turned off on the Setup card. The request carries no account,
+check on start can be turned off in Settings. The request carries no account,
 token or app version. There is no telemetry.
 
 A new version downloads only when you press Update. Velopack checks the download against

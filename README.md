@@ -23,7 +23,7 @@ Xbox controller works.
 - An Apex Pro. The sensor readout has been checked on the original Apex Pro TKL with
   firmware 4.9.1 and 4.16.8. The Apex Pro TKL (2023) and the Apex Pro TKL Gen 3 don't
   work. Neither do their wireless versions, on a cable or through their receiver. Their
-  firmware has no request for key depth that anyone has found, so the keyboard card says
+  firmware has no request for key depth that anyone has found, so the Keyboard page says
   they aren't supported and the app never reads them. The full-size Apex Pro and Apex
   Pro Gen 3 show up as untested. The app tells you the risk and asks before it reads
   their sensors, and calibration learns where each key's sensor is. If you own one of
@@ -54,7 +54,7 @@ nothing.
 The virtual controller needs [ViGEmBus 1.22.0](https://github.com/nefarius/ViGEmBus/releases).
 Download it from that page only. Searching for it turns up mirror sites, and none of
 them are official. The app never downloads or installs the driver for you. When it's
-missing, the Setup card opens by itself with a button to the release page.
+missing, the status card on Home says so, with a button to the release page.
 
 ViGEmBus is finished. Its author archived it in 2023 and 1.22.0 is the last release.
 It is still what almost every virtual controller tool on Windows uses, and Windows
@@ -62,17 +62,19 @@ checks its signature every time it loads.
 
 ## Getting started
 
-1. **Keyboard.** Plug in the Apex Pro and pick it on the keyboard card.
-2. **Game.** Start the game once, then pick it on the game card. The app remembers the
-   game by its executable, so a restarted game keeps working.
+1. **Keyboard.** Plug in the Apex Pro. If Home's Keyboard row doesn't name it, open
+   Keyboard and choose it there.
+2. **Game.** Start the game once, then choose it in the Game row on Home. The app
+   remembers the game by its executable, so a restarted game keeps working.
 3. **Calibrate.** Every key the profile reads for depth needs calibrating once. For
    W, A, S and D in the Forza profile:
-   1. Open the calibration card. Each key has a bar showing its sensor reading. On a
-      keyboard the app hasn't been tested with, a row first asks for **Learn**: keep
-      your hands off the keyboard, then hold that key all the way down when it asks.
+   1. Open Calibration from Home. Each key has a row with a bar showing its sensor
+      reading, and opening a key shows its two steps. On a keyboard the app hasn't been
+      tested with, a key first asks for **Find sensor**: keep your hands off the
+      keyboard, then hold that key all the way down when it asks.
    2. With the key up and your hands off the keyboard, press **Set released**.
    3. Hold the key all the way down and press **Set fully pressed** with the mouse.
-      Keep holding until the row says it saved.
+      Keep holding until the key says it saved.
 4. **Start.** Press Start. The app waits for the game to come to the front, then
    blocks W, A, S and D from reaching it as keys and sends them as the controller
    instead.
@@ -88,7 +90,8 @@ nothing.
   mapping runs.
 - **Steam Input.** If the game runs through Steam, turn Steam Input off for it.
   Otherwise Steam grabs the virtual controller and may remap or hide it.
-- **Stopping.** Stop on the status card, or Ctrl+Left Alt+F12 from anywhere, even with
+- **Stopping.** Stop on Home or Stop mapping at the top of any page, or Ctrl+Left Alt+F12
+  from anywhere, even with
   the game in front. The controller goes to rest and disappears, and your keyboard
   is normal again at once.
 - **Alt-tab.** Keys are only blocked while the game is in front. A key you're holding
@@ -99,7 +102,7 @@ nothing.
   keyboard a key came from. The app notices and tells you once.
 - **Games that run as administrator.** If the game runs as administrator and this app
   doesn't, the app leaves the game alone. Your keys reach it as plain key presses and
-  the controller stays at rest. The game card says so. Close the app and run it as
+  the controller stays at rest. The status card says so. Close the app and run it as
   administrator too.
 - **No keyboard settings to change.** Rapid trigger and actuation point only change
   when the keyboard sends key presses. The app reads key depth directly, so leave them
@@ -152,7 +155,7 @@ If a setup works well for a game, I may ship it with the app as a built-in profi
 ## Updates
 
 The app looks for a newer version on GitHub when it starts, unless it had an answer in
-the last six hours. Turn that off on the Setup card if you'd rather check by hand.
+the last six hours. Turn that off in Settings if you'd rather check by hand.
 Nothing downloads until you press Update, and the new version installs when you
 restart the app, never while mapping runs. While you're on a test version like an
 alpha, you're offered the next test version too.
@@ -163,24 +166,24 @@ alpha, you're offered the next test version too.
   game, that the game is set to use a controller, and that you started mapping before
   launching it.
 - **Keys still type in the game.** The app only blocks keys while the chosen game is in
-  front. Check that the game card shows the right game, and that it has no warning
+  front. Check that the Game row on Home shows the right game, with no warning
   about running as administrator.
 - **Start stays greyed out.** The status card says what's missing, with a button to
   the fix when there is one.
 - **A key's calibration is refused.** Let go of the key, then press Set released
   again. If the key was down during that step, the reading is refused and nothing is
   saved.
-- **An untested keyboard's sensor check fails.** Press Export a capture on the keyboard
-  card, then Open a new issue. The issue form opens with the keyboard's model, hardware
-  ID, firmware, card status, check result and the app version filled in. Choose the
-  connection and attach the file. The keyboard card lists what the file holds: the app
+- **An untested keyboard's sensor check fails.** Press Export a capture on the Keyboard
+  page, then Open a new issue. The issue form opens with the keyboard's model, hardware
+  ID, firmware, what the page says, check result and the app version filled in. Choose the
+  connection and attach the file. The Keyboard page lists what the file holds: the app
   version and the time, the keyboard's model, product ID, firmware and Windows device
   ID, its report sizes, its answer to the firmware request, the sensor readings from the
   last check, and any answer the app couldn't read. It holds no record of your typing,
   but each reading is a single moment and shows which keys were down right then. The
   app writes the file only when you export it and never uploads it. Once it's attached
   to an issue, anyone can read it.
-- **Something else.** The Setup card opens the folder with the log. It records
+- **Something else.** Open folder in Settings opens the folder with the log. It records
   sessions, calibrations and faults, never your typing. It names a key only when you
   calibrate it or when the app warns about its calibration. File paths in it can show
   your Windows user name, so read it over, then attach it to a

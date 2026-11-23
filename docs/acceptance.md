@@ -21,14 +21,15 @@ Record the version, keyboard, firmware and game at the top of the run:
 - [ ] Nothing asks for administrator rights.
 - [ ] The app starts after the install, with its icon in the title bar, the taskbar,
       the Start menu and the desktop shortcut.
-- [ ] With ViGEmBus uninstalled, the Setup card opens by itself, Start asks for the
-      driver, and the button opens the official release page. After installing the
-      driver and coming back to the window, the card says it is running.
+- [ ] With ViGEmBus uninstalled, Home's status card asks for the driver with Start off,
+      and Open ViGEmBus releases opens the official release page. After installing the
+      driver and coming back to the window, Settings says it is running.
 
 ## First run
 
-- [ ] The keyboard card finds the Apex Pro, shows its firmware and says it is tested.
-- [ ] The game card lists Forza while it runs, and remembers it after the app restarts.
+- [ ] The Keyboard page finds the Apex Pro, shows its firmware and says it is tested.
+- [ ] The Game row on Home lists Forza while it runs, and remembers it after the app
+      restarts.
 - [ ] Calibrating W, A, S and D works as the README describes. Holding a key during Set
       released is refused and says why.
 - [ ] Start stays off until all four are calibrated, and the status card says which are
@@ -73,8 +74,8 @@ Start mapping before launching the game, then drive for at least 30 minutes.
 
 - [ ] The released installer's SHA-256 matches the one in the release notes.
 - [ ] The downloaded installer gets SmartScreen's More info, then Run anyway.
-- [ ] Installed on the previous release, the Setup card offers the new one, and Update
-      is off while mapping.
+- [ ] Installed on the previous release, Home and Settings offer the new one, and
+      Update is off while mapping.
 - [ ] Update downloads it. Restart and update is off while mapping.
 - [ ] With the update downloaded and mapping running, opening the app from the Start
       menu only brings its window forward. Mapping carries on.

@@ -72,8 +72,8 @@ submit it. Anyone who builds the app can take it from there.
 ### Prove it on your keyboard
 
 The clip shows that the app reads W, A, S and D on your board with no calibration and no
-Learn step. Your build reads and writes the same app data as your installed copy, so set
-that aside first.
+Find sensor step. Your build reads and writes the same app data as your installed copy,
+so set that aside first.
 
 1. Close the installed app. While it runs, starting your build only brings the installed
    app's window forward.
@@ -93,16 +93,17 @@ that aside first.
    the clip under 10 MB so GitHub accepts it.
 5. Open the Keyboard page from Home. It names your model, says "Tested" under it, and
    shows the firmware.
-6. On the profile card, press **New**. It makes a profile named "Profile 2", or the next
-   free number, with the default Forza keys, and selects it. Your own profiles stay as
-   they are.
-7. Open the calibration card. Each of W, A, S and D says "Not calibrated. With the key up,
-   press Set released." If a row asks you to press **Learn**, your build doesn't treat
-   the model as tested, so check the change.
+6. Go back to Home, press **Edit profiles**, then **New profile**. It makes a profile
+   named "Profile 2", or the next free number, with the default Forza keys, and selects
+   it. Your own profiles stay as they are.
+7. Go back to Home and open Calibration. Each of W, A, S and D says "Not calibrated". If a
+   key says "Find sensor first", your build doesn't treat the model as tested, so check
+   the change.
 8. Press W, A, S and D one at a time, halfway and then fully. Each key's bar follows that
-   key, and no other bar moves. Press no button on the card.
-9. Stop recording. On the profile card, delete the profile you made in step 6, then choose
-   the profile you had before. Close your build and put your calibration back:
+   key, and no other bar moves. Press no button on the page.
+9. Stop recording. On the Profile page, delete the profile you made in step 6 with
+   **Delete profile**, then choose the profile you had before. Close your build and put
+   your calibration back:
 
    ```
    Rename-Item "$env:APPDATA\ApexAnalogMapper\calibration-saved" calibration
