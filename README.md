@@ -114,12 +114,19 @@ so a hiccup doesn't cut your throttle mid-corner. It isn't meant to be driven on
 These are the deadzone settings I use in Forza Horizon 6's advanced controller
 settings:
 
-![Steering deadzone inside 10 and outside 90, steering linearity 50, acceleration deadzone inside 0 and outside 100, and deceleration, clutch and e-brake deadzones inside 0 and outside 20](docs/images/forza-deadzones.png)
+![Steering deadzone inside 0 and outside 100, steering linearity 50, acceleration deadzone inside 0 and outside 100, and deceleration, clutch and e-brake deadzones inside 0 and outside 20](docs/images/forza-deadzones.png)
 
-The ones that matter are the acceleration and deceleration inside deadzones at 0. A
-key's sensor barely changes over the first part of the press, so an inside deadzone
-on top of that leaves the start of the throttle and brake doing nothing. Steering is
-fine at the game's defaults.
+The ones that matter are the steering, acceleration and deceleration inside deadzones
+at 0. A key's sensor barely changes over the first part of the press, so an inside
+deadzone on top of that leaves the start of the press doing nothing.
+
+For the same reason, steering, throttle and brake in the Forza profile use the Default
+response, which turns those small early readings into output. It gives about half the
+output a fifth of the way into the press and three quarters at halfway. A profile you
+already saved keeps the curves it has, and a row on one of the old presets now shows
+Custom. If the wheel stays still for the first third of the press, select the steering
+row on the profile card and choose Default under Response. Do the same for the throttle
+and brake rows.
 
 ## Sharing setups
 

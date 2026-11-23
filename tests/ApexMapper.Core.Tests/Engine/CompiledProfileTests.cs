@@ -64,14 +64,14 @@ public class CompiledProfileTests
     {
         var profile = DefaultProfiles.Forza() with
         {
-            Keys = [new(new ScanCode(0x1D), Core.Bindings.PadTarget.ButtonA, Core.Response.Response.Linear, 0f, 0f)],
+            Keys = [new(new ScanCode(0x1D), Core.Bindings.PadTarget.ButtonA, Fixtures.Linear, 0f, 0f)],
         };
         Assert.NotNull(profile.Validate());
         Assert.Throws<ArgumentException>(() => CompiledProfile.TryCompile(profile, SensorMap.Default, Fixtures.Calibrations(), out _));
 
         var duplicate = DefaultProfiles.Forza() with
         {
-            Keys = [.. DefaultProfiles.Forza().Keys, new(DefaultProfiles.Key.A, Core.Bindings.PadTarget.ButtonB, Core.Response.Response.Linear, 0f, 0f)],
+            Keys = [.. DefaultProfiles.Forza().Keys, new(DefaultProfiles.Key.A, Core.Bindings.PadTarget.ButtonB, Fixtures.Linear, 0f, 0f)],
         };
         Assert.NotNull(duplicate.Validate());
     }

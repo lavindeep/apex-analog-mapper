@@ -566,7 +566,7 @@ public sealed class ProfileViewModel : ObservableObject
     {
         var used = Rows.Select(r => r.Target).ToHashSet();
         var target = BindingRowViewModel.KeyTargets.Select(t => t.Value).FirstOrDefault(t => !used.Contains(t));
-        return BindingRowViewModel.From(new KeyBinding(key, target, Core.Response.Response.Linear, 0f, 0f), _services.KeyName, OnRowChanged);
+        return BindingRowViewModel.From(new KeyBinding(key, target, Core.Response.Response.Default, 0f, 0f), _services.KeyName, OnRowChanged);
     }
 
     private BindingRowViewModel NewAxisRow(ScanCode negative, ScanCode positive)
@@ -574,7 +574,7 @@ public sealed class ProfileViewModel : ObservableObject
         var used = Rows.Select(r => r.Target).ToHashSet();
         var target = BindingRowViewModel.AxisTargets.Select(t => t.Value).FirstOrDefault(t => !used.Contains(t), PadTarget.LeftStickX);
         return BindingRowViewModel.From(
-            new AxisBinding(negative, positive, target, Core.Response.Response.Linear, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
+            new AxisBinding(negative, positive, target, Core.Response.Response.Default, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
             _services.KeyName,
             OnRowChanged);
     }

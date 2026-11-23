@@ -13,6 +13,9 @@ internal static class Fixtures
     public static readonly KeyCalibration S = KeyCalibration.Create(847, 3559, 20, 30);
     public static readonly KeyCalibration D = KeyCalibration.Create(850, 3623, 20, 31);
 
+    /// <summary>Output equals depth, for tests that assert on depth.</summary>
+    public static readonly Core.Response.Response Linear = new(1f, 1f, 0f);
+
     public static Dictionary<ScanCode, KeyCalibration> Calibrations() => new()
     {
         [DefaultProfiles.Key.W] = W,

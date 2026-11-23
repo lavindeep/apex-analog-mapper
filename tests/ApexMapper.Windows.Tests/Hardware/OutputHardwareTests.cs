@@ -222,7 +222,7 @@ public class OutputHardwareTests
             [CapsLock] = KeyCalibration.Create(capsRest, capsRest + Span, KeyCalibration.DefaultNoiseBand, capsIndex),
         };
         var profile = CompiledProfile.TryCompile(
-            new Profile("soak", "Soak", Keys: [new(CapsLock, PadTarget.RightTrigger, Response.Linear, 0f, 0f)], Axes: []),
+            new Profile("soak", "Soak", Keys: [new(CapsLock, PadTarget.RightTrigger, new Response(1f, 1f, 0f), 0f, 0f)], Axes: []),
             SensorMap.Default,
             calibrations,
             out _)!;

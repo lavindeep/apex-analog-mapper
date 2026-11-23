@@ -10,7 +10,7 @@ public class ProfileJsonTests
 {
     private static Profile Custom() => new("custom", "Custom",
         [new(DefaultProfiles.Key.W, PadTarget.RightTrigger, Core.Response.Response.Create(2f, 0.85f, 0.15f), 25f, 40f)],
-        [new(DefaultProfiles.Key.A, DefaultProfiles.Key.D, PadTarget.LeftStickX, Core.Response.Response.Aggressive, 10f, 20f, ConflictRule.Neutral, AxisMode.Rate, 123f, 77f)]);
+        [new(DefaultProfiles.Key.A, DefaultProfiles.Key.D, PadTarget.LeftStickX, Core.Response.Response.Create(0.7f, 0.9f, 0f), 10f, 20f, ConflictRule.Neutral, AxisMode.Rate, 123f, 77f)]);
 
     [Fact]
     public void Forza_round_trips()
@@ -113,7 +113,7 @@ public class ProfileJsonTests
     {
         var reserved = DefaultProfiles.Forza() with
         {
-            Keys = [new(new ScanCode(0x1D), PadTarget.ButtonA, Core.Response.Response.Linear, 0f, 0f)],
+            Keys = [new(new ScanCode(0x1D), PadTarget.ButtonA, Core.Response.Response.Default, 0f, 0f)],
         };
         var text = JsonDocuments.Serialize(ProfileJson.CurrentVersion, reserved);
         Assert.Null(ProfileJson.Deserialize(text, out var error));
@@ -130,7 +130,7 @@ public class ProfileJsonTests
         var forza = DefaultProfiles.Forza();
         var twoKeysOneButton = forza with
         {
-            Keys = [.. forza.Keys, new(new ScanCode(0x2C), PadTarget.ButtonA, Core.Response.Response.Linear, 0f, 0f)],
+            Keys = [.. forza.Keys, new(new ScanCode(0x2C), PadTarget.ButtonA, Core.Response.Response.Default, 0f, 0f)],
         };
         Assert.Contains("ButtonA", twoKeysOneButton.Validate());
         var twoAxesOneStick = forza with
@@ -156,7 +156,7 @@ public class BindingValidationTests
 {
     private static readonly ScanCode W = DefaultProfiles.Key.W;
     private static readonly ScanCode A = DefaultProfiles.Key.A;
-    private static readonly Core.Response.Response Linear = Core.Response.Response.Linear;
+    private static readonly Core.Response.Response Linear = new(1f, 1f, 0f);
 
     [Fact]
     public void Key_binding_rules()
