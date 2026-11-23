@@ -13,6 +13,7 @@ public sealed record ProfileEntry(string Id, Profile? Profile, string? Problem);
 /// Profiles, one JSON file each in the profiles folder, named by id. The Forza profile
 /// always exists: when its file gives nothing the default stands in, and the default is
 /// written back when the file is missing or holds unreadable text. It cannot be deleted.
+/// A profile that still has the bindings 0.5.0-alpha shipped gets today's when it loads.
 /// Saving refuses to write over a file that could not be read or that a newer version
 /// of the app wrote, including one that could not be read when it was last loaded: what
 /// the window holds for it is a stand-in, not the user's profile. Called from the UI
@@ -75,6 +76,23 @@ public sealed partial class ProfileStore(string directory)
         }
         // The file name is the id; a hand-edited id inside the file does not move it.
         var profile = result.Value is { } value && value.Id != id ? value with { Id = id } : result.Value;
+        if (profile is not null && HasBindingsOf(profile, DefaultProfiles.Forza050Alpha()))
+        {
+            profile = DefaultProfiles.Forza() with { Id = id, Name = profile.Name };
+            // Only a file that loaded cleanly is rewritten. After a recovery the primary may
+            // still be the damaged one, and saving would turn it into the backup.
+            if (result.Status == LoadStatus.Loaded)
+            {
+                try
+                {
+                    JsonFile.Save(PathOf(id), ProfileJson.Serialize(profile));
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    // The file keeps the old bindings and gets today's again on the next load.
+                }
+            }
+        }
         return new ProfileEntry(id, profile, LoadProblem.Describe(result, $"profile \"{id}\""));
     }
 
@@ -156,6 +174,9 @@ public sealed partial class ProfileStore(string directory)
         }
         return result.Status == LoadStatus.Corrupt ? $"The Forza profile could not be read and was reset to the default. {result.Error}" : null;
     }
+
+    private static bool HasBindingsOf(Profile profile, Profile other) =>
+        profile.Keys.SequenceEqual(other.Keys) && profile.Axes.SequenceEqual(other.Axes);
 
     private string PathOf(string id) => Path.Combine(directory, id + ".json");
 
