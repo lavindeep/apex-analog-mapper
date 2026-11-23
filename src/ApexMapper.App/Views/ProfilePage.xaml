@@ -17,11 +17,7 @@
       <Setter Property="TickFrequency" Value="0.01" />
       <Setter Property="IsSnapToTickEnabled" Value="True" />
       <Setter Property="VerticalAlignment" Value="Center" />
-      <Style.Triggers>
-        <Trigger Property="IsEnabled" Value="False">
-          <Setter Property="Opacity" Value="0.4" />
-        </Trigger>
-      </Style.Triggers>
+      <Setter Property="Margin" Value="0,6" />
     </Style>
     <Style x:Key="SliderValue" TargetType="ui:TextBlock">
       <Setter Property="Width" Value="48" />
@@ -38,175 +34,248 @@
       <Setter Property="Width" Value="140" />
       <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
+    <!-- A key's name drawn as a key cap in a binding's header. -->
+    <Style x:Key="Keycap" TargetType="Border">
+      <Setter Property="MinWidth" Value="32" />
+      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="Margin" Value="0,0,6,0" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="BorderThickness" Value="1,1,1,2" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+      <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style x:Key="KeycapText" TargetType="ui:TextBlock">
+      <Setter Property="FontTypography" Value="BodyStrong" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+    </Style>
   </UserControl.Resources>
 
-  <ui:Card Padding="20" VerticalContentAlignment="Top">
-    <StackPanel>
-      <!-- Which profile is active. -->
-      <StackPanel Orientation="Horizontal">
-        <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding Selected}" DisplayMemberPath="Name"
-                  IsEnabled="{Binding CanSwitch}" MinWidth="240" AutomationProperties.Name="Active profile" />
-        <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Add24}" Content="New" Command="{Binding New}" />
-        <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon ArrowReset24}" Content="Reset" ToolTip="Replace the bindings with the Forza defaults" Command="{Binding Reset}" />
-        <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Delete24}" Content="Delete" Command="{Binding Delete}"
-                   ToolTip="{Binding DeleteHint}" ToolTipService.ShowOnDisabled="True" />
-      </StackPanel>
-      <ui:TextBlock Margin="0,4,0,0" Style="{StaticResource CardSummary}" Text="{Binding SwitchHint}"
-                    Visibility="{Binding SwitchHint, Converter={StaticResource ShowWhenPresent}}" />
-      <ui:InfoBar Style="{StaticResource Warning}" Message="{Binding Problem}"
-                  Visibility="{Binding Problem, Converter={StaticResource ShowWhenPresent}}" />
-
-      <ui:TextBlock x:Name="NameLabel" Style="{StaticResource FieldLabel}" Text="Name" />
-      <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MaxWidth="360" HorizontalAlignment="Left" MinWidth="240"
-                  IsEnabled="{Binding CanEdit}" AutomationProperties.LabeledBy="{Binding ElementName=NameLabel}" />
-
-      <Grid Margin="0,16,0,0">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="260" />
-          <ColumnDefinition Width="24" />
-          <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-
-        <!-- The bindings. -->
+  <StackPanel>
+    <!-- Which profile is active, and the profiles themselves. -->
+    <ui:CardControl Icon="{ui:SymbolIcon Options24}">
+      <ui:CardControl.Header>
         <StackPanel>
-          <ui:TextBlock FontTypography="BodyStrong" Text="Bindings" Margin="0,0,0,4" />
-          <ui:ListView ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}" MaxHeight="360" IsEnabled="{Binding CanEdit}"
-                       AutomationProperties.Name="Bindings">
-            <ui:ListView.ItemTemplate>
-              <DataTemplate DataType="vm:BindingRowViewModel">
-                <StackPanel Margin="0,2">
-                  <TextBlock Text="{Binding KeysText}" FontWeight="SemiBold" />
-                  <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding TargetText}" />
-                </StackPanel>
-              </DataTemplate>
-            </ui:ListView.ItemTemplate>
-          </ui:ListView>
-          <WrapPanel Margin="0,8,0,0">
-            <ui:Button Icon="{ui:SymbolIcon Add24}" Content="Key" ToolTip="Add a key for a button or trigger" Command="{Binding AddKey}" Margin="0,0,8,8" />
-            <ui:Button Icon="{ui:SymbolIcon Add24}" Content="Axis" ToolTip="Add two keys for a stick axis" Command="{Binding AddAxis}" Margin="0,0,8,8" />
-            <ui:Button Icon="{ui:SymbolIcon Delete24}" Content="Remove" Command="{Binding Remove}" Margin="0,0,8,8" />
-          </WrapPanel>
+          <ui:TextBlock Text="Profile" />
+          <ui:TextBlock Style="{StaticResource RowDescription}" Text="Start on Home uses this profile"
+                        Visibility="{Binding SwitchHint, Converter={StaticResource ShowWhenAbsent}}" />
+          <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding SwitchHint}" views:Live.Text="{Binding SwitchHint}"
+                        Visibility="{Binding SwitchHint, Converter={StaticResource ShowWhenPresent}}" />
         </StackPanel>
+      </ui:CardControl.Header>
+      <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding Selected}" DisplayMemberPath="Name"
+                IsEnabled="{Binding CanSwitch}" Width="240" AutomationProperties.Name="Profile" x:Name="ProfilePicker" />
+    </ui:CardControl>
+    <ui:InfoBar Style="{StaticResource Warning}" Message="{Binding Problem}" views:Live.Text="{Binding Problem}"
+                Visibility="{Binding Problem, Converter={StaticResource ShowWhenPresent}}" />
+    <ui:CardControl Margin="0,4,0,0" Icon="{ui:SymbolIcon Rename24}">
+      <ui:CardControl.Header>
+        <ui:TextBlock x:Name="NameLabel" Text="Name" />
+      </ui:CardControl.Header>
+      <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="240" IsEnabled="{Binding CanEdit}"
+                  AutomationProperties.LabeledBy="{Binding ElementName=NameLabel}" />
+    </ui:CardControl>
+    <WrapPanel Margin="0,8,0,0">
+      <ui:Button Margin="0,0,8,8" Icon="{ui:SymbolIcon Add24}" Content="New profile" Command="{Binding New}"
+                 ToolTip="{Binding NewHint}" AutomationProperties.HelpText="{Binding NewHint}" ToolTipService.ShowOnDisabled="True" />
+      <ui:Button Margin="0,0,8,8" Icon="{ui:SymbolIcon ArrowReset24}" Content="Reset bindings" Command="{Binding Reset}"
+                 ToolTip="{Binding ResetHint}" AutomationProperties.HelpText="{Binding ResetHint}" ToolTipService.ShowOnDisabled="True" />
+      <ui:Button Margin="0,0,8,8" Icon="{ui:SymbolIcon Delete24}" Content="Delete profile" Command="{Binding Delete}" IsVisibleChanged="OnDeleteHidden"
+                 ToolTip="{Binding DeleteHint}" AutomationProperties.HelpText="{Binding DeleteHint}" ToolTipService.ShowOnDisabled="True"
+                 Visibility="{Binding CanDelete, Converter={StaticResource ShowWhenTrue}}" />
+    </WrapPanel>
 
-        <!-- The chosen binding, with the key capture prompt above it where the buttons that start one are. -->
-        <StackPanel Grid.Column="2">
-          <StackPanel Margin="0,0,0,12" Visibility="{Binding IsCapturing, Converter={StaticResource ShowWhenTrue}}">
-            <ui:InfoBar Style="{StaticResource Warning}" Margin="0" Severity="Informational" Message="{Binding Prompt}" views:Live.Text="{Binding Prompt}" />
-            <ui:Button Margin="0,8,0,0" Content="Cancel" Command="{Binding CancelCapture}" />
-          </StackPanel>
-          <ContentControl Content="{Binding SelectedRow}" IsEnabled="{Binding CanEdit}">
-            <ContentControl.ContentTemplate>
-              <DataTemplate DataType="vm:BindingRowViewModel">
-                <StackPanel>
-                  <ui:TextBlock FontTypography="BodyStrong" Text="Keys" Margin="0,0,0,4" />
-                  <WrapPanel>
-                    <ui:TextBlock Margin="0,0,12,8" VerticalAlignment="Center" FontTypography="Subtitle" Text="{Binding KeysText}" MinWidth="80" />
-                    <ui:Button Margin="0,0,8,8" Content="{Binding ChangeNegativeKeyText}"
-                               ToolTip="The key for left, or down" Command="{Binding DataContext.CaptureNegativeKey, ElementName=Root}"
-                               Visibility="{Binding IsAxis, Converter={StaticResource ShowWhenTrue}}" />
-                    <ui:Button Margin="0,0,0,8" Content="{Binding ChangeKeyText}"
-                               Command="{Binding DataContext.CaptureKey, ElementName=Root}" />
-                  </WrapPanel>
+    <!-- The bindings, one open at a time. A binding's settings show only for a Custom preset. -->
+    <ui:TextBlock Style="{StaticResource SectionTitle}" Margin="4,20,0,8" Text="Bindings" />
+    <ui:TextBlock Margin="4,0,0,12" Style="{StaticResource Note}"
+                  Text="Open a binding to change its keys or what they press. Triggers and sticks use the Default preset until you choose Custom." />
+    <WrapPanel>
+      <ui:Button x:Name="AddKeyButton" Margin="0,0,8,8" Icon="{ui:SymbolIcon Add24}" Content="Add a key" Command="{Binding AddKey}"
+                 ToolTip="{Binding AddKeyHint}" AutomationProperties.HelpText="{Binding AddKeyHint}" ToolTipService.ShowOnDisabled="True" />
+      <ui:Button x:Name="AddAxisButton" Margin="0,0,8,8" Icon="{ui:SymbolIcon Add24}" Content="Add a stick" Command="{Binding AddAxis}"
+                 ToolTip="{Binding AddAxisHint}" AutomationProperties.HelpText="{Binding AddAxisHint}" ToolTipService.ShowOnDisabled="True" />
+    </WrapPanel>
+    <!-- Waiting for the keys of a new binding. -->
+    <StackPanel x:Name="AddPrompt" Margin="0,0,0,12" Visibility="{Binding IsAdding, Converter={StaticResource ShowWhenTrue}}">
+      <ui:InfoBar Style="{StaticResource Warning}" Margin="0" Severity="Informational" Message="{Binding Prompt}" views:Live.Text="{Binding Prompt}" />
+      <ui:Button Margin="0,8,0,0" Content="Cancel" Command="{Binding CancelCapture}" />
+    </StackPanel>
+    <ItemsControl x:Name="Bindings" ItemsSource="{Binding Rows}" Focusable="False" Grid.IsSharedSizeScope="True" AutomationProperties.Name="Bindings">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate DataType="vm:BindingRowViewModel">
+          <ui:CardExpander Margin="0,0,0,4" IsExpanded="{Binding IsExpanded}" AutomationProperties.Name="{Binding Summary}">
+            <ui:CardExpander.Header>
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" MinWidth="150" SharedSizeGroup="Keys" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" Margin="0,0,12,0">
+                  <Border Style="{StaticResource Keycap}" Visibility="{Binding IsAxis, Converter={StaticResource ShowWhenTrue}}">
+                    <ui:TextBlock Style="{StaticResource KeycapText}" Text="{Binding NegativeKeyName}" />
+                  </Border>
+                  <Border Style="{StaticResource Keycap}">
+                    <ui:TextBlock Style="{StaticResource KeycapText}" Text="{Binding KeyName}" />
+                  </Border>
+                </StackPanel>
+                <ui:TextBlock Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding TargetText}" />
+                <ui:TextBlock Grid.Column="2" Margin="12,0,16,0" VerticalAlignment="Center" Style="{StaticResource CardSummary}" Text="{Binding CustomTag}"
+                              Visibility="{Binding CustomTag, Converter={StaticResource ShowWhenPresent}}" />
+              </Grid>
+            </ui:CardExpander.Header>
 
-                  <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Controller input" />
-                  <ComboBox ItemsSource="{Binding Targets}" SelectedValuePath="Value" DisplayMemberPath="Name" SelectedValue="{Binding Target}"
-                            MinWidth="240" HorizontalAlignment="Left" AutomationProperties.Name="Controller input" />
+            <StackPanel>
+              <WrapPanel IsEnabled="{Binding DataContext.CanEdit, ElementName=Root}">
+                <ui:Button Margin="0,0,8,0" Icon="{ui:SymbolIcon Keyboard24}" Content="{Binding ChangeNegativeKeyText}"
+                           ToolTip="{Binding NegativeKeyHint}" AutomationProperties.HelpText="{Binding NegativeKeyHint}" Command="{Binding DataContext.CaptureNegativeKey, ElementName=Root}"
+                           Visibility="{Binding IsAxis, Converter={StaticResource ShowWhenTrue}}" />
+                <ui:Button Icon="{ui:SymbolIcon Keyboard24}" Content="{Binding ChangeKeyText}" ToolTip="{Binding KeyHint}" AutomationProperties.HelpText="{Binding KeyHint, TargetNullValue=''}"
+                           Command="{Binding DataContext.CaptureKey, ElementName=Root}" />
+              </WrapPanel>
 
-                  <StackPanel Visibility="{Binding IsAxis, Converter={StaticResource ShowWhenTrue}}">
-                    <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Stick movement" />
-                    <ComboBox ItemsSource="{x:Static vm:BindingRowViewModel.Modes}" SelectedValuePath="Value" DisplayMemberPath="Name"
-                              SelectedValue="{Binding Mode}" HorizontalAlignment="Left" AutomationProperties.Name="Stick movement" />
-                    <ui:TextBlock Style="{StaticResource FieldLabel}" Text="When both keys are held" />
-                    <ComboBox ItemsSource="{x:Static vm:BindingRowViewModel.Conflicts}" SelectedValuePath="Value" DisplayMemberPath="Name"
-                              SelectedValue="{Binding Conflict}" MinWidth="240" HorizontalAlignment="Left" AutomationProperties.Name="When both keys are held" />
-                    <WrapPanel Visibility="{Binding IsRateMode, Converter={StaticResource ShowWhenTrue}}">
-                      <StackPanel Margin="0,0,16,0">
-                        <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Full turn takes, ms" />
-                        <ui:NumberBox Style="{StaticResource Milliseconds}" Minimum="1" Value="{Binding RateMs, Mode=TwoWay}"
-                                      AutomationProperties.Name="Full turn takes, milliseconds" ToolTip="How long a fully pressed key takes to move the stick all the way" />
-                      </StackPanel>
-                      <StackPanel>
-                        <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Back to centre takes, ms" />
-                        <ui:NumberBox Style="{StaticResource Milliseconds}" Value="{Binding ReturnMs, Mode=TwoWay}"
-                                      AutomationProperties.Name="Back to centre takes, milliseconds" ToolTip="How long the stick takes to return once the keys are released" />
-                      </StackPanel>
-                    </WrapPanel>
-                  </StackPanel>
+              <!-- Waiting for a key for this binding. -->
+              <StackPanel Margin="0,12,0,0" Visibility="{Binding IsCapturing, Converter={StaticResource ShowWhenTrue}}">
+                <ui:InfoBar Style="{StaticResource Warning}" Margin="0" Severity="Informational"
+                            Message="{Binding DataContext.Prompt, ElementName=Root}" views:Live.Text="{Binding DataContext.Prompt, ElementName=Root}" />
+                <ui:Button Margin="0,8,0,0" Content="Cancel" Command="{Binding DataContext.CancelCapture, ElementName=Root}" />
+              </StackPanel>
 
-                  <StackPanel Visibility="{Binding ShapesOutput, Converter={StaticResource ShowWhenTrue}}">
-                    <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Response" />
-                    <ComboBox ItemsSource="{x:Static vm:BindingRowViewModel.Presets}" SelectedItem="{Binding Preset}" MinWidth="160" HorizontalAlignment="Left"
-                              AutomationProperties.Name="Response" />
-                    <Grid Margin="0,8,0,0" Visibility="{Binding IsCustom, Converter={StaticResource ShowWhenTrue}}">
+              <StackPanel IsEnabled="{Binding DataContext.CanEdit, ElementName=Root}">
+
+                <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Controller input" />
+                <ComboBox ItemsSource="{Binding Targets}" SelectedValuePath="Value" DisplayMemberPath="Name" SelectedValue="{Binding Target}"
+                          Width="260" HorizontalAlignment="Left" AutomationProperties.Name="Controller input" />
+
+                <StackPanel Visibility="{Binding ShapesOutput, Converter={StaticResource ShowWhenTrue}}">
+                  <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Preset" />
+                  <ComboBox ItemsSource="{x:Static vm:BindingRowViewModel.Presets}" SelectedItem="{Binding Preset}" Width="260" HorizontalAlignment="Left"
+                            AutomationProperties.Name="Preset" />
+                  <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Note}" Text="{Binding PresetText}" views:Live.Text="{Binding PresetText}" />
+
+                  <!-- Custom: the curve with the key's place on it, then every setting. -->
+                  <StackPanel Grid.IsSharedSizeScope="True" Visibility="{Binding IsCustom, Converter={StaticResource ShowWhenTrue}}">
+                    <!-- The graph shares the sliders' label column, so its axis starts where their tracks do. -->
+                    <Grid Margin="0,8,0,0" HorizontalAlignment="Left">
                       <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="Labels" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                      </Grid.RowDefinitions>
+                      <ui:TextBlock Margin="0,0,6,0" VerticalAlignment="Top" HorizontalAlignment="Right" Style="{StaticResource CardSummary}" Text="100%" />
+                      <ui:TextBlock Margin="0,0,6,0" VerticalAlignment="Center" HorizontalAlignment="Right" Style="{StaticResource CardSummary}" Text="{Binding OutputName}">
+                        <ui:TextBlock.LayoutTransform>
+                          <RotateTransform Angle="-90" />
+                        </ui:TextBlock.LayoutTransform>
+                      </ui:TextBlock>
+                      <ui:TextBlock Grid.Row="1" Margin="0,4,6,0" HorizontalAlignment="Right" Style="{StaticResource CardSummary}" Text="0" />
+                      <Grid Grid.Row="1" Grid.Column="1" Margin="0,4,0,0">
+                        <ui:TextBlock HorizontalAlignment="Center" Style="{StaticResource CardSummary}" Text="How far the key is pressed" />
+                        <ui:TextBlock HorizontalAlignment="Right" Style="{StaticResource CardSummary}" Text="100%" />
+                      </Grid>
+                    <UserControl Grid.Column="1" Focusable="False" AutomationProperties.Name="{Binding GraphName}">
+                    <Border BorderThickness="1,0,0,1" Padding="0"
+                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                            Width="{x:Static vm:ProfileViewModel.PreviewWidth}" Height="{x:Static vm:ProfileViewModel.PreviewHeight}">
+                      <Canvas ClipToBounds="False" Visibility="{Binding DeadzoneProblem, Converter={StaticResource ShowWhenAbsent}}">
+                        <Polyline Points="{Binding DataContext.Curve, ElementName=Root}" Stroke="{DynamicResource AccentTextFillColorPrimaryBrush}" StrokeThickness="2" />
+                        <Ellipse Width="10" Height="10" Margin="-5,-5,0,0" Fill="{DynamicResource TextFillColorPrimaryBrush}"
+                                 Canvas.Left="{Binding DataContext.Marker.X, ElementName=Root, FallbackValue=0}"
+                                 Canvas.Top="{Binding DataContext.Marker.Y, ElementName=Root, FallbackValue=0}"
+                                 Visibility="{Binding DataContext.Marker, ElementName=Root, Converter={StaticResource ShowWhenPresent}}" />
+                      </Canvas>
+                    </Border>
+                    </UserControl>
+                    </Grid>
+                    <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Note}" Text="{Binding DataContext.PreviewText, ElementName=Root}"
+                                  Visibility="{Binding DataContext.PreviewText, ElementName=Root, Converter={StaticResource ShowWhenPresent}}" />
+                    <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Note}" Text="{Binding DataContext.PreviewNote, ElementName=Root}"
+                                  views:Live.Text="{Binding DataContext.PreviewNote, ElementName=Root}"
+                                  Visibility="{Binding DataContext.PreviewNote, ElementName=Root, Converter={StaticResource ShowWhenPresent}}" />
+
+                    <Grid Margin="0,4,0,0">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="Labels" />
+                        <ColumnDefinition Width="*" MaxWidth="{x:Static vm:ProfileViewModel.PreviewWidth}" />
                         <ColumnDefinition Width="Auto" />
                       </Grid.ColumnDefinitions>
                       <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                       </Grid.RowDefinitions>
                       <ui:TextBlock Grid.Row="0" VerticalAlignment="Center" Margin="0,0,12,0" Text="Curve" />
-                      <Slider Grid.Row="0" Grid.Column="1" Style="{StaticResource FractionSlider}" Minimum="0.25" Maximum="4" TickFrequency="0.05" Value="{Binding Exponent}"
-                              AutomationProperties.Name="Curve" ToolTip="1 is straight. Above 1 is gentle at the start of the press, below 1 eager." />
-                      <ui:TextBlock Grid.Row="0" Grid.Column="2" Style="{StaticResource SliderValue}" Text="{Binding Exponent, StringFormat=0.00}" />
-                      <ui:TextBlock Grid.Row="1" VerticalAlignment="Center" Margin="0,0,12,0" Text="Full output at" />
-                      <Slider Grid.Row="1" Grid.Column="1" Style="{StaticResource FractionSlider}" Minimum="0.05" Value="{Binding Saturation}"
-                              AutomationProperties.Name="Full output at" ToolTip="How far the key goes before the output is full." />
-                      <ui:TextBlock Grid.Row="1" Grid.Column="2" Style="{StaticResource SliderValue}" Text="{Binding Saturation, StringFormat=P0}" />
-                      <ui:TextBlock Grid.Row="2" VerticalAlignment="Center" Margin="0,0,12,0" Text="Dead zone" />
-                      <Slider Grid.Row="2" Grid.Column="1" Style="{StaticResource FractionSlider}" Maximum="0.5" Value="{Binding Deadzone}"
-                              AutomationProperties.Name="Dead zone" ToolTip="How far the key goes before there is any output." />
-                      <ui:TextBlock Grid.Row="2" Grid.Column="2" Style="{StaticResource SliderValue}" Text="{Binding Deadzone, StringFormat=P0}" />
+                      <Slider Grid.Row="0" Grid.Column="1" Style="{StaticResource FractionSlider}" Minimum="-2" Maximum="2" TickFrequency="0.05"
+                              Value="{Binding Exponent, Converter={StaticResource ExponentToPosition}}" Margin="0,6,0,0"
+                              AutomationProperties.Name="Curve" AutomationProperties.ItemStatus="{Binding CurveText}" AutomationProperties.HelpText="Left is eager, the middle is straight, right is gentle."
+                              ToolTip="The middle is straight. Toward Eager the output rises early in the press, toward Gentle it rises late." />
+                      <Grid Grid.Row="1" Grid.Column="1" Margin="0,0,0,6">
+                        <ui:TextBlock Style="{StaticResource CardSummary}" HorizontalAlignment="Left" Text="Eager" />
+                        <ui:TextBlock Style="{StaticResource CardSummary}" HorizontalAlignment="Center" Text="Straight" />
+                        <ui:TextBlock Style="{StaticResource CardSummary}" HorizontalAlignment="Right" Text="Gentle" />
+                      </Grid>
+                      <ui:TextBlock Grid.Row="2" VerticalAlignment="Center" Margin="0,0,12,0" Text="{Binding SaturationName}" />
+                      <Slider Grid.Row="2" Grid.Column="1" Style="{StaticResource FractionSlider}" Minimum="0.05" Value="{Binding Saturation}"
+                              AutomationProperties.Name="{Binding SaturationName}" AutomationProperties.ItemStatus="{Binding Saturation, StringFormat=P0}"
+                              AutomationProperties.HelpText="How far the key goes before the output, or in Rate mode the stick's speed, is full."
+                              ToolTip="How far the key goes before the output, or in Rate mode the stick's speed, is full." />
+                      <ui:TextBlock Grid.Row="2" Grid.Column="2" Style="{StaticResource SliderValue}" Text="{Binding Saturation, StringFormat=P0}" />
+                      <ui:TextBlock Grid.Row="3" VerticalAlignment="Center" Margin="0,0,12,0" Text="Dead zone" />
+                      <Slider Grid.Row="3" Grid.Column="1" Style="{StaticResource FractionSlider}" Maximum="0.5" Value="{Binding Deadzone}"
+                              AutomationProperties.Name="Dead zone" AutomationProperties.ItemStatus="{Binding Deadzone, StringFormat=P0}"
+                              AutomationProperties.HelpText="How far the key goes before there is any output." ToolTip="How far the key goes before there is any output." />
+                      <ui:TextBlock Grid.Row="3" Grid.Column="2" Style="{StaticResource SliderValue}" Text="{Binding Deadzone, StringFormat=P0}" />
                     </Grid>
+                    <ui:InfoBar Style="{StaticResource Warning}" Message="{Binding DeadzoneProblem}" views:Live.Text="{Binding DeadzoneProblem}"
+                                Visibility="{Binding DeadzoneProblem, Converter={StaticResource ShowWhenPresent}}" />
+
                     <WrapPanel>
                       <StackPanel Margin="0,0,16,0">
                         <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Press ramp, ms" />
                         <ui:NumberBox Style="{StaticResource Milliseconds}" Value="{Binding PressRampMs, Mode=TwoWay}"
-                                      AutomationProperties.Name="Press ramp, milliseconds" ToolTip="The shortest time the output takes to go from none to full. 0 follows the key directly." />
+                                      AutomationProperties.Name="Press ramp, milliseconds" AutomationProperties.HelpText="The shortest time the output takes to go from none to full. 0 follows the key directly." ToolTip="The shortest time the output takes to go from none to full. 0 follows the key directly." />
                       </StackPanel>
                       <StackPanel>
                         <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Release ramp, ms" />
                         <ui:NumberBox Style="{StaticResource Milliseconds}" Value="{Binding ReleaseRampMs, Mode=TwoWay}"
-                                      AutomationProperties.Name="Release ramp, milliseconds" ToolTip="The shortest time the output takes to go from full to none. 0 follows the key directly." />
+                                      AutomationProperties.Name="Release ramp, milliseconds" AutomationProperties.HelpText="The shortest time the output takes to go from full to none. 0 follows the key directly." ToolTip="The shortest time the output takes to go from full to none. 0 follows the key directly." />
                       </StackPanel>
                     </WrapPanel>
+
+                    <StackPanel Visibility="{Binding IsAxis, Converter={StaticResource ShowWhenTrue}}">
+                      <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Stick movement" />
+                      <ComboBox ItemsSource="{x:Static vm:BindingRowViewModel.Modes}" SelectedValuePath="Value" DisplayMemberPath="Name"
+                                SelectedValue="{Binding Mode}" Width="260" HorizontalAlignment="Left" AutomationProperties.Name="Stick movement" />
+                      <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Note}" Text="{Binding ModeText}" views:Live.Text="{Binding ModeText}" />
+                      <WrapPanel Visibility="{Binding IsRateMode, Converter={StaticResource ShowWhenTrue}}">
+                        <StackPanel Margin="0,0,16,0">
+                          <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Centre to edge, ms" />
+                          <ui:NumberBox Style="{StaticResource Milliseconds}" Minimum="1" Value="{Binding RateMs, Mode=TwoWay}"
+                                        AutomationProperties.Name="Centre to edge, milliseconds" AutomationProperties.HelpText="How long a fully pressed key takes to move the stick from centre to the edge" ToolTip="How long a fully pressed key takes to move the stick from centre to the edge" />
+                        </StackPanel>
+                        <StackPanel>
+                          <ui:TextBlock Style="{StaticResource FieldLabel}" Text="Edge to centre, ms" />
+                          <ui:NumberBox Style="{StaticResource Milliseconds}" Value="{Binding ReturnMs, Mode=TwoWay}"
+                                        AutomationProperties.Name="Edge to centre, milliseconds" AutomationProperties.HelpText="How long the stick takes to go from the edge back to centre once the keys are released" ToolTip="How long the stick takes to go from the edge back to centre once the keys are released" />
+                        </StackPanel>
+                      </WrapPanel>
+                      <ui:TextBlock Style="{StaticResource FieldLabel}" Text="When both keys are held" />
+                      <ComboBox ItemsSource="{x:Static vm:BindingRowViewModel.Conflicts}" SelectedValuePath="Value" DisplayMemberPath="Name"
+                                SelectedValue="{Binding Conflict}" Width="260" HorizontalAlignment="Left" AutomationProperties.Name="When both keys are held" />
+                    </StackPanel>
                   </StackPanel>
                 </StackPanel>
-              </DataTemplate>
-            </ContentControl.ContentTemplate>
-          </ContentControl>
 
-          <!-- The response preview: depth across, output up, and where the key is now (A18). -->
-          <StackPanel Margin="0,16,0,0" Visibility="{Binding SelectedRow.ShapesOutput, Converter={StaticResource ShowWhenTrue}, FallbackValue=Collapsed}">
-            <Border HorizontalAlignment="Left" BorderThickness="1,0,0,1" Padding="0"
-                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                    Width="{x:Static vm:ProfileViewModel.PreviewWidth}" Height="{x:Static vm:ProfileViewModel.PreviewHeight}">
-              <Canvas ClipToBounds="False">
-                <Polyline Points="{Binding Curve}" Stroke="{DynamicResource AccentTextFillColorPrimaryBrush}" StrokeThickness="2" />
-                <Ellipse Width="10" Height="10" Margin="-5,-5,0,0" Fill="{DynamicResource TextFillColorPrimaryBrush}"
-                         Canvas.Left="{Binding Marker.X, FallbackValue=0}" Canvas.Top="{Binding Marker.Y, FallbackValue=0}"
-                         Visibility="{Binding Marker, Converter={StaticResource ShowWhenPresent}}" />
-              </Canvas>
-            </Border>
-            <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Note}" Text="{Binding PreviewText}"
-                          Visibility="{Binding PreviewText, Converter={StaticResource ShowWhenPresent}}" />
-          </StackPanel>
-        </StackPanel>
-      </Grid>
-
-      <!-- Why a save, delete or reset failed, beside the buttons that do them. -->
-      <ui:InfoBar Style="{StaticResource Warning}" Severity="Error" Message="{Binding Message}" views:Live.Text="{Binding Message}"
-                  Visibility="{Binding Message, Converter={StaticResource ShowWhenPresent}}" />
-
-      <StackPanel Margin="0,16,0,0" Orientation="Horizontal">
-        <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Save24}" Content="Save" Command="{Binding Save}" />
-        <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon ArrowUndo24}" Content="Discard changes" Command="{Binding Discard}" />
-        <ui:TextBlock Margin="12,0,0,0" VerticalAlignment="Center" Style="{StaticResource CardSummary}" Text="{Binding SaveNote}"
-                      Visibility="{Binding SaveNote, Converter={StaticResource ShowWhenPresent}}" />
-      </StackPanel>
-    </StackPanel>
-  </ui:Card>
+                <ui:Button Margin="0,16,0,0" Icon="{ui:SymbolIcon Delete24}" Content="Remove this binding" Command="{Binding DataContext.Remove, ElementName=Root}" />
+              </StackPanel>
+            </StackPanel>
+          </ui:CardExpander>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
 </UserControl>

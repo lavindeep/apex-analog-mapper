@@ -11,6 +11,7 @@
   <views:PresenceToVisibility x:Key="ShowWhenPresent" />
   <views:PresenceToVisibility x:Key="ShowWhenAbsent" Invert="True" />
   <views:FractionOfLength x:Key="FractionOfLength" />
+  <views:ExponentToPosition x:Key="ExponentToPosition" />
   <views:PageToVisibility x:Key="ShowOnPage" />
   <views:PageToVisibility x:Key="HideOnPage" Invert="True" />
 

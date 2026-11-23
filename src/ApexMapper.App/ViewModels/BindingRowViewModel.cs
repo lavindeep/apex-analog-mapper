@@ -34,8 +34,8 @@ public sealed class BindingRowViewModel : ObservableObject
 
     public static readonly IReadOnlyList<Option<AxisMode>> Modes =
     [
-        new(AxisMode.Position, "Position: how far the key is pressed sets how far the stick leans"),
-        new(AxisMode.Rate, "Rate: how far the key is pressed sets how fast the stick moves"),
+        new(AxisMode.Position, "Position"),
+        new(AxisMode.Rate, "Rate"),
     ];
 
     public static readonly IReadOnlyList<Option<ConflictRule>> Conflicts =
@@ -59,6 +59,8 @@ public sealed class BindingRowViewModel : ObservableObject
     private ConflictRule _conflict;
     private double _rateMs;
     private double _returnMs;
+    private bool _isExpanded;
+    private bool _isCapturing;
 
     private BindingRowViewModel(bool isAxis, Func<ScanCode, string> keyName, Action<BindingRowViewModel> changed)
     {
@@ -68,22 +70,21 @@ public sealed class BindingRowViewModel : ObservableObject
     }
 
     public static BindingRowViewModel From(KeyBinding binding, Func<ScanCode, string> keyName, Action<BindingRowViewModel> changed) =>
-        new(false, keyName, changed)
+        new BindingRowViewModel(false, keyName, changed)
         {
             _key = binding.Key,
             _target = binding.Target,
             _exponent = binding.Response.Exponent,
             _saturation = binding.Response.Saturation,
             _deadzone = binding.Response.Deadzone,
-            _custom = binding.Response != CoreResponse.Default,
             _pressRampMs = binding.PressRampMs,
             _releaseRampMs = binding.ReleaseRampMs,
             _rateMs = AxisBinding.DefaultRateMs,
             _returnMs = AxisBinding.DefaultReturnMs,
-        };
+        }.WithPreset();
 
     public static BindingRowViewModel From(AxisBinding binding, Func<ScanCode, string> keyName, Action<BindingRowViewModel> changed) =>
-        new(true, keyName, changed)
+        new BindingRowViewModel(true, keyName, changed)
         {
             _negativeKey = binding.NegativeKey,
             _key = binding.PositiveKey,
@@ -91,16 +92,46 @@ public sealed class BindingRowViewModel : ObservableObject
             _exponent = binding.Response.Exponent,
             _saturation = binding.Response.Saturation,
             _deadzone = binding.Response.Deadzone,
-            _custom = binding.Response != CoreResponse.Default,
             _pressRampMs = binding.PressRampMs,
             _releaseRampMs = binding.ReleaseRampMs,
             _mode = binding.Mode,
             _conflict = binding.Conflict,
             _rateMs = binding.RateMs,
             _returnMs = binding.ReturnMs,
-        };
+        }.WithPreset();
 
     public bool IsAxis { get; }
+
+    /// <summary>The row is open in the list. Closing a row set to Custom with Default's settings shows it as Default again.</summary>
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (Set(ref _isExpanded, value) && !value && _custom && MatchesDefault)
+            {
+                _custom = false;
+                Raise(nameof(Preset));
+                Raise(nameof(IsCustom));
+                Raise(nameof(PresetText));
+                Raise(nameof(Summary));
+                Raise(nameof(CustomTag));
+            }
+        }
+    }
+
+    /// <summary>The next key press goes to this row.</summary>
+    public bool IsCapturing
+    {
+        get => _isCapturing;
+        internal set => Set(ref _isCapturing, value);
+    }
+
+    /// <summary>What a screen reader says for the row: its keys, what they press, and a Custom preset.</summary>
+    public string Summary => ToString() + (CustomTag is null ? "" : ", Custom");
+
+    /// <summary>The header's mark for a trigger or stick on a Custom preset, or null.</summary>
+    public string? CustomTag => _custom && ShapesOutput ? "Custom" : null;
 
     /// <summary>The key of a button or trigger binding; the positive key of an axis.</summary>
     public ScanCode Key
@@ -134,8 +165,16 @@ public sealed class BindingRowViewModel : ObservableObject
     public PadTarget Target
     {
         get => _target;
-        set => Change(ref _target, value, [nameof(TargetText), nameof(ShapesOutput)]);
+        set => Change(ref _target, value, [nameof(TargetText), nameof(ShapesOutput), nameof(NegativeKeyHint), nameof(KeyHint)]);
     }
+
+    /// <summary>A stick axis's two directions, as the prompts and buttons name them.</summary>
+    public static (string Negative, string Positive) DirectionsOf(PadTarget target) =>
+        target is PadTarget.LeftStickY or PadTarget.RightStickY ? ("down", "up") : ("left", "right");
+
+    public string NegativeKeyHint => $"The key for {DirectionsOf(_target).Negative}";
+
+    public string? KeyHint => IsAxis ? $"The key for {DirectionsOf(_target).Positive}" : null;
 
     public string TargetText => NameOf(_target);
 
@@ -143,8 +182,9 @@ public sealed class BindingRowViewModel : ObservableObject
     public bool ShapesOutput => !_target.IsButton();
 
     /// <summary>
-    /// Default is the curve the app ships and can't be edited. Choosing Custom keeps the
-    /// current values and shows the sliders; choosing Default puts its values back.
+    /// Default is every setting the app ships, and can't be edited: the curve, no ramps,
+    /// and for a stick, position movement with the last key pressed winning. Choosing
+    /// Custom keeps the current values and shows them; choosing Default puts its values back.
     /// </summary>
     public ResponsePreset Preset
     {
@@ -156,86 +196,133 @@ public sealed class BindingRowViewModel : ObservableObject
                 return;
             }
             _custom = value == ResponsePreset.Custom;
-            if (_custom || CurrentResponse == CoreResponse.Default)
+            if (_custom || MatchesDefault)
             {
-                // The curve is the same until a slider moves, so there is nothing to save.
+                // The settings are the same until one changes, so there is nothing to save.
                 Raise(nameof(Preset));
                 Raise(nameof(IsCustom));
+                Raise(nameof(PresetText));
+                Raise(nameof(Summary));
+                Raise(nameof(CustomTag));
                 return;
             }
             _exponent = CoreResponse.Default.Exponent;
             _saturation = CoreResponse.Default.Saturation;
             _deadzone = CoreResponse.Default.Deadzone;
-            Changed(nameof(Exponent), nameof(Saturation), nameof(Deadzone), nameof(Preset), nameof(IsCustom));
+            _pressRampMs = 0;
+            _releaseRampMs = 0;
+            _mode = AxisMode.Position;
+            _conflict = ConflictRule.LastInputWins;
+            _rateMs = AxisBinding.DefaultRateMs;
+            _returnMs = AxisBinding.DefaultReturnMs;
+            Changed(nameof(Exponent), nameof(Saturation), nameof(Deadzone), nameof(PressRampMs), nameof(ReleaseRampMs), nameof(Mode), nameof(IsRateMode), nameof(OutputName), nameof(GraphName), nameof(SaturationName), nameof(ModeText),
+                nameof(Conflict), nameof(RateMs), nameof(ReturnMs), nameof(Preset), nameof(IsCustom), nameof(PresetText));
         }
     }
 
-    /// <summary>The curve's sliders show only for a Custom response.</summary>
+    /// <summary>The settings show only for a Custom preset.</summary>
     public bool IsCustom => _custom;
+
+    /// <summary>What the chosen preset does, under its list.</summary>
+    public string PresetText => _custom ? "Change any setting below. Choose Default to put them all back."
+        : IsAxis ? "The settings the app ships, tested driving Forza Horizon 6. The stick leans as far as a key is pressed, rising quickly from " +
+            "the start of the press with no dead zone or delay. With both keys held, the one pressed last wins."
+        : "The settings the app ships, tested driving Forza Horizon 6. The output rises quickly from the start of the press, with no dead zone or delay.";
 
     /// <summary>1 is linear; above 1 is gentle at the start of travel, below 1 eager.</summary>
     public double Exponent
     {
         get => _exponent;
-        set => ChangeCurve(ref _exponent, value);
+        set => ChangeTuning(ref _exponent, value);
     }
 
     /// <summary>The depth at which the output reaches full.</summary>
     public double Saturation
     {
         get => _saturation;
-        set => ChangeCurve(ref _saturation, value);
+        set => ChangeTuning(ref _saturation, value);
     }
 
     /// <summary>The depth below which the output stays at zero.</summary>
     public double Deadzone
     {
         get => _deadzone;
-        set => ChangeCurve(ref _deadzone, value);
+        set => ChangeTuning(ref _deadzone, value);
     }
 
     public double PressRampMs
     {
         get => _pressRampMs;
-        set => Change(ref _pressRampMs, value);
+        set => ChangeTuning(ref _pressRampMs, value);
     }
 
     public double ReleaseRampMs
     {
         get => _releaseRampMs;
-        set => Change(ref _releaseRampMs, value);
+        set => ChangeTuning(ref _releaseRampMs, value);
     }
 
     public AxisMode Mode
     {
         get => _mode;
-        set => Change(ref _mode, value, [nameof(IsRateMode)]);
+        set => ChangeTuning(ref _mode, value, [nameof(IsRateMode), nameof(OutputName), nameof(GraphName), nameof(SaturationName), nameof(ModeText)]);
     }
 
     public bool IsRateMode => _mode == AxisMode.Rate;
 
+    /// <summary>What the preview's height shows: the output, or in Rate mode how fast the stick moves.</summary>
+    public string OutputName => IsAxis && IsRateMode ? "Stick speed" : "Output";
+
+    /// <summary>Why the response would not save, shown under its sliders as they move, or null.</summary>
+    public string? DeadzoneProblem => ShapesOutput && Deadzone >= Saturation
+        ? $"The dead zone has to end before {(IsAxis && IsRateMode ? "full speed" : "full output")}."
+        : null;
+
+    /// <summary>Where the Curve slider sits, in the words under it, for screen readers.</summary>
+    public string CurveText => Exponent switch
+    {
+        <= CoreResponse.MinExponent => "Eager",
+        < 1 => "Between Eager and Straight",
+        1 => "Straight",
+        < CoreResponse.MaxExponent => "Between Straight and Gentle",
+        _ => "Gentle",
+    };
+
+    public string ModeText => IsRateMode
+        ? "How far the key is pressed sets how fast the stick moves. Released keys bring it back to centre."
+        : "How far the key is pressed sets how far the stick leans.";
+
+    /// <summary>The graph's screen-reader name.</summary>
+    public string GraphName => $"The {OutputName.ToLowerInvariant()} for how far the key is pressed";
+
+    /// <summary>The saturation slider's label: where the output, or the stick's speed, is full.</summary>
+    public string SaturationName => IsAxis && IsRateMode ? "Full speed at" : "Full output at";
+
     public ConflictRule Conflict
     {
         get => _conflict;
-        set => Change(ref _conflict, value);
+        set => ChangeTuning(ref _conflict, value);
     }
 
     public double RateMs
     {
         get => _rateMs;
-        set => Change(ref _rateMs, value);
+        set => ChangeTuning(ref _rateMs, value);
     }
 
     public double ReturnMs
     {
         get => _returnMs;
-        set => Change(ref _returnMs, value);
+        set => ChangeTuning(ref _returnMs, value);
     }
 
     /// <summary>The response as typed, not yet validated.</summary>
     public CoreResponse CurrentResponse => new((float)_exponent, (float)_saturation, (float)_deadzone);
 
-    public KeyBinding ToKeyBinding() => new(_key, _target, CurrentResponse, (float)_pressRampMs, (float)_releaseRampMs);
+    /// <summary>A button ignores its response and hides it, so one that would not save goes back to Default.</summary>
+    public KeyBinding ToKeyBinding() => new(_key, _target,
+        ShapesOutput || CoreResponse.Validate(CurrentResponse.Exponent, CurrentResponse.Saturation, CurrentResponse.Deadzone) is null ? CurrentResponse : CoreResponse.Default,
+        (float)_pressRampMs, (float)_releaseRampMs);
 
     /// <summary>What a screen reader says for the row in the bindings list.</summary>
     public override string ToString() => $"{KeysText}, {TargetText}";
@@ -269,14 +356,23 @@ public sealed class BindingRowViewModel : ObservableObject
         _ => target.ToString(),
     };
 
-    /// <summary>An edited curve is Custom, even when the edit lands on Default's values.</summary>
-    private void ChangeCurve(ref double field, double value, [CallerMemberName] string? name = null)
+    /// <summary>An edited setting is Custom, even when the edit lands on Default's values.</summary>
+    private void ChangeTuning<T>(ref T field, T value, string[]? alsoChanged = null, [CallerMemberName] string? name = null)
     {
-        if (field != value)
+        if (!EqualityComparer<T>.Default.Equals(field, value))
         {
             _custom = true;
-            Change(ref field, value, [nameof(Preset), nameof(IsCustom)], name);
+            Change(ref field, value, [nameof(Preset), nameof(IsCustom), nameof(PresetText), .. alsoChanged ?? []], name);
         }
+    }
+
+    private bool MatchesDefault => CurrentResponse == CoreResponse.Default && _pressRampMs == 0 && _releaseRampMs == 0
+        && (!IsAxis || _mode == AxisMode.Position && _conflict == ConflictRule.LastInputWins && _rateMs == AxisBinding.DefaultRateMs && _returnMs == AxisBinding.DefaultReturnMs);
+
+    private BindingRowViewModel WithPreset()
+    {
+        _custom = !MatchesDefault;
+        return this;
     }
 
     private void Change<T>(ref T field, T value, string[]? alsoChanged = null, [CallerMemberName] string? name = null)
@@ -295,6 +391,10 @@ public sealed class BindingRowViewModel : ObservableObject
         {
             Raise(name);
         }
+        Raise(nameof(Summary));
+        Raise(nameof(CustomTag));
+        Raise(nameof(DeadzoneProblem));
+        Raise(nameof(CurveText));
         _changed(this);
     }
 }

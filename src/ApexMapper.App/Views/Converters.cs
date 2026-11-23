@@ -44,3 +44,16 @@ public sealed class FractionOfLength : IMultiValueConverter
 
     public object[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
+
+/// <summary>
+/// A curve's exponent as a slider position: 0 is straight, and each step either way doubles
+/// or halves it, so eager and gentle get the same length of track. Back to two decimals.
+/// </summary>
+public sealed class ExponentToPosition : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is double exponent && exponent > 0 ? Math.Log2(exponent) : 0d;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is double position ? Math.Round(Math.Pow(2, position), 2) : 1d;
+}

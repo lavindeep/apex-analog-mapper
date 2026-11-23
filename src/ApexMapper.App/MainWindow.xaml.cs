@@ -83,10 +83,14 @@ public partial class MainWindow : FluentWindow
         });
     }
 
-    /// <summary>The page header's Stop hides once mapping stops, so the keyboard moves to the back arrow instead of nowhere.</summary>
-    private void OnStopVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    /// <summary>
+    /// The page header's Stop hides once mapping stops, and Save and Discard once the
+    /// profile is saved or put back, so the keyboard moves to the back arrow instead of nowhere.
+    /// </summary>
+    private void OnHeaderActionHidden(object sender, DependencyPropertyChangedEventArgs e)
     {
-        if (e.NewValue is false && StopButton.IsKeyboardFocused)
+        // A button turned off first, as Save is while mapping stops, has already lost focus.
+        if (e.NewValue is false && (sender is UIElement { IsKeyboardFocusWithin: true } || Keyboard.FocusedElement is not UIElement { IsVisible: true, IsEnabled: true }))
         {
             BackButton.Focus();
         }

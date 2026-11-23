@@ -26,8 +26,9 @@ public sealed record ProfileItem(string Id, string Name, string? Problem)
 }
 
 /// <summary>
-/// The profile card. The chosen profile is the active one, the one Start maps, and the
-/// editor works on a copy of it until Save. Saving the active profile while a session
+/// The Profile page. The chosen profile is the active one, the one Start maps, and the
+/// editor works on a copy of it until Save. One binding is open at a time, the
+/// <see cref="SelectedRow"/>. Saving the active profile while a session
 /// runs stops the session when the saved text differs from what the session compiled;
 /// resetting or deleting it does too (E8). Keys are captured from Raw Input, which gives
 /// the exact scan code; a reserved key, one the hook reports differently, and one another
@@ -36,7 +37,8 @@ public sealed record ProfileItem(string Id, string Name, string? Problem)
 /// </summary>
 public sealed class ProfileViewModel : ObservableObject
 {
-    public const double PreviewWidth = 200;
+    // As wide as the slider tracks under the graph.
+    public const double PreviewWidth = 320;
     public const double PreviewHeight = 120;
     private const ushort Escape = 0x01;
 
@@ -64,6 +66,7 @@ public sealed class ProfileViewModel : ObservableObject
     private bool _isOpen;
     private PointCollection _curve = [];
     private string? _previewText;
+    private string? _previewNote;
     private Point? _marker;
     private string? _remembered;
 
@@ -77,14 +80,21 @@ public sealed class ProfileViewModel : ObservableObject
         Save = new Command(() => Background.Run(SaveAsync()), () => CanEdit && _dirty);
         Discard = new Command(DiscardEdits, () => _dirty && !_busy);
         New = new Command(CreateProfile, () => CanSwitch);
-        Delete = new Command(() => Background.Run(DeleteAsync()), () => _selected is { Id: not DefaultProfiles.ForzaId } && !_dirty && !_busy);
-        Reset = new Command(() => Background.Run(ResetAsync()), () => _selected is not null && !_dirty && !_busy);
-        AddKey = new Command(() => BeginCapture(new Capture(null, false, false)), () => CanEdit);
-        AddAxis = new Command(() => BeginCapture(new Capture(null, true, true)), () => CanEdit);
+        Delete = new Command(() => Background.Run(DeleteAsync()), () => _selected is { Id: not DefaultProfiles.ForzaId } && !_dirty && !_busy && _capture is null);
+        Reset = new Command(() => Background.Run(ResetAsync()), () => _selected is not null && !_dirty && !_busy && _capture is null);
+        AddKey = new Command(() => BeginCapture(new Capture(null, false, false)), () => CanEdit && NextKeyTarget() is not null);
+        AddAxis = new Command(() => BeginCapture(new Capture(null, true, true)), () => CanEdit && NextAxisTarget() is not null);
         Remove = new Command(RemoveRow, () => CanEdit && _selectedRow is not null);
         CaptureKey = new Command(() => BeginCapture(new Capture(_selectedRow, false, _selectedRow!.IsAxis)), () => CanEdit && _selectedRow is not null);
         CaptureNegativeKey = new Command(() => BeginCapture(new Capture(_selectedRow, true, true)), () => CanEdit && _selectedRow is { IsAxis: true });
         CancelCapture = new Command(() => EndCapture(null), () => _capture is not null);
+        Rows.CollectionChanged += (_, e) =>
+        {
+            foreach (var row in e.NewItems?.OfType<BindingRowViewModel>() ?? [])
+            {
+                row.PropertyChanged += OnRowState;
+            }
+        };
         _workspace.PropertyChanged += OnWorkspaceChanged;
         _remembered = remembered;
         Reload(remembered ?? DefaultProfiles.ForzaId, byUser: false);
@@ -113,22 +123,36 @@ public sealed class ProfileViewModel : ObservableObject
 
     public bool CanSwitch => !_dirty && !_workspace.SessionActive && _capture is null && !_busy;
 
-    /// <summary>Why the profile list is locked, or null.</summary>
-    public string? SwitchHint => _workspace.SessionActive ? "Stop mapping to switch profiles"
-        : _dirty ? "Save or discard your changes to switch profiles"
-        : _capture is not null ? "Press the key or Esc to switch profiles"
+    /// <summary>What stops the profile list and New profile, or null.</summary>
+    private string? SwitchBlocker => _workspace.SessionActive && _dirty ? "Stop mapping and save or discard your changes"
+        : _workspace.SessionActive ? "Stop mapping"
+        : _dirty ? "Save or discard your changes"
+        : _capture is not null ? "Finish or cancel the key press"
         : null;
 
-    /// <summary>Why Delete is unavailable for the Forza profile.</summary>
-    public string? DeleteHint => _selected?.Id == DefaultProfiles.ForzaId ? "The Forza profile cannot be deleted. Reset puts its defaults back." : null;
+    /// <summary>Why the profile list is locked, or null.</summary>
+    public string? SwitchHint => SwitchBlocker is { } blocker ? $"{blocker} to switch profiles" : null;
+
+    public string NewHint => SwitchBlocker is { } blocker ? $"{blocker} to start a new profile" : "Start a new profile from the default keys";
+
+    public string ResetHint => _dirty ? "Save or discard your changes to reset the bindings"
+        : _capture is not null ? "Finish or cancel the key press to reset the bindings"
+        : "Replace every binding with the default ones";
+
+    public string DeleteHint => _dirty ? "Save or discard your changes to delete the profile"
+        : _capture is not null ? "Finish or cancel the key press to delete the profile"
+        : "Delete this profile";
+
+    /// <summary>The Forza profile can't be deleted, so it shows no Delete button.</summary>
+    public bool CanDelete => _selected is { Id: not DefaultProfiles.ForzaId };
 
     /// <summary>The chosen profile loaded and can be edited: no key capture, and no save waiting for the session to stop.</summary>
     public bool CanEdit => _saved is not null && _capture is null && !_busy;
 
-    /// <summary>Beside Save: what saving now does.</summary>
-    public string? SaveNote => !_dirty ? null
-        : _workspace.RunningProfileText is not null ? "Saving stops mapping. Press Start again to use the changes."
-        : "Unsaved changes";
+    /// <summary>Under Save, while saving would stop mapping.</summary>
+    public string? SaveNote => _dirty && _workspace.RunningProfileText is { } running && ProfileJson.Serialize(BuildProfile()) != running
+        ? "Saving stops mapping. Press Start on Home again to use the changes."
+        : null;
 
     public string? Problem => _selected?.Problem;
 
@@ -146,17 +170,30 @@ public sealed class ProfileViewModel : ObservableObject
 
     public ObservableCollection<BindingRowViewModel> Rows { get; } = [];
 
+    /// <summary>The open binding, or null. Opening another one stops waiting for a key.</summary>
     public BindingRowViewModel? SelectedRow
     {
         get => _selectedRow;
         set
         {
-            if (Set(ref _selectedRow, value))
+            if (!Set(ref _selectedRow, value))
             {
-                RefreshCommands();
-                UpdateCurve();
-                WantSensor();
+                return;
             }
+            if (_capture is not null)
+            {
+                EndCapture(null);
+            }
+            foreach (var row in Rows)
+            {
+                row.IsExpanded = row == value;
+            }
+            Marker = null;
+            PreviewText = null;
+            PreviewNote = null;
+            RefreshCommands();
+            UpdateCurve();
+            WantSensor();
         }
     }
 
@@ -177,6 +214,9 @@ public sealed class ProfileViewModel : ObservableObject
     }
 
     public bool IsCapturing => _capture is not null;
+
+    /// <summary>Waiting for the key of a new binding, whose prompt shows under the add buttons.</summary>
+    public bool IsAdding => _capture is { Row: null };
 
     /// <summary>The card is expanded; the preview reads the sensor only then.</summary>
     public bool IsOpen
@@ -205,10 +245,18 @@ public sealed class ProfileViewModel : ObservableObject
         private set => Set(ref _marker, value);
     }
 
+    /// <summary>The key's reading under the graph, which changes too often to be read out as it changes.</summary>
     public string? PreviewText
     {
         get => _previewText;
         private set => Set(ref _previewText, value);
+    }
+
+    /// <summary>Why the graph shows no reading, or what to do about it: mapping runs, no readings yet, or the key needs calibrating.</summary>
+    public string? PreviewNote
+    {
+        get => _previewNote;
+        private set => Set(ref _previewNote, value);
     }
 
     public Command Save { get; }
@@ -283,7 +331,7 @@ public sealed class ProfileViewModel : ObservableObject
         else if (capture.Axis && capture.First is null)
         {
             _capture = capture with { First = key.Code };
-            Prompt = "Now press the key for the other direction: right, or up. Esc cancels.";
+            Prompt = $"Now press the key for {BindingRowViewModel.DirectionsOf(NextAxisTarget()!.Value).Positive}. Esc cancels.";
         }
         else
         {
@@ -301,42 +349,62 @@ public sealed class ProfileViewModel : ObservableObject
         if (!_services.Sensor.TryRead(_raw))
         {
             Marker = null;
-            PreviewText = _services.Sensor.Problem ?? "Waiting for the keyboard's readings.";
+            PreviewText = null;
+            PreviewNote = _workspace.Board is not { } board ? "Plug in your Apex Pro and choose it on the Keyboard page to see where the key is on the curve."
+                : board.Firmware.Version is null ? "The keyboard's firmware could not be read, so its sensors are not read either. Unplug the keyboard and plug it back in to try again."
+                : board.Unsupported ? "The app cannot read this keyboard's sensors, so the curve shows no key."
+                : !board.CanReadSensors ? "Try this keyboard on the Keyboard page first to see where the key is on the curve."
+                : _services.Sensor.Problem ?? "Waiting for the keyboard's readings.";
             return;
         }
-        var deepest = (Key: row.Key, Depth: -1f, Raw: 0, Calibrated: false);
+        // The marker follows the deepest calibrated key; the others are named in the note.
+        (ScanCode Key, float Depth, int Raw)? deepest = null;
+        List<string> uncalibrated = [], noSensor = [], counts = [];
         foreach (var key in row.IsAxis ? new[] { row.NegativeKey, row.Key } : [row.Key])
         {
+            var keyName = _services.KeyName(key);
             if (_workspace.Calibration?.Keys.TryGetValue(key, out var calibration) == true)
             {
                 var raw = _raw[calibration.SensorIndex];
                 var depth = Normalizer.Depth(calibration, raw);
-                if (depth > deepest.Depth)
+                if (deepest is null || depth > deepest.Value.Depth)
                 {
-                    deepest = (key, depth, raw, true);
+                    deepest = (key, depth, raw);
                 }
             }
-            else if (deepest.Depth < 0f && _workspace.Map.TryGetSensorIndex(key, out var index))
+            else if (_workspace.Map.TryGetSensorIndex(key, out var index))
             {
-                deepest = (key, deepest.Depth, _raw[index], false);
+                uncalibrated.Add(keyName);
+                counts.Add($"{keyName}: {_raw[index]} counts");
+            }
+            else
+            {
+                noSensor.Add(keyName);
             }
         }
-        var name = _services.KeyName(deepest.Key);
-        if (!deepest.Calibrated)
+        string[] notes =
+        [
+            .. uncalibrated.Count == 0 ? [] : new[] { $"Calibrate {string.Join(" and ", uncalibrated)} to see {(uncalibrated.Count > 1 ? "their" : "its")} depth here{(deepest is null ? "" : " too")}." },
+            .. noSensor.Count == 0 ? [] : new[] { noSensor.Count > 1 ? $"{string.Join(" and ", noSensor)} have no sensors, so they are on or off." : $"{noSensor[0]} has no sensor, so it is on or off." },
+        ];
+        PreviewNote = notes.Length == 0 ? null : string.Join(" ", notes);
+        if (deepest is not { } shown)
         {
             Marker = null;
-            PreviewText = _workspace.Map.Supports(deepest.Key)
-                ? $"{name}: {deepest.Raw} counts. Calibrate {name} to see its depth here."
-                : $"{name} has no sensor, so it is on or off.";
+            PreviewText = counts.Count == 0 ? null : string.Join(", ", counts) + ".";
             return;
         }
-        var output = row.CurrentResponse.Map(deepest.Depth);
-        Marker = new Point(deepest.Depth * PreviewWidth, (1 - output) * PreviewHeight);
-        PreviewText = $"{name}: {deepest.Raw} counts, {deepest.Depth:P0} pressed, output {output:P0}";
+        var name = _services.KeyName(shown.Key);
+        var output = row.CurrentResponse.Map(shown.Depth);
+        Marker = new Point(shown.Depth * PreviewWidth, (1 - output) * PreviewHeight);
+        PreviewText = $"{name}: {shown.Depth:P0} pressed, {row.OutputName.ToLowerInvariant()} {output:P0}.";
     }
 
-    private bool PreviewWanted => _isOpen && _selectedRow is { ShapesOutput: true } && !_workspace.SessionActive;
+    private bool PreviewWanted => _isOpen && _selectedRow is { ShapesOutput: true, IsCustom: true } && !_workspace.SessionActive;
 
+    private const string MappingNote = "Stop mapping to see where the key is on the curve.";
+
+    /// <summary>Reads the keyboard only while the preview shows. While it runs, <see cref="Tick"/> keeps the note, so an edit does not blank it.</summary>
     private void WantSensor()
     {
         _services.Sensor.Want(this, PreviewWanted);
@@ -344,6 +412,12 @@ public sealed class ProfileViewModel : ObservableObject
         {
             Marker = null;
             PreviewText = null;
+            // Mapping has the keyboard, so the preview waits for it to stop.
+            PreviewNote = _isOpen && _selectedRow is { ShapesOutput: true, IsCustom: true } && _workspace.SessionActive ? MappingNote : null;
+        }
+        else if (PreviewNote == MappingNote)
+        {
+            PreviewNote = null;
         }
     }
 
@@ -356,7 +430,7 @@ public sealed class ProfileViewModel : ObservableObject
         _selected = Profiles.First(p => p.Id == entry.Id);
         Raise(nameof(Selected));
         Raise(nameof(Problem));
-        Raise(nameof(DeleteHint));
+        Raise(nameof(CanDelete));
         if (entry.Id != _remembered)
         {
             _remembered = entry.Id;
@@ -388,7 +462,7 @@ public sealed class ProfileViewModel : ObservableObject
                 Rows.Add(BindingRowViewModel.From(key, _services.KeyName, OnRowChanged));
             }
         }
-        SelectedRow = Rows.FirstOrDefault(r => r.ShapesOutput) ?? Rows.FirstOrDefault();
+        SelectedRow = null;
         SetDirty(false);
         Message = null;
     }
@@ -450,7 +524,10 @@ public sealed class ProfileViewModel : ObservableObject
     internal async Task ResetAsync()
     {
         var item = _selected!;
-        if (!await _services.Dialogs.ConfirmAsync("Reset profile", $"Replace the bindings of \"{item.Name}\" with the Forza defaults?{StopsMapping()}", "Reset"))
+        var forza = DefaultProfiles.Forza().Name;
+        var renamed = item.Id == DefaultProfiles.ForzaId && item.Name != forza ? $" Its name goes back to {forza}." : "";
+        if (!await _services.Dialogs.ConfirmAsync("Reset bindings", $"Replace every binding of \"{item.Name}\" with the default ones? Its keys, " +
+            $"controller inputs and Custom settings go back to the defaults, and the profile is saved at once.{renamed}{StopsMapping()}", "Reset"))
         {
             return;
         }
@@ -496,38 +573,53 @@ public sealed class ProfileViewModel : ObservableObject
     /// <summary>What the edits would save wrongly, in the card's words. The profile's own check backs this up.</summary>
     private string? EditProblem()
     {
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            return "Enter a profile name.";
+        }
         if (Rows.GroupBy(r => r.Target).FirstOrDefault(g => g.Count() > 1) is { } shared)
         {
-            return $"{BindingRowViewModel.NameOf(shared.Key)} is used by more than one binding. Choose another for one of them.";
+            return $"{BindingRowViewModel.NameOf(shared.Key)} is used by {Wording.List([.. shared.Select(r => $"\"{r.KeysText}\"")])}. Choose another for one of them.";
         }
-        if (Rows.FirstOrDefault(r => r.ShapesOutput && r.Deadzone >= r.Saturation) is { } row)
+        if (Rows.FirstOrDefault(r => r.DeadzoneProblem is not null) is { } row)
         {
-            return $"{row.KeysText}: the dead zone must be less than Full output at.";
+            return $"{row.KeysText}: {row.DeadzoneProblem}";
         }
         return null;
     }
 
+    /// <summary>The key the capture waits for, as its prompt asks for it.</summary>
+    private string Ask(Capture capture) => capture switch
+    {
+        { Row: null, Axis: true, First: null } => $"Press the key for {BindingRowViewModel.DirectionsOf(NextAxisTarget()!.Value).Negative}.",
+        { Row: null, Axis: true } => $"Press the key for {BindingRowViewModel.DirectionsOf(NextAxisTarget()!.Value).Positive}.",
+        { Row: null } => "Press the key to add.",
+        { Row: { } open, Negative: true } => $"Press the key for {BindingRowViewModel.DirectionsOf(open.Target).Negative}.",
+        { Row: { } open, Axis: true } => $"Press the key for {BindingRowViewModel.DirectionsOf(open.Target).Positive}.",
+        _ => "Press the new key.",
+    };
+
     /// <summary>Why a key cannot be taken for this capture, or null.</summary>
     private string? Refusal(Capture capture, ScanCode key)
     {
-        const string Again = " Press another key, or Esc to cancel.";
+        var again = $" {Ask(capture)} Esc cancels.";
         var name = _services.KeyName(key);
         if (key.IsReserved)
         {
-            return "Ctrl, Alt, Windows and F12 cannot be mapped." + Again;
+            return "Ctrl, Alt, Windows and F12 cannot be mapped." + again;
         }
         if (!key.IsBindable)
         {
-            return $"{name} cannot be mapped: the app cannot block it reliably." + Again;
+            return $"{name} cannot be mapped: the app cannot block it reliably." + again;
         }
         var otherDirection = capture.Row is { IsAxis: true } axis ? (capture.Negative ? axis.Key : axis.NegativeKey) : capture.First;
         if (otherDirection == key)
         {
-            return "The two directions need different keys." + Again;
+            return "The two directions need different keys." + again;
         }
         if (Rows.FirstOrDefault(r => r != capture.Row && r.Uses(key)) is { } other)
         {
-            return $"{name} is already bound to {other.TargetText}." + Again;
+            return $"{name} is already bound to {other.TargetText}." + again;
         }
         return null;
     }
@@ -557,50 +649,69 @@ public sealed class ProfileViewModel : ObservableObject
 
     private void RemoveRow()
     {
-        var index = Rows.IndexOf(_selectedRow!);
-        Rows.RemoveAt(index);
-        SelectedRow = Rows.Count == 0 ? null : Rows[Math.Min(index, Rows.Count - 1)];
+        Rows.Remove(_selectedRow!);
+        SelectedRow = null;
         MarkDirty();
     }
 
     private BindingRowViewModel NewKeyRow(ScanCode key)
     {
-        var used = Rows.Select(r => r.Target).ToHashSet();
-        var target = BindingRowViewModel.KeyTargets.Select(t => t.Value).FirstOrDefault(t => !used.Contains(t));
-        return BindingRowViewModel.From(new KeyBinding(key, target, Core.Response.Response.Default, 0f, 0f), _services.KeyName, OnRowChanged);
+        return BindingRowViewModel.From(new KeyBinding(key, NextKeyTarget()!.Value, Core.Response.Response.Default, 0f, 0f), _services.KeyName, OnRowChanged);
     }
+
+    /// <summary>The stick axis a new stick binding gets: the first one no binding uses, or null when all four have one.</summary>
+    private PadTarget? NextAxisTarget() => NextFree(BindingRowViewModel.AxisTargets);
+
+    /// <summary>The button or trigger a new key binding gets, or null when every one has a binding.</summary>
+    private PadTarget? NextKeyTarget() => NextFree(BindingRowViewModel.KeyTargets);
+
+    private PadTarget? NextFree(IReadOnlyList<Option<PadTarget>> targets)
+    {
+        var used = Rows.Select(r => r.Target).ToHashSet();
+        return targets.Select(t => (PadTarget?)t.Value).FirstOrDefault(t => !used.Contains(t!.Value));
+    }
+
+    /// <summary>The add buttons' hints, which say why one is off.</summary>
+    public string AddKeyHint => NextKeyTarget() is null ? "Every button and trigger has a binding. Open one to change its key." : "Bind a key to a button or trigger";
+
+    public string AddAxisHint => NextAxisTarget() is null ? "Every stick direction has a binding. Open one to change its keys." : "Bind two keys to the two directions of a stick";
 
     private BindingRowViewModel NewAxisRow(ScanCode negative, ScanCode positive)
     {
-        var used = Rows.Select(r => r.Target).ToHashSet();
-        var target = BindingRowViewModel.AxisTargets.Select(t => t.Value).FirstOrDefault(t => !used.Contains(t), PadTarget.LeftStickX);
         return BindingRowViewModel.From(
-            new AxisBinding(negative, positive, target, Core.Response.Response.Default, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
+            new AxisBinding(negative, positive, NextAxisTarget()!.Value, Core.Response.Response.Default, 0f, 0f, ConflictRule.LastInputWins, AxisMode.Position, AxisBinding.DefaultRateMs, AxisBinding.DefaultReturnMs),
             _services.KeyName,
             OnRowChanged);
     }
 
     private void BeginCapture(Capture capture)
     {
-        _capture = capture with { From = _services.Timestamp() + CaptureArmTicks };
-        Message = null;
-        Prompt = capture switch
+        if (capture.Row is null)
         {
-            { Row: null, Axis: true } => "Press the key for one direction: left, or down. Esc cancels.",
-            { Row: null } => "Press the key to add. Esc cancels.",
-            { Negative: true } => "Press the key for left, or down. Esc cancels.",
-            { Axis: true } => "Press the key for right, or up. Esc cancels.",
-            _ => "Press the new key. Esc cancels.",
-        };
+            SelectedRow = null;
+        }
+        _capture = capture with { From = _services.Timestamp() + CaptureArmTicks };
+        if (capture.Row is { } row)
+        {
+            row.IsCapturing = true;
+        }
+        Message = null;
+        Prompt = (capture is { Row: null, Axis: true } ? $"New binding: {BindingRowViewModel.NameOf(NextAxisTarget()!.Value)}. " : "") + Ask(capture) + " Esc cancels.";
         Raise(nameof(IsCapturing));
+        Raise(nameof(IsAdding));
         RefreshCommands();
     }
 
     private void EndCapture(BindingRowViewModel? added)
     {
+        if (_capture?.Row is { } row)
+        {
+            row.IsCapturing = false;
+        }
         _capture = null;
         Prompt = null;
         Raise(nameof(IsCapturing));
+        Raise(nameof(IsAdding));
         if (added is not null)
         {
             Rows.Add(added);
@@ -620,7 +731,36 @@ public sealed class ProfileViewModel : ObservableObject
         }
     }
 
-    private void MarkDirty() => SetDirty(true);
+    /// <summary>Opening or closing a row in the list, and a switch to Custom, which shows the preview.</summary>
+    private void OnRowState(object? sender, PropertyChangedEventArgs e)
+    {
+        var row = (BindingRowViewModel)sender!;
+        if (e.PropertyName == nameof(BindingRowViewModel.IsExpanded) && Rows.Contains(row))
+        {
+            if (row.IsExpanded)
+            {
+                SelectedRow = row;
+            }
+            else if (row == _selectedRow)
+            {
+                SelectedRow = null;
+            }
+        }
+        else if (e.PropertyName == nameof(BindingRowViewModel.IsCustom) && row == _selectedRow)
+        {
+            WantSensor();
+        }
+    }
+
+    private void MarkDirty()
+    {
+        SetDirty(true);
+        Raise(nameof(SaveNote));
+        if (Message is not null)
+        {
+            Message = EditProblem();
+        }
+    }
 
     private void SetDirty(bool dirty)
     {
@@ -629,6 +769,9 @@ public sealed class ProfileViewModel : ObservableObject
             _workspace.ProfileUnsaved = dirty;
             Raise(nameof(CanSwitch));
             Raise(nameof(SwitchHint));
+            Raise(nameof(NewHint));
+            Raise(nameof(ResetHint));
+            Raise(nameof(DeleteHint));
             Raise(nameof(SaveNote));
         }
         RefreshCommands();
@@ -664,6 +807,9 @@ public sealed class ProfileViewModel : ObservableObject
         {
             Raise(nameof(CanSwitch));
             Raise(nameof(SwitchHint));
+            Raise(nameof(NewHint));
+            Raise(nameof(ResetHint));
+            Raise(nameof(DeleteHint));
             RefreshCommands();
             WantSensor();
         }
@@ -683,6 +829,11 @@ public sealed class ProfileViewModel : ObservableObject
         Raise(nameof(CanEdit));
         Raise(nameof(CanSwitch));
         Raise(nameof(SwitchHint));
+        Raise(nameof(NewHint));
+        Raise(nameof(ResetHint));
+        Raise(nameof(DeleteHint));
+        Raise(nameof(AddKeyHint));
+        Raise(nameof(AddAxisHint));
         foreach (var command in new[] { Save, Discard, New, Delete, Reset, AddKey, AddAxis, Remove, CaptureKey, CaptureNegativeKey, CancelCapture })
         {
             command.Refresh();

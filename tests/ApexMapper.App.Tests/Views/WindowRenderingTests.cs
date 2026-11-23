@@ -10,6 +10,7 @@ using ApexMapper.App.Storage;
 using ApexMapper.App.Tests.ViewModels;
 using ApexMapper.App.ViewModels;
 using ApexMapper.App.Views;
+using ApexMapper.Core.Bindings;
 using ApexMapper.Core.Calibration;
 using ApexMapper.Core.Profiles;
 using ApexMapper.Windows.Hid;
@@ -236,14 +237,58 @@ public sealed class WindowRenderingTests
             main.Profile.CaptureNegativeKey.Execute(null);
             return Task.CompletedTask;
         }, Narrow: true),
-        new("custom-response", _ => { }, (main, _) =>
+        new("custom-response", h => h.CalibrateForza(), (main, h) =>
         {
             main.Page = Page.Profile;
-            var row = main.Profile.Rows.First(r => r.ShapesOutput);
-            row.Preset = ResponsePreset.Custom;
+            var row = main.Profile.Rows.First(r => r.Key == DefaultProfiles.Key.W);
             main.Profile.SelectedRow = row;
+            row.Preset = ResponsePreset.Custom;
+            row.Deadzone = 0.1;
+            h.Sensor.Reading = AppHarness.Holding(16, 2375);
+            main.Profile.Tick();
             return Task.CompletedTask;
         }),
+        new("custom-stick-uncalibrated", _ => { }, (main, h) =>
+        {
+            main.Page = Page.Profile;
+            var row = main.Profile.Rows.First(r => r.Target == PadTarget.LeftStickX);
+            main.Profile.SelectedRow = row;
+            row.Preset = ResponsePreset.Custom;
+            h.Sensor.Reading = FakeSensor.AtRest();
+            main.Profile.Tick();
+            return Task.CompletedTask;
+        }, Narrow: true),
+        new("dead-zone-past-full", _ => { }, (main, _) =>
+        {
+            main.Page = Page.Profile;
+            var row = main.Profile.Rows.First(r => r.Key == DefaultProfiles.Key.W);
+            main.Profile.SelectedRow = row;
+            row.Preset = ResponsePreset.Custom;
+            row.Saturation = 0.4;
+            row.Deadzone = 0.5;
+            return Task.CompletedTask;
+        }, Narrow: true),
+        new("add-binding", _ => { }, (main, _) =>
+        {
+            main.Page = Page.Profile;
+            main.Profile.AddAxis.Execute(null);
+            return Task.CompletedTask;
+        }, Narrow: true),
+        new("new-profile", _ => { }, (main, _) =>
+        {
+            main.Page = Page.Profile;
+            main.Profile.New.Execute(null);
+            main.Profile.SelectedRow = main.Profile.Rows.First(r => !r.ShapesOutput);
+            return Task.CompletedTask;
+        }),
+        new("profile-edited-while-mapping", Ready, async (main, _) =>
+        {
+            await main.Status.StartAsync();
+            main.Page = Page.Profile;
+            main.Profile.Rows.First(r => r.IsAxis).Preset = ResponsePreset.Custom;
+            main.Profile.Rows.First(r => r.IsAxis).Mode = AxisMode.Rate;
+            main.Profile.SelectedRow = main.Profile.Rows.First(r => r.IsAxis);
+        }, Narrow: true),
         new("update-available", h =>
         {
             Ready(h);
@@ -347,9 +392,9 @@ public sealed class WindowRenderingTests
             var labels = Descendants<Button>(window).Where(button => button.IsVisible).Select(button => button.Content).OfType<string>().ToList();
             Assert.Contains(row.ChangeKeyText, labels);
             Assert.True(!row.IsAxis || labels.Contains(row.ChangeNegativeKeyText), $"{where}: no button says {row.ChangeNegativeKeyText}");
-            // The Default response can't be edited, so its sliders show only for Custom.
-            var curveShows = Descendants<System.Windows.Controls.Slider>(window).Any(slider => AutomationProperties.GetName(slider) == "Curve" && slider.IsVisible);
-            Assert.True(curveShows == (row.ShapesOutput && row.IsCustom), $"{where}: the curve slider {(curveShows ? "shows" : "is hidden")}");
+            // The Default preset can't be edited, so the open binding's settings show only for Custom, and no other binding is open.
+            var curves = Descendants<System.Windows.Controls.Slider>(window).Count(slider => AutomationProperties.GetName(slider) == "Curve" && slider.IsVisible);
+            Assert.True(curves == (row.ShapesOutput && row.IsCustom ? 1 : 0), $"{where}: {curves} curve sliders show");
         }
         // A screen reader reads each live text by the name it gives its element: the state on Home, and the capture prompt while it shows.
         var live = Descendants<FrameworkElement>(window).Where(e => !string.IsNullOrEmpty(Live.GetText(e))).ToList();

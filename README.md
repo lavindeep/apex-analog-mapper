@@ -120,15 +120,15 @@ The ones that matter are the steering, acceleration and deceleration inside dead
 at 0. A key's sensor barely changes over the first part of the press, so an inside
 deadzone on top of that leaves the start of the press doing nothing.
 
-For the same reason, steering, throttle and brake in the Forza profile use the Default
-response, which turns those small early readings into output. It gives about half the
+For the same reason, every trigger and stick in the Forza profile uses the Default
+preset, whose curve turns those small early readings into output. It gives about half the
 output a fifth of the way into the press and three quarters at halfway. A profile
 that still has the bindings 0.5.0-alpha shipped moves to Default the first time this
 version loads it, and the old file stays beside it as `.bak`. A profile you edited keeps
-the curves it has, and a row on one of the old presets shows Custom. If the wheel stays
-still for the first third of the press in one of those, select the steering row on the
-profile card and choose Default under Response. Do the same for the throttle and brake
-rows.
+the curves it has, and a binding on one of the old curves shows Custom. If the wheel
+stays still for the first third of the press in one of those, open the steering binding
+on the Profile page and choose Default under Preset. Default also puts back the ramps and
+the stick settings. Do the same for the throttle and brake bindings, then press Save.
 
 ## Sharing setups
 
@@ -144,8 +144,8 @@ To use someone else's:
    like `forza-alex.json`. Set "Save as type" to All files so the name doesn't end in
    `.txt`. Use letters, numbers, `-` and `_`, and don't call it `forza.json`, or it
    replaces your own Forza profile.
-2. Restart the app. The profile shows up on the profile card under the name its author
-   gave it.
+2. Restart the app. The profile shows up in the Profile list on Home under the name its
+   author gave it.
 
 If a setup works well for a game, I may ship it with the app as a built-in profile.
 
