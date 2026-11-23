@@ -11,7 +11,7 @@ namespace ApexMapper.Core.Sensors;
 /// Reply layout for a group read (65 bytes): byte 0 is the report id and must be 0;
 /// bytes 1..28 are fourteen raw uint16 little-endian samples; bytes 29..56 are the
 /// firmware's filtered copies; bytes 57..64 must be zero. Samples are 12-bit.
-/// Replies carry no command echo, so callers must serialise exchanges.
+/// Group replies carry no command echo, so callers must serialise exchanges.
 /// </summary>
 public static class SensorProtocol
 {
@@ -27,7 +27,11 @@ public static class SensorProtocol
     private const int FilteredOffset = 29;
     private const int PaddingOffset = 57;
 
-    /// <summary>Parses a firmware reply. Returns an error, or null with the version set.</summary>
+    /// <summary>
+    /// Parses a firmware reply. Returns an error, or null with the version set. The 4.x
+    /// and 3.x firmware put the version at byte 1. The wired 1.x firmware puts the
+    /// command and a zero status ahead of it, as a TKL Gen 3 on 1.19.7 did (issue #14).
+    /// </summary>
     public static string? ParseFirmware(ReadOnlySpan<byte> reply, out string version)
     {
         version = string.Empty;
@@ -40,6 +44,10 @@ public static class SensorProtocol
             return "Reply report id was not zero.";
         }
         var text = reply[1..];
+        if (text[0] == SensorRequest.FirmwareCommand && text[1] == 0)
+        {
+            text = text[2..];
+        }
         var end = text.IndexOf((byte)0);
         if (end < 0)
         {

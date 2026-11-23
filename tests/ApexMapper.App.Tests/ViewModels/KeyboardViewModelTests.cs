@@ -75,7 +75,7 @@ public sealed class KeyboardViewModelTests : IDisposable
 
         Assert.Equal(AppHarness.Gen3, _h.SavedSettings.Keyboard);
         Assert.Equal(AppHarness.Gen3, _h.Workspace.Board?.Id);
-        Assert.Equal("Apex Pro TKL Gen 3", keyboard.Summary);
+        Assert.Equal("Apex Pro Gen 3", keyboard.Summary);
         Assert.Null(keyboard.Missing);
         Assert.Contains(nameof(keyboard.Missing), raised);
     }
@@ -241,11 +241,11 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.False(keyboard.OffersExport);
         // Filled in for the board exported, though it is gone now.
         keyboard.OpenIssue.Execute(null);
-        Assert.Equal([SupportIssue.Url("Apex Pro TKL Gen 3", 0x1642, "1.0", SensorSupport.Unverified, SensorCheckResult.Passed, "0.5.0")], _h.Opened);
+        Assert.Equal([SupportIssue.Url("Apex Pro Gen 3", 0x1640, "1.0", SensorSupport.Unverified, SensorCheckResult.Passed, "0.5.0")], _h.Opened);
         var export = CaptureExport.FromJson(File.ReadAllText(_h.Dialogs.SavePath), out var error);
 
         Assert.Null(error);
-        Assert.Equal(0x1642, export!.ProductId);
+        Assert.Equal(0x1640, export!.ProductId);
         Assert.Equal((65, 65), (export.InputReportLength, export.OutputReportLength));
         Assert.Equal("1.0", export.Firmware);
         Assert.Equal("00312E30", export.Replies.Single(r => r.Label == "firmware").ReplyHex);
@@ -470,16 +470,18 @@ public sealed class KeyboardViewModelTests : IDisposable
     }
 
     [Theory]
+    [InlineData(0x1628)]
     [InlineData(0x1630)]
     [InlineData(0x1632)]
+    [InlineData(0x1642)]
     [InlineData(0x1644)]
     [InlineData(0x1646)]
     public void An_unsupported_board_says_so_and_is_never_asked_for_its_sensors_even_with_earlier_consent(int productId)
     {
-        var wireless = AppHarness.Gen3Info with { ProductId = (ushort)productId, Name = "Apex Pro TKL Wireless" };
-        _h.Boards[0] = wireless;
+        var unsupported = AppHarness.Gen3Info with { ProductId = (ushort)productId };
+        _h.Boards[0] = unsupported;
 
-        var keyboard = Create(consented: [wireless.ContainerId]);
+        var keyboard = Create(consented: [unsupported.ContainerId]);
 
         Assert.Equal("Not supported", keyboard.Boards.Single().Detail);
         Assert.True(keyboard.IsUnsupported);
