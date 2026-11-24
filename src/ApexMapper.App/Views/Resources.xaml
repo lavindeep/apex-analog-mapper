@@ -125,6 +125,14 @@
     <Setter Property="BorderBrush" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
     <Setter Property="VerticalAlignment" Value="Top" />
   </Style>
+  <!-- A step that is done: a check mark in place of its number. -->
+  <Style x:Key="StepDone" TargetType="ui:SymbolIcon">
+    <Setter Property="Symbol" Value="CheckmarkCircle24" />
+    <Setter Property="Filled" Value="True" />
+    <Setter Property="FontSize" Value="28" />
+    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
   <Style x:Key="StepNumberText" TargetType="ui:TextBlock">
     <Setter Property="FontTypography" Value="BodyStrong" />
     <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />

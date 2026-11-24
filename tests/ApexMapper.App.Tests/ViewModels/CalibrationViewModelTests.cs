@@ -112,6 +112,13 @@ public sealed class CalibrationViewModelTests : IDisposable
         Assert.Equal(new KeyCalibration(850, 3900, KeyCalibration.NoiseBandFor(0), 16), w.Stored);
         Assert.Equal(w.Stored, _h.Workspace.Calibration!.Keys[DefaultProfiles.Key.W]);
         Assert.Equal("1 of 4 analog keys in this profile calibrated", calibration.Summary);
+        Assert.False(w.ShowsSteps);
+
+        w.IsExpanded = false;
+        w.IsExpanded = true;
+
+        Assert.True(w.ShowsSteps);
+        Assert.Null(w.Message);
     }
 
     [Fact]
@@ -224,7 +231,7 @@ public sealed class CalibrationViewModelTests : IDisposable
         w.SetReleased.Execute(null);
         Run(calibration, CalibrationViewModel.ReleasedMs);
         Assert.Equal(new KeyCalibration(870, 3900, 40, 16), w.Stored);
-        Assert.Equal("Released 870. Saved, keeping fully pressed 3900. Do step 2 too if W no longer reaches full output. Open S to calibrate it next.", w.Message);
+        Assert.Equal("Released 870. Saved, keeping fully pressed 3900. Hold W all the way down: if the bar stops short of the right mark, do step 2 too. Open S to calibrate it next.", w.Message);
 
         // Part way down, short of where the key reports a press.
         _h.Sensor.Reading = AppHarness.Holding(16, 2400);
@@ -269,7 +276,7 @@ public sealed class CalibrationViewModelTests : IDisposable
 
         Assert.Equal("Saved readings: released 850, fully pressed 4095. W reaches full output before it bottoms out; the last bit of travel does nothing. That is how its sensor reads, so there is nothing to fix.", W(calibration).Status);
         var s = calibration.Rows.Single(r => r.Name == "S");
-        Assert.Equal(("Calibrated, full output early", "Not calibrated", ""), (W(calibration).StateText, s.StateText, s.Status));
+        Assert.Equal(("Full output early", "Not calibrated", ""), (W(calibration).StateText, s.StateText, s.Status));
     }
 
     [Fact]
@@ -320,7 +327,7 @@ public sealed class CalibrationViewModelTests : IDisposable
         var w = W(calibration);
         Assert.Null(w.SensorIndex);
         Assert.True(w.NeedsSensor);
-        Assert.Equal("Find sensor first", w.StateText);
+        Assert.Equal("Sensor not found yet", w.StateText);
         Assert.False(w.SetReleased.CanExecute(null));
 
         BeginLearn(calibration, w);
@@ -384,14 +391,15 @@ public sealed class CalibrationViewModelTests : IDisposable
         calibration.Tick(_h.Now + CalibrationViewModel.NoReadingMs + 1);
 
         Assert.False(calibration.IsBusy);
-        Assert.Equal("No readings came from the keyboard, so this step stopped. Try the step again once the dot moves.", w.Message);
+        Assert.Equal("No readings came from the keyboard, so this step stopped. Try the step again once the bar moves.", w.Message);
         Assert.Equal(CalibrationViewModel.SensorTrouble, calibration.SensorProblem);
         // The error says what to do, so neither the list nor the key asks the user to wait.
         Assert.Equal((null, null), (calibration.KeysNote, w.WaitingText));
         Assert.Single(_h.Log, l => l == "Calibration sensor problem: The keyboard stopped answering.");
         // With no readings the dot goes, rather than stay where the last one put it.
         Assert.Null(w.Raw);
-        Assert.Equal((true, false), (w.ShowsWaiting, w.ShowsSensorHint));
+        // The steps can't run without readings, so their instructions wait with them.
+        Assert.Equal((false, false, false), (w.ShowsSteps, w.ShowsWaiting, w.ShowsSensorHint));
 
         // The error belongs to the keyboard that had it.
         _h.Workspace.Board = null;
@@ -407,9 +415,10 @@ public sealed class CalibrationViewModelTests : IDisposable
         w.IsExpanded = true;
         w.SetReleased.Execute(null);
         Assert.Same(w, calibration.ActiveRow);
-        // The running step's message is the only instruction.
-        Assert.False(w.ShowsSteps);
-        Assert.Null(calibration.KeysNote);
+        // The steps and the note stay while a step runs, so the page holds still; the buttons are off.
+        Assert.True(w.ShowsSteps);
+        Assert.False(w.SetPressed.CanExecute(null));
+        Assert.NotNull(calibration.KeysNote);
 
         s.IsExpanded = true;
         w.IsExpanded = false;
@@ -456,7 +465,8 @@ public sealed class CalibrationViewModelTests : IDisposable
         var calibration = Open();
 
         Assert.NotNull(W(calibration).Stored);
-        Assert.Equal("W was calibrated on other firmware. The readings are kept; open it and press Set released to check they still fit.", calibration.Problem);
+        Assert.Equal("W was calibrated on other firmware, and mapping still uses the readings. After the keys that are not calibrated, open it and press Set released to check they still fit.", calibration.Problem);
         Assert.Equal("1 of 4 analog keys in this profile calibrated", calibration.Summary);
+        Assert.Equal(DefaultProfiles.Key.S, calibration.Rows.Single(r => r.IsExpanded).Key);
     }
 }

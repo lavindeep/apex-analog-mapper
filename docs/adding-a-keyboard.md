@@ -97,7 +97,7 @@ so set that aside first.
    named "Profile 2", or the next free number, with the default Forza keys, and selects
    it. Your own profiles stay as they are.
 7. Go back to Home and open Calibration. Each of W, A, S and D says "Not calibrated". If a
-   key says "Find sensor first", your build doesn't treat the model as tested, so check
+   key says "Sensor not found yet", your build doesn't treat the model as tested, so check
    the change.
 8. Press W, A, S and D one at a time, halfway and then fully. Each key's bar follows that
    key, and no other bar moves. Press no button on the page.

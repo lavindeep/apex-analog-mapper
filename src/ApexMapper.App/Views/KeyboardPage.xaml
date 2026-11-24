@@ -9,14 +9,6 @@
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:KeyboardViewModel}">
   <UserControl.Resources>
-    <!-- A try-it step that is done: a check mark in place of its number. -->
-    <Style x:Key="StepDone" TargetType="ui:SymbolIcon">
-      <Setter Property="Symbol" Value="CheckmarkCircle24" />
-      <Setter Property="Filled" Value="True" />
-      <Setter Property="FontSize" Value="28" />
-      <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
-      <Setter Property="VerticalAlignment" Value="Top" />
-    </Style>
     <!-- A step after step 1: grey until step 1 is done, so one accent ring marks where to begin. -->
     <Style x:Key="LaterStepNumber" TargetType="Border" BasedOn="{StaticResource StepNumber}">
       <Style.Triggers>
