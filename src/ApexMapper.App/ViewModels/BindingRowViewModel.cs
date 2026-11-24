@@ -152,9 +152,10 @@ public sealed class BindingRowViewModel : ObservableObject
     public string NegativeKeyName => _keyName(_negativeKey);
 
     /// <summary>The label of the button that captures <see cref="Key"/>, which is also its screen-reader name.</summary>
-    public string ChangeKeyText => "Change " + KeyName;
+    /// <summary>A stick's two buttons name their direction, since their order alone does not say it.</summary>
+    public string ChangeKeyText => IsAxis ? $"Change {DirectionsOf(_target).Positive} key ({KeyName})" : "Change " + KeyName;
 
-    public string ChangeNegativeKeyText => "Change " + NegativeKeyName;
+    public string ChangeNegativeKeyText => $"Change {DirectionsOf(_target).Negative} key ({NegativeKeyName})";
 
     public string KeysText => IsAxis ? $"{_keyName(_negativeKey)} and {_keyName(_key)}" : _keyName(_key);
 
@@ -165,7 +166,7 @@ public sealed class BindingRowViewModel : ObservableObject
     public PadTarget Target
     {
         get => _target;
-        set => Change(ref _target, value, [nameof(TargetText), nameof(ShapesOutput), nameof(NegativeKeyHint), nameof(KeyHint)]);
+        set => Change(ref _target, value, [nameof(TargetText), nameof(ShapesOutput), nameof(NegativeKeyHint), nameof(KeyHint), nameof(ChangeKeyText), nameof(ChangeNegativeKeyText)]);
     }
 
     /// <summary>A stick axis's two directions, as the prompts and buttons name them.</summary>
@@ -224,7 +225,7 @@ public sealed class BindingRowViewModel : ObservableObject
     public bool IsCustom => _custom;
 
     /// <summary>What the chosen preset does, under its list.</summary>
-    public string PresetText => _custom ? "Change any setting below. Choose Default to put them all back."
+    public string PresetText => _custom ? "Change any setting for this binding. Choose Default to put back the settings the app ships."
         : IsAxis ? "The settings the app ships, tested driving Forza Horizon 6. The stick leans as far as a key is pressed, rising quickly from " +
             "the start of the press with no dead zone or delay. With both keys held, the one pressed last wins."
         : "The settings the app ships, tested driving Forza Horizon 6. The output rises quickly from the start of the press, with no dead zone or delay.";
@@ -275,8 +276,13 @@ public sealed class BindingRowViewModel : ObservableObject
 
     /// <summary>Why the response would not save, shown under its sliders as they move, or null.</summary>
     public string? DeadzoneProblem => ShapesOutput && Deadzone >= Saturation
-        ? $"The dead zone has to end before {(IsAxis && IsRateMode ? "full speed" : "full output")}."
+        ? $"The dead zone has to end before {FullName}."
         : null;
+
+    /// <summary>What the preview shows in place of a curve it cannot draw, or null.</summary>
+    public string? EmptyGraphText => DeadzoneProblem is null ? null : $"No curve until the dead zone ends before {FullName}";
+
+    private string FullName => IsAxis && IsRateMode ? "full speed" : "full output";
 
     /// <summary>Where the Curve slider sits, in the words under it, for screen readers.</summary>
     public string CurveText => Exponent switch
@@ -394,6 +400,7 @@ public sealed class BindingRowViewModel : ObservableObject
         Raise(nameof(Summary));
         Raise(nameof(CustomTag));
         Raise(nameof(DeadzoneProblem));
+        Raise(nameof(EmptyGraphText));
         Raise(nameof(CurveText));
         _changed(this);
     }
