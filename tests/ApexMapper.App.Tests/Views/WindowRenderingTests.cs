@@ -551,6 +551,9 @@ public sealed class WindowRenderingTests
         // A button with no text of its own has a name for a screen reader.
         Assert.All(Descendants<Button>(window).Where(button => button.IsVisible && button.Content is not string), button =>
             Assert.False(string.IsNullOrEmpty(AutomationProperties.GetName(button)), $"{where}: a button has no name"));
+        // An expandable row takes focus on its toggle, which says the row's name.
+        Assert.All(Descendants<CardExpander>(window).Where(row => row.IsVisible), row =>
+            Assert.Equal(AutomationProperties.GetName(row), AutomationProperties.GetName((UIElement)row.Template.FindName("ExpanderToggleButton", row))));
         Assert.All(Descendants<TitleBarButton>(window).Where(button => button.IsVisible), button =>
             Assert.Equal(button.ButtonType.ToString(), AutomationProperties.GetName(button)));
     }

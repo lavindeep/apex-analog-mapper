@@ -89,7 +89,7 @@
     <ItemsControl x:Name="Bindings" ItemsSource="{Binding Rows}" Focusable="False" Grid.IsSharedSizeScope="True" AutomationProperties.Name="Bindings">
       <ItemsControl.ItemTemplate>
         <DataTemplate DataType="vm:BindingRowViewModel">
-          <ui:CardExpander Margin="0,0,0,4" IsExpanded="{Binding IsExpanded}" AutomationProperties.Name="{Binding Summary}">
+          <ui:CardExpander Margin="0,0,0,4" IsExpanded="{Binding IsExpanded}" AutomationProperties.Name="{Binding Summary}" Loaded="OnRowLoaded">
             <ui:CardExpander.Header>
               <Grid>
                 <Grid.ColumnDefinitions>

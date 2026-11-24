@@ -97,4 +97,6 @@ public partial class ProfilePage : UserControl
             }
         });
     }
+
+    private void OnRowLoaded(object sender, RoutedEventArgs e) => VisualTree.NameExpanderToggle((Wpf.Ui.Controls.CardExpander)sender);
 }
