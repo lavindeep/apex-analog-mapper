@@ -371,11 +371,12 @@ public sealed class CalibrationViewModel : ObservableObject
         }
     }
 
+    // Counts every key with saved readings, since mapping drives with them, so the count agrees with the keys Home asks to calibrate.
     public string Summary
     {
         get
         {
-            var done = _rows.Count(r => r.IsCalibrated);
+            var done = _rows.Count(r => r.Stored is not null);
             return _workspace.Board is not { } board ? (_workspace.ReadingFirmware ? "Reading the keyboard's firmware"
                     : _services.Keyboards.Current.Count == 0 ? "No keyboard plugged in" : "No keyboard chosen")
                 : board.Firmware.Version is null ? "Firmware could not be read"

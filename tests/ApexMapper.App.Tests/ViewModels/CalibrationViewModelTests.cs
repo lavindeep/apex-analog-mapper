@@ -457,6 +457,6 @@ public sealed class CalibrationViewModelTests : IDisposable
 
         Assert.NotNull(W(calibration).Stored);
         Assert.Equal("W was calibrated on other firmware. The readings are kept; open it and press Set released to check they still fit.", calibration.Problem);
-        Assert.Equal("0 of 4 analog keys in this profile calibrated", calibration.Summary);
+        Assert.Equal("1 of 4 analog keys in this profile calibrated", calibration.Summary);
     }
 }
