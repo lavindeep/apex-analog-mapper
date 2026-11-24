@@ -13,6 +13,7 @@ using ApexMapper.App.Views;
 using ApexMapper.Core.Bindings;
 using ApexMapper.Core.Calibration;
 using ApexMapper.Core.Profiles;
+using ApexMapper.Core.Sensors;
 using ApexMapper.Windows.Hid;
 using ApexMapper.Windows.Input;
 using ApexMapper.Windows.Output;
@@ -249,7 +250,9 @@ public sealed class WindowRenderingTests
             main.Page = Page.Keyboard;
             main.Keyboard.Consent.Execute(null);
             h.Sensor.Problem = "Reply padding was not zero.";
+            h.Sensor.Rejected = new CapturedReply("rejected: Reply padding was not zero.", 1, "00AB");
             main.Keyboard.Tick(h.Now + KeyboardViewModel.CheckTimeoutMs + 1);
+            h.Sensor.Rejected = null;
             return Task.CompletedTask;
         }),
         new("untested-board-checking", h =>
@@ -281,17 +284,33 @@ public sealed class WindowRenderingTests
             main.Keyboard.Export.Execute(null);
             return Task.CompletedTask;
         }, Narrow: true),
+        // A capture saved before step 1: step 3 holds the one accent.
+        new("untested-board-exported-first", h =>
+        {
+            h.Boards[0] = AppHarness.Gen3Info;
+            h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
+            Directory.CreateDirectory(h.File("Downloads"));
+            h.Dialogs.SavePath = h.File(@"Downloads\capture.json");
+        }, (main, h) =>
+        {
+            main.Page = Page.Keyboard;
+            main.Keyboard.Export.Execute(null);
+            return Task.CompletedTask;
+        }),
         new("untested-board-mapping", h =>
         {
             Ready(h);
             h.CalibrateForza(AppHarness.Gen3, "1.2.0");
             h.Boards[0] = AppHarness.Gen3Info;
             h.FirmwareOf = _ => new FirmwareReading("1.2.0", null, null);
+            Directory.CreateDirectory(h.File("Downloads"));
+            h.Dialogs.SavePath = h.File(@"Downloads\capture.json");
         }, async (main, h) =>
         {
             // An untested board maps only after consent, which also starts a check that mapping then ends.
             main.Keyboard.Consent.Execute(null);
             await main.Status.StartAsync();
+            main.Keyboard.Export.Execute(null);
             main.Page = Page.Keyboard;
         }),
         new("untested-board-no-firmware", h =>

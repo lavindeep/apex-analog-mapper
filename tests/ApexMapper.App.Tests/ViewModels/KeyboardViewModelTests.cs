@@ -163,7 +163,7 @@ public sealed class KeyboardViewModelTests : IDisposable
 
         var keyboard = Create();
 
-        Assert.Equal("4.20.0", keyboard.FirmwareText);
+        Assert.Equal("4.20.0 · Not tested yet", keyboard.FirmwareText);
         Assert.StartsWith("The app has not been tested with firmware 4.20.0.", keyboard.FirmwareWarning);
         Assert.True(_h.Workspace.Board!.CanReadSensors);
     }
@@ -321,6 +321,7 @@ public sealed class KeyboardViewModelTests : IDisposable
 
         Assert.Null(keyboard.ExportNote);
         Assert.True(keyboard.CheckPassed);
+        Assert.Equal((true, false), (keyboard.CalibrateNext, keyboard.CheckNext));
     }
 
     [Fact]
@@ -336,6 +337,8 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.Equal("The sensors respond to key presses. Sensor 17 moved, which the app maps to E, not W.", keyboard.CheckText);
         Assert.StartsWith("Run the check again holding only W to be sure.", keyboard.NextStep);
         Assert.True(keyboard.CheckPassed);
+        Assert.Equal((false, true), (keyboard.CalibrateNext, keyboard.CheckNext));
+        Assert.Equal("Step 2 of 3: check the sensors", keyboard.Step2Name);
         // The key held stays out of the log.
         Assert.Equal(["Sensor check: The sensors respond to key presses."], _h.Log.Where(line => line.StartsWith("Sensor check", StringComparison.Ordinal)));
     }
@@ -354,6 +357,7 @@ public sealed class KeyboardViewModelTests : IDisposable
         Assert.False(keyboard.IsChecking);
         Assert.StartsWith("No sensor moved", keyboard.CheckText);
         Assert.StartsWith("Run it again and hold W", keyboard.NextStep);
+        Assert.Equal((false, true), (keyboard.CalibrateNext, keyboard.CheckNext));
         // The key to hold stays out of the log.
         Assert.Contains("Sensor check: No sensor moved during the check.", _h.Log);
     }

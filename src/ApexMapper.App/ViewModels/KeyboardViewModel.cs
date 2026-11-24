@@ -107,6 +107,12 @@ public sealed class KeyboardViewModel : ObservableObject
         Pressing,
     }
 
+    /// <summary>A check ended with its result on show. Not raised when a result comes back with its board.</summary>
+    public event Action? CheckEnded;
+
+    /// <summary>A capture was written to disk.</summary>
+    public event Action? CaptureSaved;
+
     public KeyboardViewModel(AppServices services, Workspace workspace, Guid? remembered, IEnumerable<Guid>? consented)
     {
         _services = services;
@@ -177,7 +183,7 @@ public sealed class KeyboardViewModel : ObservableObject
     /// <summary>The Firmware row's line, or null while no board is chosen.</summary>
     public string? FirmwareText => _reading ? "Reading..."
         : _workspace.Board is not { } board ? null
-        : board.Firmware.Version is { } version ? version
+        : board.Firmware.Version is { } version ? (board is { Verified: true, FirmwareVerified: false } ? $"{version} · Not tested yet" : version)
         : !board.Info.HasVendorInterface ? "Could not be read, because Windows did not show the app the keyboard's sensor interface. " +
             "Unplug the keyboard and plug it back in to try again."
         : "Could not be read. Unplug the keyboard and plug it back in to try again.";
@@ -211,6 +217,11 @@ public sealed class KeyboardViewModel : ObservableObject
           (CheckBlocked is not null || (_checkResult == SensorCheckResult.Failed && ResultsHere) ? ""
             : NeedsConsent ? " Run steps 1 and 2 first if you can." : " Run step 2 first if you can.");
 
+    /// <summary>W's sensor moved, so calibration is the next step.</summary>
+    public bool CalibrateNext => CheckPassed && _movedW;
+
+    /// <summary>The sensors may be read and W's sensor has not moved in a check yet, so a check is the next step.</summary>
+    public bool CheckNext => HasConsented && !CalibrateNext;
     /// <summary>
     /// The next step after a check that ended with a result, on its own line under it, or
     /// null. Another sensor than W's asks for a retry first.
@@ -218,8 +229,8 @@ public sealed class KeyboardViewModel : ObservableObject
     public string? NextStep => !CheckPassed ? (_checkResult == SensorCheckResult.Failed && _workspace.Board is not null && ResultsHere ? _retry : null)
         : _movedW ? "To drive with this keyboard, calibrate each key. Calibration finds each key's sensor first. " +
             "To help this model join the tested list, share a capture in step 3."
-        : $"Run the check again holding only {_services.KeyName(DefaultProfiles.Key.W)} to be sure. If the same sensor moves again, that sensor is " +
-          $"{_services.KeyName(DefaultProfiles.Key.W)} on this model. Either way, Calibration finds each key's sensor, so you can calibrate to drive.";
+        : $"Run the check again holding only {_services.KeyName(DefaultProfiles.Key.W)} to be sure. If the same sensor moves again, " +
+          $"{_services.KeyName(DefaultProfiles.Key.W)} may use a different sensor on your keyboard. Either way, Calibration finds each key's sensor, so you can calibrate to drive.";
 
     // The last passed check moved the sensor the app maps to W.
     private bool _movedW;
@@ -231,10 +242,10 @@ public sealed class KeyboardViewModel : ObservableObject
     public string Step1Name => HasConsented ? "Step 1 of 3, done: let the app read the sensors" : "Step 1 of 3: let the app read the sensors";
 
     /// <summary>Step 2's name for screen readers, with its state.</summary>
-    public string Step2Name => CheckPassed ? "Step 2 of 3, done: check the sensors" : "Step 2 of 3: check the sensors";
+    public string Step2Name => CalibrateNext ? "Step 2 of 3, done: check the sensors" : "Step 2 of 3: check the sensors";
 
     /// <summary>Step 1's line once it is done, or null.</summary>
-    public string? ConsentNote => HasConsented ? "Allowed. The app reads this keyboard's sensors from now on." : null;
+    public string? ConsentNote => HasConsented ? "Allowed. The app can read this keyboard's sensors when it needs them." : null;
 
     /// <summary>The note for an unsupported model, or null.</summary>
     public string? UnsupportedNote => IsUnsupported ? UnsupportedText : null;
@@ -246,7 +257,7 @@ public sealed class KeyboardViewModel : ObservableObject
 
     /// <summary>Why steps 1 and 2 cannot run for this untested board, or null when they can.</summary>
     public string? CheckBlocked => _workspace.Board is not { Verified: false, Unsupported: false } board ? null
-        : _workspace.SessionActive ? "Stop mapping to run the check."
+        : _workspace.SessionActive ? "Stop mapping to run steps 1 and 2. Step 3 can still share what the app read."
         : board.Firmware.Version is null ? "The app could not read this keyboard's firmware, so steps 1 and 2 wait until it can. " +
             "Step 3 can still share what the app read."
         : null;
@@ -463,6 +474,8 @@ public sealed class KeyboardViewModel : ObservableObject
                 Raise(nameof(CheckPassed));
                 Raise(nameof(Step2Name));
                 Raise(nameof(NextStep));
+                Raise(nameof(CalibrateNext));
+                Raise(nameof(CheckNext));
                 Raise(nameof(CheckLabel));
                 // Results show only for the board and firmware they came from.
                 Raise(nameof(CheckText));
@@ -610,6 +623,8 @@ public sealed class KeyboardViewModel : ObservableObject
         Raise(nameof(CheckPassed));
         Raise(nameof(Step2Name));
         Raise(nameof(NextStep));
+        Raise(nameof(CalibrateNext));
+        Raise(nameof(CheckNext));
         Raise(nameof(CheckLabel));
         Exported = false;
         ExportText = null;
@@ -632,9 +647,12 @@ public sealed class KeyboardViewModel : ObservableObject
         Raise(nameof(CheckPassed));
         Raise(nameof(Step2Name));
         Raise(nameof(NextStep));
+        Raise(nameof(CalibrateNext));
+        Raise(nameof(CheckNext));
         Raise(nameof(CheckLabel));
         CheckText = detail is null ? text : text + " " + detail;
         _services.Log("Sensor check: " + text);
+        CheckEnded?.Invoke();
     }
 
     /// <summary>
@@ -683,6 +701,10 @@ public sealed class KeyboardViewModel : ObservableObject
         // Both may hold the same values for another board, so the page is told either way.
         Raise(nameof(Exported));
         Raise(nameof(ExportText));
+        if (_exported)
+        {
+            CaptureSaved?.Invoke();
+        }
     }
 
     /// <summary>
@@ -698,6 +720,7 @@ public sealed class KeyboardViewModel : ObservableObject
     private void RefreshTryIt()
     {
         Raise(nameof(CheckBlocked));
+        Raise(nameof(CheckNext));
         Raise(nameof(ExportNote));
         Raise(nameof(NeedsConsent));
         Raise(nameof(CanCheck));
