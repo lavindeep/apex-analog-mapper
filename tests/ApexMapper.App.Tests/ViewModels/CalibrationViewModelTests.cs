@@ -71,8 +71,12 @@ public sealed class CalibrationViewModelTests : IDisposable
     {
         var calibration = Open();
 
+        _h.Keyboards.Refresh();
         _h.Workspace.Board = null;
         Assert.Equal(("No keyboard chosen", true), (calibration.Summary, calibration.BlockerOpensKeyboard));
+        _h.Boards.Clear();
+        _h.Keyboards.Refresh();
+        Assert.Equal("No keyboard plugged in", calibration.Summary);
         _h.Workspace.ReadingFirmware = true;
         Assert.Equal(("Reading the keyboard's firmware", false), (calibration.Summary, calibration.BlockerOpensKeyboard));
         _h.Workspace.ReadingFirmware = false;

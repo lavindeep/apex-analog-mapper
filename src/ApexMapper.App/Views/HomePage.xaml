@@ -30,7 +30,7 @@
                    AutomationProperties.HelpText="{Binding Keyboard.Description}">
       <StackPanel>
         <ui:TextBlock Text="Keyboard" />
-        <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Keyboard.Description}" />
+        <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Keyboard.Description}" views:Live.Text="{Binding Keyboard.Description}" />
       </StackPanel>
     </ui:CardAction>
 
@@ -38,12 +38,17 @@
       <ui:CardControl.Header>
         <StackPanel>
           <ui:TextBlock Text="Game" />
-          <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Game.RowText}" />
+          <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Game.RowText}" views:Live.Text="{Binding Game.RowText}" />
         </StackPanel>
       </ui:CardControl.Header>
-      <StackPanel Orientation="Horizontal" DataContext="{Binding Game}">
+      <!-- The Game and Profile rows' controls share one width, so their pickers start on the same line. Picker first, for Tab. -->
+      <Grid Width="320" DataContext="{Binding Game}">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
         <Grid>
-        <ComboBox ItemsSource="{Binding Games}" SelectedItem="{Binding Selected}" IsEnabled="{Binding CanChoose}" Width="260"
+        <ComboBox ItemsSource="{Binding Games}" SelectedItem="{Binding Selected}" IsEnabled="{Binding CanChoose}"
                   IsDropDownOpen="{Binding IsListOpen, Mode=OneWayToSource}" AutomationProperties.Name="Game">
           <ComboBox.ItemTemplate>
             <DataTemplate DataType="vm:GameItem">
@@ -58,16 +63,10 @@
                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                       Visibility="{Binding Selected, Converter={StaticResource ShowWhenAbsent}}" />
         </Grid>
-        <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon ArrowClockwise24}" ToolTip="Look for games again" Command="{Binding Refresh}"
+        <ui:Button Grid.Column="1" Margin="8,0,0,0" MinWidth="36" MinHeight="36" VerticalAlignment="Center" Icon="{ui:SymbolIcon ArrowClockwise24}" ToolTip="Look for games again" Command="{Binding Refresh}"
                    AutomationProperties.Name="Look for games again" />
-      </StackPanel>
+      </Grid>
     </ui:CardControl>
-    <StackPanel DataContext="{Binding Game}">
-      <ui:InfoBar Style="{StaticResource Warning}" Margin="0,4,0,4" Severity="Informational" Message="{Binding Hint}" views:Live.Text="{Binding Hint}"
-                  Visibility="{Binding Hint, Converter={StaticResource ShowWhenPresent}}" />
-      <ui:InfoBar Style="{StaticResource Warning}" Margin="0,4,0,4" Message="{Binding Warning}" views:Live.Text="{Binding Warning}"
-                  Visibility="{Binding Warning, Converter={StaticResource ShowWhenPresent}}" />
-    </StackPanel>
 
     <ui:CardControl Margin="0,4,0,0" Icon="{ui:SymbolIcon Options24}">
       <ui:CardControl.Header>
@@ -76,22 +75,32 @@
           <ui:TextBlock Style="{StaticResource RowDescription}" Text="Which keys press which controller inputs"
                         Visibility="{Binding Profile.SwitchHint, Converter={StaticResource ShowWhenAbsent}}" />
           <!-- Why the list is off: mapping is running, or there are changes to save. -->
-          <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Profile.SwitchHint}"
+          <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Profile.SwitchHint}" views:Live.Text="{Binding Profile.SwitchHint}"
                         Visibility="{Binding Profile.SwitchHint, Converter={StaticResource ShowWhenPresent}}" />
         </StackPanel>
       </ui:CardControl.Header>
-      <StackPanel Orientation="Horizontal">
-        <ComboBox ItemsSource="{Binding Profile.Profiles}" SelectedItem="{Binding Profile.Selected}" DisplayMemberPath="Name"
-                  IsEnabled="{Binding Profile.CanSwitch}" Width="212" AutomationProperties.Name="Profile" />
-        <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Edit24}" Content="Edit profiles" Command="{Binding OpenProfile}" />
-      </StackPanel>
+      <Grid Width="320">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <ComboBox ItemsSource="{Binding Profile.Profiles}" SelectedItem="{Binding Profile.Selected}"
+                  IsEnabled="{Binding Profile.CanSwitch}" AutomationProperties.Name="Profile">
+          <ComboBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <ui:Button Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Stretch" Icon="{ui:SymbolIcon Edit24}" Content="Edit profiles" Command="{Binding OpenProfile}" />
+      </Grid>
     </ui:CardControl>
 
     <ui:CardAction Margin="0,4,0,0" Icon="{ui:SymbolIcon Gauge24}" Command="{Binding OpenCalibration}" AutomationProperties.Name="Calibration"
                    AutomationProperties.HelpText="{Binding Calibration.Summary}">
       <StackPanel>
         <ui:TextBlock Text="Calibration" />
-        <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Calibration.Summary}" />
+        <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Calibration.Summary}" views:Live.Text="{Binding Calibration.Summary}" />
       </StackPanel>
     </ui:CardAction>
 
@@ -99,7 +108,7 @@
                    AutomationProperties.HelpText="{Binding Setup.Summary}">
       <StackPanel>
         <ui:TextBlock Text="Settings" />
-        <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Setup.Summary}" />
+        <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Setup.Summary}" views:Live.Text="{Binding Setup.Summary}" />
       </StackPanel>
     </ui:CardAction>
   </StackPanel>

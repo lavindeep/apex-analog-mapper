@@ -8,17 +8,33 @@
              xmlns:views="clr-namespace:ApexMapper.App.Views"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:StatusViewModel}">
-  <ui:Card Padding="24,20">
+  <UserControl.Resources>
+    <Style x:Key="Banners" TargetType="ItemsControl">
+      <Style.Triggers>
+        <Trigger Property="HasItems" Value="True">
+          <Setter Property="Margin" Value="0,8,0,0" />
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+  </UserControl.Resources>
+  <!-- The same side padding and icon column as the rows below, so the card's words start on the rows' line. -->
+  <ui:Card Padding="16,20">
     <StackPanel>
+      <!-- The state and Start or Stop on the first line, and what to do under both, so the words get the card's width. -->
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto" />
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
         <!-- The state at a glance: its icon and colour. -->
-        <ui:SymbolIcon Margin="0,2,16,0" VerticalAlignment="Top" FontSize="32" Filled="True">
+        <ui:SymbolIcon Margin="0,0,8,0" VerticalAlignment="Center" FontSize="28" Filled="True">
           <ui:SymbolIcon.Style>
             <Style TargetType="ui:SymbolIcon">
               <Setter Property="Symbol" Value="CheckmarkCircle24" />
@@ -45,27 +61,28 @@
           </ui:SymbolIcon.Style>
         </ui:SymbolIcon>
 
-        <StackPanel Grid.Column="1" VerticalAlignment="Center">
-          <ui:TextBlock FontTypography="Subtitle" FontFamily="{StaticResource DisplayFont}" TextWrapping="Wrap" Text="{Binding StateText}" views:Live.Text="{Binding StateText}" />
+        <ui:TextBlock Grid.Column="1" VerticalAlignment="Center" FontTypography="Subtitle" FontFamily="{StaticResource DisplayFont}" TextWrapping="Wrap"
+                      Text="{Binding StateText}" views:Live.Text="{Binding StateText}" />
+        <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2">
           <ui:TextBlock Margin="0,4,0,0" Style="{StaticResource Paragraph}" Text="{Binding Reason}" views:Live.Text="{Binding Reason}"
                         Visibility="{Binding Reason, Converter={StaticResource ShowWhenPresent}}" />
           <!-- Why Start is unavailable, and the way to fix it when there is one. -->
           <ui:TextBlock Margin="0,4,0,0" Style="{StaticResource Paragraph}" Text="{Binding Blocker}" views:Live.Text="{Binding Blocker}"
                         Visibility="{Binding Blocker, Converter={StaticResource ShowWhenPresent}}" />
-          <WrapPanel Margin="0,4,0,0">
-            <ui:Button Margin="0,8,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Keyboard24}" Content="Open the keyboard page" Command="{Binding GoToKeyboard}"
+          <WrapPanel>
+            <ui:Button Margin="0,12,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Keyboard24}" Content="Open the Keyboard page" Command="{Binding GoToKeyboard}"
                        Visibility="{Binding BlockedByKeyboard, Converter={StaticResource ShowWhenTrue}}" />
-            <ui:Button Margin="0,8,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Gauge24}" Content="Calibrate" Command="{Binding GoToCalibration}"
+            <ui:Button Margin="0,12,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Gauge24}" Content="Calibrate" Command="{Binding GoToCalibration}"
                        Visibility="{Binding BlockedByCalibration, Converter={StaticResource ShowWhenTrue}}" />
-            <ui:Button Margin="0,8,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Open24}" Content="Open ViGEmBus releases" Command="{Binding OpenDriverPage}"
+            <ui:Button Margin="0,12,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Open24}" Content="Open ViGEmBus releases" Command="{Binding OpenDriverPage}"
                        Visibility="{Binding BlockedByDriver, Converter={StaticResource ShowWhenTrue}}" />
-            <ui:Button Margin="0,8,8,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Restart the app" Command="{Binding Restart}"
+            <ui:Button Margin="0,12,8,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowClockwise24}" Content="Restart the app" Command="{Binding Restart}"
                        Visibility="{Binding RestartRequired, Converter={StaticResource ShowWhenTrue}}" />
           </WrapPanel>
         </StackPanel>
 
         <!-- One button, Start while stopped and Stop while a session is up, so pressing it keeps focus on it. -->
-        <ui:Button Grid.Column="2" Margin="16,0,0,0" VerticalAlignment="Top" Appearance="Primary" MinWidth="120" Padding="16,10"
+        <ui:Button Grid.Column="2" Margin="16,0,0,0" VerticalAlignment="Center" Appearance="Primary" MinWidth="120" Padding="16,10"
                    AutomationProperties.HelpText="{Binding Blocker, TargetNullValue=''}" ToolTip="{Binding Blocker}" ToolTipService.ShowOnDisabled="True">
           <ui:Button.Style>
             <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
@@ -82,18 +99,35 @@
             </Style>
           </ui:Button.Style>
         </ui:Button>
+
+        <StackPanel Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,12,0,0" Visibility="{Binding Blocker, Converter={StaticResource ShowWhenAbsent}}">
+          <!-- The stop shortcut drawn as its keys, joined by plus signs since they are held together. -->
+          <WrapPanel>
+            <Border Style="{StaticResource Keycap}"><ui:TextBlock Style="{StaticResource KeycapText}" FontTypography="Caption" Text="Ctrl" /></Border>
+            <ui:TextBlock Margin="0,0,6,0" VerticalAlignment="Center" Style="{StaticResource RowDescription}" Text="+" />
+            <Border Style="{StaticResource Keycap}"><ui:TextBlock Style="{StaticResource KeycapText}" FontTypography="Caption" Text="Left Alt" /></Border>
+            <ui:TextBlock Margin="0,0,6,0" VerticalAlignment="Center" Style="{StaticResource RowDescription}" Text="+" />
+            <Border Style="{StaticResource Keycap}"><ui:TextBlock Style="{StaticResource KeycapText}" FontTypography="Caption" Text="F12" /></Border>
+            <ui:TextBlock VerticalAlignment="Center" Style="{StaticResource RowDescription}" Text="stops mapping from anywhere, even in the game." />
+          </WrapPanel>
+          <ui:TextBlock Margin="0,4,0,0" Style="{StaticResource RowDescription}" Text="{Binding Timing}"
+                        Visibility="{Binding Timing, Converter={StaticResource ShowWhenPresent}}" />
+        </StackPanel>
       </Grid>
 
-      <StackPanel Margin="48,12,0,0" Visibility="{Binding Blocker, Converter={StaticResource ShowWhenAbsent}}">
-        <ui:TextBlock Style="{StaticResource RowDescription}" Text="Ctrl+Left Alt+F12 stops mapping from anywhere, even while the game is in front." />
-        <ui:TextBlock Margin="0,4,0,0" Style="{StaticResource RowDescription}" Text="{Binding Timing}"
-                      Visibility="{Binding Timing, Converter={StaticResource ShowWhenPresent}}" />
-      </StackPanel>
-
-      <ItemsControl ItemsSource="{Binding Warnings}" AutomationProperties.Name="Warnings">
+      <!-- Room above a list of banners only while it has one, so an empty list adds no space. -->
+      <ItemsControl ItemsSource="{Binding Warnings}" AutomationProperties.Name="Warnings" Style="{StaticResource Banners}">
         <ItemsControl.ItemTemplate>
           <DataTemplate>
             <ui:InfoBar Style="{StaticResource Warning}" Message="{Binding}" views:Live.Text="{Binding}" />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+      <!-- What the app handled itself, quieter than a warning since nothing needs doing. -->
+      <ItemsControl ItemsSource="{Binding Notes}" AutomationProperties.Name="Notes" Style="{StaticResource Banners}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate>
+            <ui:InfoBar Style="{StaticResource Warning}" Severity="Informational" Message="{Binding}" views:Live.Text="{Binding}" />
           </DataTemplate>
         </ItemsControl.ItemTemplate>
       </ItemsControl>

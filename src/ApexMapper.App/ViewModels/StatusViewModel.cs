@@ -48,6 +48,7 @@ public sealed class StatusViewModel : ObservableObject
     private Elevation _gameElevation = Elevation.Visible;
     private bool _gameSeen;
     private string? _blocker;
+    private string _blockerTitle = "Not ready";
     private bool _blockedByCalibration;
     private bool _blockedByDriver;
     private bool _blockedByKeyboard;
@@ -57,6 +58,7 @@ public sealed class StatusViewModel : ObservableObject
     private HashSet<ScanCode> _mappedKeys = [];
     private bool _otherKeyboardSeen;
     private bool _otherKeyboardShown;
+    private readonly GameViewModel _game;
     private (long Count, long AtMs)? _rateFrom;
     private double _rate;
     private SessionState _loggedState;
@@ -66,10 +68,11 @@ public sealed class StatusViewModel : ObservableObject
     /// <summary>Keys that pressed past their calibration this run, with the calibration they had then. Kept after Stop until that calibration changes.</summary>
     private readonly Dictionary<ScanCode, KeyCalibration?> _recalibrate = [];
 
-    public StatusViewModel(AppServices services, Workspace workspace)
+    public StatusViewModel(AppServices services, Workspace workspace, GameViewModel game)
     {
         _services = services;
         _workspace = workspace;
+        _game = game;
         _status = services.Session.Status();
         Start = new Command(() => Background.Run(StartAsync()), () => CanStart);
         Stop = new Command(() => Background.Run(StopAsync()), () => _workspace.SessionActive);
@@ -79,6 +82,13 @@ public sealed class StatusViewModel : ObservableObject
         Restart = new Command(() => _services.Restart(), () => !_workspace.ProfileUnsaved);
         _services.Session.StateChanged += _ => _services.Post(OnSessionState);
         _workspace.PropertyChanged += OnWorkspaceChanged;
+        game.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(GameViewModel.Warning) or nameof(GameViewModel.Hint))
+            {
+                Refresh();
+            }
+        };
         Refresh();
     }
 
@@ -96,11 +106,11 @@ public sealed class StatusViewModel : ObservableObject
         SessionState.Running when _gameElevation == Elevation.Elevated => "Mapping, but the game runs as administrator",
         SessionState.Running when _gameElevation == Elevation.Unknown => "Mapping, but the game may run as administrator",
         // The controller moves only while the game is in front.
-        SessionState.Running when !_status.GameHasFocus => "Mapping, waiting for the game to be in front",
+        SessionState.Running when !_status.GameHasFocus => "Mapping, game in background",
         SessionState.Running => "Mapping",
-        SessionState.Paused => "Paused: the keyboard is unplugged",
+        SessionState.Paused => "Paused, keyboard unplugged",
         SessionState.Stopping => "Stopping",
-        _ when _status.RestartRequired || _blocker is not null => "Not ready",
+        _ when _status.RestartRequired || _blocker is not null => _blockerTitle,
         _ when _startFailure is not null => "Couldn't start mapping",
         _ => "Ready",
     };
@@ -137,7 +147,7 @@ public sealed class StatusViewModel : ObservableObject
             // Where someone lands after switching away from a game that missed the controller.
             if (_status.State == SessionState.Running && _status.GameRunning && !_status.GameHasFocus && _gameElevation == Elevation.Visible)
             {
-                return "If the game does not see the controller, press Stop, close the game, press Start, then open the game again.";
+                return "Switch to the game. If it does not see the controller, press Stop, close the game, press Start, then open the game again.";
             }
             if (_status.State != SessionState.Idle || _status.RestartRequired)
             {
@@ -200,6 +210,9 @@ public sealed class StatusViewModel : ObservableObject
 
     /// <summary>Changed in place, so a warning that stays keeps its live region and is not read out again.</summary>
     public ObservableCollection<string> Warnings { get; } = [];
+
+    /// <summary>What the app handled itself or that works as designed, so nothing needs doing. Changed in place like the warnings.</summary>
+    public ObservableCollection<string> Notes { get; } = [];
 
     /// <summary>A controller could not be removed; only a restart clears it.</summary>
     public bool RestartRequired => _status.RestartRequired;
@@ -274,7 +287,7 @@ public sealed class StatusViewModel : ObservableObject
             _rate = 0;
         }
         Timing = _status.State == SessionState.Running && float.IsFinite(_status.CycleP50Ms)
-            ? string.Create(CultureInfo.CurrentCulture, $"Keyboard read every {_status.CycleP50Ms:0.0} ms ({_status.CycleP99Ms:0.0} ms for the slowest 1%).")
+            ? string.Create(CultureInfo.CurrentCulture, $"Keyboard read every {_status.CycleP50Ms:0.0} ms, and 99% of reads within {_status.CycleP99Ms:0.0} ms.")
                 // The pad goes on sending at rest without the game, so the rate means something only with it in front.
                 + (_status.GameHasFocus ? string.Create(CultureInfo.CurrentCulture, $" Controller updated {_rate:0} times a second.") : "")
             : null;
@@ -354,13 +367,14 @@ public sealed class StatusViewModel : ObservableObject
                 }
             }
         }
-        var (blocker, fix) = _workspace.SessionActive ? (null, Fix.None) : FindBlocker();
+        var (blocker, title, fix) = _workspace.SessionActive ? (null, "Not ready", Fix.None) : FindBlocker();
+        _blockerTitle = title;
         Blocker = blocker;
         BlockedByCalibration = fix == Fix.Calibration;
         BlockedByDriver = fix == Fix.Driver;
         BlockedByKeyboard = fix == Fix.Keyboard;
-        var warnings = FindWarnings();
-        var lines = warnings.Select(warning => "Warning: " + warning);
+        var (warnings, notes) = FindWarnings();
+        var lines = warnings.Concat(notes).Select(warning => "Warning: " + warning);
         if (IsMapping && _status.SensorProblem is { } problem)
         {
             lines = lines.Append("Sensor fault: " + problem);
@@ -369,7 +383,17 @@ public sealed class StatusViewModel : ObservableObject
         {
             _services.Log(line);
         }
-        SyncWarnings(warnings);
+        // The chosen game's notices sit with the card's own, after logging, since they name the game.
+        if (_game.Warning is { } gameWarning)
+        {
+            warnings.Add(gameWarning);
+        }
+        if (_game.Hint is { } hint)
+        {
+            notes.Add(hint);
+        }
+        Sync(Warnings, warnings);
+        Sync(Notes, notes);
         foreach (var name in new[] { nameof(StateText), nameof(Tone), nameof(IsMapping), nameof(Reason), nameof(CanStart), nameof(CanStop), nameof(RestartRequired) })
         {
             Raise(name);
@@ -407,53 +431,54 @@ public sealed class StatusViewModel : ObservableObject
     }
 
     /// <summary>The first thing Start waits for, in the order a new user meets them: the driver before anything they could spend time on.</summary>
-    private (string?, Fix) FindBlocker()
+    /// <summary>Why Start is unavailable, a short title for the status card that names it, and the fix the card offers.</summary>
+    private (string?, string, Fix) FindBlocker()
     {
         if (_status.RestartRequired)
         {
             var message = SessionEnd.For(EndReason.RestartRequired).Message;
-            return (_workspace.ProfileUnsaved ? message + " Save or discard your profile changes in Edit profiles first." : message, Fix.None);
+            return (_workspace.ProfileUnsaved ? message + " Save or discard your profile changes in Edit profiles first." : message, "Restart needed", Fix.None);
         }
         switch (_workspace.Driver)
         {
             case DriverState.Missing:
-                return ($"Install the ViGEmBus controller driver first. Get version {SetupViewModel.DriverVersion} from its release page, run the installer, then come back to this window.", Fix.Driver);
+                return ($"Install the ViGEmBus controller driver first. Get version {SetupViewModel.DriverVersion} from its release page, run the installer, then come back to this window.", "Controller driver not installed", Fix.Driver);
             case DriverState.NotStarted:
-                return (SessionEnd.For(EndReason.DriverNotStarted).Message, Fix.None);
+                return (SessionEnd.For(EndReason.DriverNotStarted).Message, "Controller driver not running", Fix.None);
         }
         if (_workspace.Board is not { } board)
         {
-            return _workspace.ReadingFirmware ? ("Reading the keyboard's firmware.", Fix.None)
-                : _services.Keyboards.Current.Any(k => k.Known) ? ("Choose your keyboard.", Fix.Keyboard)
-                : ("Plug in your Apex Pro keyboard.", Fix.None);
+            return _workspace.ReadingFirmware ? ("Reading the keyboard's firmware.", "Reading the keyboard", Fix.None)
+                : _services.Keyboards.Current.Any(k => k.Known) ? ("Choose your keyboard.", "Choose your keyboard", Fix.Keyboard)
+                : ("Plug in your Apex Pro keyboard.", "Keyboard not plugged in", Fix.None);
         }
         if (board.Firmware.Version is null)
         {
-            return ("The keyboard's firmware could not be read. " + board.Firmware.Problem + " Unplug the keyboard and plug it back in to try again.", Fix.None);
+            return ("The keyboard's firmware could not be read. " + board.Firmware.Problem + " Unplug the keyboard and plug it back in to try again.", "Keyboard firmware not read", Fix.None);
         }
         if (board.Unsupported)
         {
             return _services.Keyboards.Current.Count(k => k.Known) > 1
-                ? ("The app cannot read this keyboard's sensors. Choose another keyboard on the Keyboard page.", Fix.Keyboard)
-                : ("The app cannot read this keyboard's sensors. Plug in an Apex Pro the app supports.", Fix.None);
+                ? ("The app cannot read this keyboard's sensors. Choose another keyboard on the Keyboard page.", "Keyboard not supported", Fix.Keyboard)
+                : ("The app cannot read this keyboard's sensors. Plug in an Apex Pro the app supports.", "Keyboard not supported", Fix.None);
         }
         if (!board.CanReadSensors)
         {
-            return ("This keyboard has not been tested yet. Try it first.", Fix.Keyboard);
+            return ("Check its sensors first, under Try this keyboard on the Keyboard page.", "Keyboard not tested yet", Fix.Keyboard);
         }
         if (_workspace.GamePath is null)
         {
-            return ("Launch your game, then choose it in the Game row below.", Fix.None);
+            return ("Launch your game, then choose it in the Game row below.", "Choose your game", Fix.None);
         }
         if (_workspace.ActiveProfile is null)
         {
-            return ("The active profile could not be loaded. Choose a different profile in the Profile row below.", Fix.None);
+            return ("The active profile could not be loaded. Choose a different profile in the Profile row below.", "Profile could not be loaded", Fix.None);
         }
         if (Compile(out var uncalibrated) is null)
         {
-            return ($"Calibrate {Wording.List([.. uncalibrated.Select(_services.KeyName)])} first.", Fix.Calibration);
+            return ($"Calibrate {Wording.List([.. uncalibrated.Select(_services.KeyName)])} first.", "Keys need calibrating", Fix.Calibration);
         }
-        return (_services.Session.WhyNotStartable(board.Id)?.Message, Fix.None);
+        return (_services.Session.WhyNotStartable(board.Id)?.Message, "Not ready", Fix.None);
     }
 
     /// <summary>The active profile against the chosen board's calibration; null with the keys still to calibrate (F7).</summary>
@@ -465,40 +490,41 @@ public sealed class StatusViewModel : ObservableObject
             : null;
     }
 
-    private void SyncWarnings(List<string> next)
+    private static void Sync(ObservableCollection<string> shown, List<string> next)
     {
-        for (var i = Warnings.Count - 1; i >= 0; i--)
+        for (var i = shown.Count - 1; i >= 0; i--)
         {
-            if (!next.Contains(Warnings[i]))
+            if (!next.Contains(shown[i]))
             {
-                Warnings.RemoveAt(i);
+                shown.RemoveAt(i);
             }
         }
         for (var i = 0; i < next.Count; i++)
         {
-            var at = Warnings.IndexOf(next[i]);
+            var at = shown.IndexOf(next[i]);
             if (at < 0)
             {
-                Warnings.Insert(i, next[i]);
+                shown.Insert(i, next[i]);
             }
             else if (at != i)
             {
-                Warnings.Move(at, i);
+                shown.Move(at, i);
             }
         }
     }
 
-    private List<string> FindWarnings()
+    private (List<string> Warnings, List<string> Notes) FindWarnings()
     {
         var warnings = new List<string>();
+        var notes = new List<string>();
         var status = _status;
         if (IsMapping)
         {
             if (status.FallbackKeys > 0)
             {
                 var one = status.FallbackKeys == 1;
-                warnings.Add($"{status.FallbackKeys} analog {(one ? "key is" : "keys are")} working as {(one ? "a plain on/off key" : "plain on/off keys")}, because the keyboard's readings of how far keys are pressed are late or missing. " +
-                    $"{(one ? "It goes" : "They go")} back to analog when readings return. If this lasts, stop mapping, then unplug the keyboard and plug it back in.");
+                warnings.Add($"{status.FallbackKeys} analog {(one ? "key is" : "keys are")} working as {(one ? "an on/off key" : "on/off keys")} because {(one ? "its" : "their")} readings are late or missing. " +
+                    $"{(one ? "It turns" : "They turn")} analog again when the readings return. If this lasts, stop mapping, then unplug the keyboard and plug it back in.");
             }
             if (_stuckAtLimit.Count > 0)
             {
@@ -513,17 +539,17 @@ public sealed class StatusViewModel : ObservableObject
             }
             if (status.KeysAwaitingRelease)
             {
-                warnings.Add("A key that was already down stays off until you release it once.");
+                notes.Add("A key that was already down stays off until you release it once.");
             }
             if (status.HookReinstalls > 0)
             {
-                warnings.Add(status.HookReinstalls == 1
+                notes.Add(status.HookReinstalls == 1
                     ? "Windows turned off key blocking once, and the app turned it back on."
                     : $"Windows turned off key blocking {status.HookReinstalls} times, and the app turned it back on each time.");
             }
             if (_otherKeyboardSeen)
             {
-                warnings.Add("A mapped key was pressed on another keyboard. While mapping, mapped keys are blocked on every keyboard, not just the Apex Pro.");
+                notes.Add("A mapped key was pressed on another keyboard. While mapping, mapped keys are blocked on every keyboard, not just the Apex Pro.");
             }
         }
         else if (_recalibrate.Count > 0)
@@ -540,6 +566,6 @@ public sealed class StatusViewModel : ObservableObject
         {
             warnings.Add(settings);
         }
-        return warnings;
+        return (warnings, notes);
     }
 }

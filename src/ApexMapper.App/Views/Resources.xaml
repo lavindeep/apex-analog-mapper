@@ -73,13 +73,17 @@
     <Setter Property="Appearance" Value="Secondary" />
   </Style>
 
-  <!-- The app's update button on Home and Settings: a download for the steps that install, the update row's arrows for a check.
+  <!-- The app's update button on Home and Settings: a download for the steps that install, the update row's arrows for a check,
+       and the restart arrow once the update waits for a restart.
        Not shared, so each button gets its own icon element. -->
   <Style x:Key="UpdateAction" x:Shared="False" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
     <Setter Property="Icon" Value="{ui:SymbolIcon ArrowDownload24}" />
     <Style.Triggers>
       <DataTrigger Binding="{Binding ActText}" Value="Check for updates">
         <Setter Property="Icon" Value="{ui:SymbolIcon ArrowSync24}" />
+      </DataTrigger>
+      <DataTrigger Binding="{Binding ActText}" Value="Restart and update">
+        <Setter Property="Icon" Value="{ui:SymbolIcon ArrowClockwise24}" />
       </DataTrigger>
     </Style.Triggers>
   </Style>

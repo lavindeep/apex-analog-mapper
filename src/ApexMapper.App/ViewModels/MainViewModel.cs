@@ -38,7 +38,7 @@ public sealed class MainViewModel : ObservableObject
         Game = new GameViewModel(services, workspace, settings.GamePath);
         Profile = new ProfileViewModel(services, workspace, settings.ActiveProfile);
         Calibration = new CalibrationViewModel(services, workspace);
-        Status = new StatusViewModel(services, workspace);
+        Status = new StatusViewModel(services, workspace, Game);
         Setup = new SetupViewModel(services, workspace, settings);
         Status.CalibrationRequested += () => Page = Page.Calibration;
         Status.KeyboardRequested += () => Page = Page.Keyboard;

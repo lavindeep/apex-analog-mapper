@@ -303,7 +303,7 @@ public sealed class WindowRenderingTests
         new("no-sensor-interface", h =>
         {
             h.Boards[0] = AppHarness.TklInfo with { HasVendorInterface = false };
-            h.FirmwareOf = _ => new FirmwareReading(null, null, "No vendor interface found for the selected keyboard.");
+            h.FirmwareOf = _ => new FirmwareReading(null, null, SensorPoller.WaitingReason);
         }),
         new("unsupported-board", h =>
         {

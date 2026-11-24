@@ -106,7 +106,7 @@ public sealed class SensorPoller : IDisposable
 
     /// <summary>How long <see cref="Stop"/> waits for the sensor thread before giving up on it.</summary>
     public const int JoinTimeoutMs = 2000;
-    public const string WaitingReason = "No vendor interface found for the selected keyboard.";
+    public const string WaitingReason = "The keyboard's sensor interface was not found.";
     private const int SignatureFaultsBeforeCalibrationHint = 3;
 
     private readonly Func<IVendorStream?> _open;

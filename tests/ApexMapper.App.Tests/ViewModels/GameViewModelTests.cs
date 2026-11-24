@@ -28,8 +28,8 @@ public sealed class GameViewModelTests : IDisposable
         var game = Create(AppHarness.Game);
 
         Assert.Equal(AppHarness.Game, game.Selected?.ImagePath);
-        Assert.Equal("ForzaHorizon6.exe, not running", game.Selected?.Detail);
-        Assert.Equal("ForzaHorizon6, not running", game.Summary);
+        Assert.Equal(("ForzaHorizon6.exe", "Not running"), (game.Selected?.Title, game.Selected?.Detail));
+        Assert.Equal("ForzaHorizon6.exe, not running", game.Summary);
         Assert.Equal(AppHarness.Game, _h.Workspace.GamePath);
         Assert.Equal(2, game.Games.Count);
         Assert.Null(game.Hint);

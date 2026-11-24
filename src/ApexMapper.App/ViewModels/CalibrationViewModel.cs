@@ -376,7 +376,8 @@ public sealed class CalibrationViewModel : ObservableObject
         get
         {
             var done = _rows.Count(r => r.IsCalibrated);
-            return _workspace.Board is not { } board ? (_workspace.ReadingFirmware ? "Reading the keyboard's firmware" : "No keyboard chosen")
+            return _workspace.Board is not { } board ? (_workspace.ReadingFirmware ? "Reading the keyboard's firmware"
+                    : _services.Keyboards.Current.Count == 0 ? "No keyboard plugged in" : "No keyboard chosen")
                 : board.Firmware.Version is null ? "Firmware could not be read"
                 : board.Unsupported ? "Unavailable for this keyboard"
                 : !board.CanReadSensors ? "Waiting for the keyboard check"

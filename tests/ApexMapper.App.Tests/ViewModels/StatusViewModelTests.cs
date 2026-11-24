@@ -20,7 +20,7 @@ public sealed class StatusViewModelTests : IDisposable
 
     public void Dispose() => _h.Dispose();
 
-    private StatusViewModel Create() => new(_h.Services, _h.Workspace);
+    private StatusViewModel Create() => new(_h.Services, _h.Workspace, new GameViewModel(_h.Services, _h.Workspace, _h.Workspace.GamePath));
 
     private static bool MentionsOtherKeyboard(string warning) => warning.Contains("another keyboard", StringComparison.Ordinal);
 
@@ -29,7 +29,7 @@ public sealed class StatusViewModelTests : IDisposable
     {
         var status = Create();
         Assert.Equal("Plug in your Apex Pro keyboard.", status.Blocker);
-        Assert.Equal(("Not ready", StatusTone.NotReady, false), (status.StateText, status.Tone, status.BlockedByKeyboard));
+        Assert.Equal(("Keyboard not plugged in", StatusTone.NotReady, false), (status.StateText, status.Tone, status.BlockedByKeyboard));
         Assert.False(status.Start.CanExecute(null));
 
         _h.Keyboards.Refresh();
@@ -47,7 +47,7 @@ public sealed class StatusViewModelTests : IDisposable
 
         _h.Workspace.Board = new Board(AppHarness.Gen3Info, new FirmwareReading("1.0.0", null, null), Consented: false);
         status.Tick(_h.Now);
-        Assert.Equal("This keyboard has not been tested yet. Try it first.", status.Blocker);
+        Assert.Equal("Check its sensors first, under Try this keyboard on the Keyboard page.", status.Blocker);
         Assert.True(status.BlockedByKeyboard);
 
         _h.ChooseTkl();
@@ -246,7 +246,7 @@ public sealed class StatusViewModelTests : IDisposable
             SensorProblem: "The keyboard stopped answering.", KeysAwaitingRelease: false, SubmitCount: 0, HookReinstalls: 0, RestartRequired: false);
         status.Tick(_h.Now);
 
-        const string Warning = "2 analog keys are working as plain on/off keys, because the keyboard's readings of how far keys are pressed are late or missing. They go back to analog when readings return. " +
+        const string Warning = "2 analog keys are working as on/off keys because their readings are late or missing. They turn analog again when the readings return. " +
             "If this lasts, stop mapping, then unplug the keyboard and plug it back in.";
         Assert.Contains(Warning, status.Warnings);
         Assert.Contains("Warning: " + Warning, _h.Log);
@@ -317,22 +317,23 @@ public sealed class StatusViewModelTests : IDisposable
 
         _h.Session.NextStatus = _h.Session.NextStatus with { GameRunning = true, KeysAwaitingRelease = true, HookReinstalls = 2 };
         status.Tick(_h.Now + StatusViewModel.RefreshMs);
-        Assert.Equal("Mapping, waiting for the game to be in front", status.StateText);
-        Assert.Equal("If the game does not see the controller, press Stop, close the game, press Start, then open the game again.", status.Reason);
+        Assert.Equal("Mapping, game in background", status.StateText);
+        Assert.Equal("Switch to the game. If it does not see the controller, press Stop, close the game, press Start, then open the game again.", status.Reason);
 
         _h.Session.NextStatus = _h.Session.NextStatus with { GameHasFocus = true };
         status.Tick(_h.Now + 2 * StatusViewModel.RefreshMs);
         Assert.Equal("Mapping", status.StateText);
-        Assert.Contains("A key that was already down stays off until you release it once.", status.Warnings);
-        Assert.Contains("Windows turned off key blocking 2 times, and the app turned it back on each time.", status.Warnings);
+        Assert.Contains("A key that was already down stays off until you release it once.", status.Notes);
+        Assert.Contains("Windows turned off key blocking 2 times, and the app turned it back on each time.", status.Notes);
+        Assert.Empty(status.Warnings);
 
-        // Only the warning that changed is replaced.
+        // Only the note that changed is replaced.
         var changes = new List<System.Collections.Specialized.NotifyCollectionChangedAction>();
-        status.Warnings.CollectionChanged += (_, e) => changes.Add(e.Action);
+        status.Notes.CollectionChanged += (_, e) => changes.Add(e.Action);
         _h.Session.NextStatus = _h.Session.NextStatus with { HookReinstalls = 3 };
         status.Tick(_h.Now + 3 * StatusViewModel.RefreshMs);
         Assert.Equal([System.Collections.Specialized.NotifyCollectionChangedAction.Remove, System.Collections.Specialized.NotifyCollectionChangedAction.Add], changes);
-        Assert.Contains("A key that was already down stays off until you release it once.", status.Warnings);
+        Assert.Contains("A key that was already down stays off until you release it once.", status.Notes);
     }
 
     [Fact]
@@ -353,7 +354,7 @@ public sealed class StatusViewModelTests : IDisposable
         Assert.Equal("Mapping", status.StateText);
         _h.Session.NextStatus = behind;
         status.Tick(_h.Now + 2 * StatusViewModel.RefreshMs);
-        Assert.Equal("Mapping, waiting for the game to be in front", status.StateText);
+        Assert.Equal("Mapping, game in background", status.StateText);
     }
 
     [Fact]
@@ -441,7 +442,7 @@ public sealed class StatusViewModelTests : IDisposable
         _h.Session.NextStatus = running with { SubmitCount = 1500 };
         status.Tick(_h.Now + 1000);
 
-        Assert.Equal($"Keyboard read every {1.2:0.0} ms ({2.5:0.0} ms for the slowest 1%). Controller updated 1000 times a second.", status.Timing);
+        Assert.Equal($"Keyboard read every {1.2:0.0} ms, and 99% of reads within {2.5:0.0} ms. Controller updated 1000 times a second.", status.Timing);
 
         _h.Session.Move(SessionState.Paused);
         status.Tick(_h.Now + 1250);
@@ -487,16 +488,16 @@ public sealed class StatusViewModelTests : IDisposable
 
         status.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, true, 1, 0));
         status.OnKey(new RawKeyEvent(new ScanCode(0x25), true, 2, 0));
-        Assert.DoesNotContain(status.Warnings, MentionsOtherKeyboard);
+        Assert.DoesNotContain(status.Notes, MentionsOtherKeyboard);
 
         status.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, true, 2, 0));
-        Assert.Contains(status.Warnings, MentionsOtherKeyboard);
+        Assert.Contains(status.Notes, MentionsOtherKeyboard);
 
         await status.StopAsync();
-        Assert.DoesNotContain(status.Warnings, MentionsOtherKeyboard);
+        Assert.DoesNotContain(status.Notes, MentionsOtherKeyboard);
 
         await status.StartAsync();
         status.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, true, 2, 0));
-        Assert.DoesNotContain(status.Warnings, MentionsOtherKeyboard);
+        Assert.DoesNotContain(status.Notes, MentionsOtherKeyboard);
     }
 }

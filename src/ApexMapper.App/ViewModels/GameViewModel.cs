@@ -12,7 +12,8 @@ public sealed record GameItem(string Title, string ImagePath, Elevation Elevatio
 {
     public string FileName => Path.GetFileName(ImagePath);
 
-    public string Detail => Running ? FileName : FileName + ", not running";
+    /// <summary>The file under a running window's title. A game that isn't running has its file as its title, so this says only that.</summary>
+    public string Detail => Running ? FileName : "Not running";
 
     /// <summary>What a screen reader says for the item.</summary>
     public override string ToString() => $"{Title}, {Detail}";
@@ -148,7 +149,7 @@ public sealed class GameViewModel : ObservableObject
         var chosen = path is null ? null : items.FirstOrDefault(i => string.Equals(i.ImagePath, path, StringComparison.OrdinalIgnoreCase));
         if (path is not null && chosen is null)
         {
-            chosen = new GameItem(Path.GetFileNameWithoutExtension(path), path, Elevation.Visible, Running: false);
+            chosen = new GameItem(Path.GetFileName(path), path, Elevation.Visible, Running: false);
             items.Insert(0, chosen);
         }
         Games = items;

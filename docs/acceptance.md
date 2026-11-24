@@ -52,7 +52,7 @@ Start mapping before launching the game, then drive for at least 30 minutes.
 - [ ] W, A, S and D never also act as keyboard keys in the game.
 - [ ] Nothing stays pressed after a key is released, all race long.
 - [ ] The status card reads the keyboard about every 12 ms with the Forza profile,
-      and the slowest 1% stays near that. The keyboard answers one sensor group every
+      and 99% of reads stay near that. The keyboard answers one sensor group every
       6 ms and the profile reads two.
 
 ## Leaving and coming back

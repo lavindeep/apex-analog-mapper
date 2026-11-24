@@ -4,6 +4,7 @@ using ApexMapper.Core.Keys;
 using ApexMapper.Core.Profiles;
 using ApexMapper.Windows.Input;
 using ApexMapper.Windows.Output;
+using ApexMapper.Windows.Session;
 using Xunit;
 
 namespace ApexMapper.App.Tests.ViewModels;
@@ -103,6 +104,24 @@ public sealed class MainViewModelTests : IDisposable
     }
 
     [Fact]
+    public void The_status_card_shows_the_chosen_games_warning_until_another_game_is_chosen()
+    {
+        _h.Windows =
+        [
+            new GameWindow("Forza Horizon 6", AppHarness.Game, Elevation.Elevated),
+            new GameWindow("Untitled - Notepad", @"C:\Windows
+otepad.exe", Elevation.Visible),
+        ];
+        var main = new MainViewModel(_h.Services, _h.Workspace, new AppSettings());
+
+        main.Game.Selected = main.Game.Games[0];
+        Assert.Equal([main.Game.Warning!], main.Status.Warnings);
+
+        main.Game.Selected = main.Game.Games[1];
+        Assert.Empty(main.Status.Warnings);
+    }
+
+    [Fact]
     public async Task A_tick_hands_key_presses_to_the_other_keyboard_notice()
     {
         _h.CalibrateForza();
@@ -114,7 +133,7 @@ public sealed class MainViewModelTests : IDisposable
         _h.Keys.Press(DefaultProfiles.Key.W, device: 2);
         main.Tick();
 
-        Assert.Contains(main.Status.Warnings, w => w.Contains("another keyboard", StringComparison.Ordinal));
+        Assert.Contains(main.Status.Notes, w => w.Contains("another keyboard", StringComparison.Ordinal));
     }
 
     [Fact]
