@@ -40,7 +40,7 @@
     <!-- The app's own version, and how it looks for a newer one. -->
     <StackPanel DataContext="{Binding Updates}">
       <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Updates" />
-      <ui:CardControl Icon="{ui:SymbolIcon Info24}">
+      <ui:CardControl Icon="{ui:SymbolIcon ArrowCircleUp24}">
         <ui:CardControl.Header>
           <StackPanel>
             <ui:TextBlock Text="{Binding VersionText}" />
@@ -48,9 +48,16 @@
                           Visibility="{Binding Text, Converter={StaticResource ShowWhenPresent}}" />
           </StackPanel>
         </ui:CardControl.Header>
-        <ui:Button x:Name="UpdateButton" Style="{StaticResource UpdateAction}" Content="{Binding ActText}" Command="{Binding Act}" IsVisibleChanged="OnButtonVisibleChanged"
-                   AutomationProperties.HelpText="{Binding Spoken, TargetNullValue=''}"
-                   Visibility="{Binding ActText, Converter={StaticResource ShowWhenPresent}}" />
+        <!-- The update button, a spinner while it works, or for a copy that cannot update itself, the page with the setup program. -->
+        <Grid>
+          <ui:Button x:Name="UpdateButton" Style="{StaticResource UpdateAction}" Content="{Binding ActText}" Command="{Binding Act}" IsVisibleChanged="OnButtonVisibleChanged"
+                     AutomationProperties.HelpText="{Binding Spoken, TargetNullValue=''}"
+                     Visibility="{Binding ActText, Converter={StaticResource ShowWhenPresent}}" />
+          <ui:ProgressRing Width="20" Height="20" HorizontalAlignment="Right" Style="{StaticResource Busy}"
+                           Visibility="{Binding IsBusy, Converter={StaticResource ShowWhenTrue}}" />
+          <ui:Button x:Name="ReleasesButton" Icon="{ui:SymbolIcon Open24}" Content="Open GitHub releases" Command="{Binding OpenReleases}"
+                     Visibility="{Binding ShowsReleases, Converter={StaticResource ShowWhenTrue}}" />
+        </Grid>
       </ui:CardControl>
       <ui:CardControl Margin="0,4,0,0" Icon="{ui:SymbolIcon Clock24}"
                       Visibility="{Binding CanUpdate, Converter={StaticResource ShowWhenTrue}}">
@@ -58,7 +65,7 @@
           <StackPanel>
             <ui:TextBlock Text="Look for updates when the app starts" />
             <ui:TextBlock x:Name="LaunchText" Style="{StaticResource RowDescription}"
-                          Text="When on, the app asks GitHub when it starts, unless it had an answer in the last six hours. Nothing downloads until you press Update." />
+                          Text="The app asks GitHub at most once every six hours. Nothing downloads until you press Update." />
           </StackPanel>
         </ui:CardControl.Header>
         <ui:ToggleSwitch IsChecked="{Binding CheckOnLaunch}" AutomationProperties.Name="Look for updates when the app starts"
@@ -70,7 +77,7 @@
           <StackPanel>
             <ui:TextBlock Text="Offer test versions too" />
             <ui:TextBlock x:Name="TestVersionsText" Style="{StaticResource RowDescription}"
-                          Text="Test versions try changes before a release and may have more bugs. Changing this looks for updates right away, unless an update is already downloading or downloaded." />
+                          Text="Test versions try changes before a release and may have more bugs. Changing this looks for updates right away." />
           </StackPanel>
         </ui:CardControl.Header>
         <ui:ToggleSwitch IsChecked="{Binding Prereleases}" AutomationProperties.Name="Offer test versions too"
@@ -86,7 +93,7 @@
           <ui:TextBlock Style="{StaticResource RowDescription}" Text="Profiles, calibration, settings and the log. They stay after an uninstall." />
         </StackPanel>
       </ui:CardControl.Header>
-      <ui:Button x:Name="FolderButton" Content="Open folder" Command="{Binding OpenDataFolder}" AutomationProperties.Name="Open folder: data folder" />
+      <ui:Button x:Name="FolderButton" Icon="{ui:SymbolIcon Open24}" Content="Open folder" Command="{Binding OpenDataFolder}" AutomationProperties.Name="Open folder: data folder" />
     </ui:CardControl>
 
     <!-- Two things outside the app that decide whether the game sees the controller. -->
@@ -103,9 +110,9 @@
     <ui:CardControl Margin="0,4,0,0" Icon="{ui:SymbolIcon Lightbulb24}">
       <ui:CardControl.Header>
         <StackPanel>
-          <ui:TextBlock Text="Press Start, then launch the game" />
+          <ui:TextBlock Text="When to start mapping" />
           <ui:TextBlock Style="{StaticResource RowDescription}"
-                        Text="Some games only look for controllers when they start, and the virtual controller appears when mapping starts. Press Start on Home first, so the controller is there when the game opens." />
+                        Text="The first time, launch the game and choose it on Home. After that, press Start on Home before you open the game. Some games only look for controllers when they start, and the virtual controller appears only while mapping runs." />
         </StackPanel>
       </ui:CardControl.Header>
     </ui:CardControl>

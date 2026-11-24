@@ -32,7 +32,8 @@ public partial class SettingsPage : UserControl
             }
             if (IsVisible && Keyboard.FocusedElement is not UIElement { IsVisible: true })
             {
-                UIElement next = UpdateButton.IsVisible ? UpdateButton : FolderButton;
+                UIElement next = UpdateButton is { IsVisible: true, IsEnabled: true } ? UpdateButton
+                    : ReleasesButton.IsVisible ? ReleasesButton : FolderButton;
                 next.Focus();
                 _focusLeftUpdate = sender == UpdateButton;
             }

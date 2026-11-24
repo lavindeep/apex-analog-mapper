@@ -292,7 +292,8 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.Empty(_h.Updates.Asked);
         Assert.Null(updates.ActText);
         Assert.False(updates.CanChoosePrereleases);
-        Assert.Equal("This copy was not installed with Setup.exe, so it cannot update itself. To get updates, install the app with Setup.exe from its GitHub releases page.", updates.Text);
+        Assert.Equal("This copy was not installed with the setup program, so it cannot update itself. To get updates, download and run ApexAnalogMapper-win-Setup.exe from the releases page.", updates.Text);
+        Assert.True(updates.ShowsReleases);
     }
 
     /// <summary>A CI build shares the installed release's settings, so it can find that release's saved answer too.</summary>

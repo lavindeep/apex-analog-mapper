@@ -56,6 +56,7 @@ public sealed class UpdatesViewModel : ObservableObject
         _ciBuild = _current.ReleaseLabels.FirstOrDefault() == "ci";
         _prereleases = settings.Prereleases;
         _checkOnLaunch = settings.CheckForUpdates;
+        OpenReleases = new Command(() => _services.Open(Releases));
         Act = new Command(OnAct, () => _step switch
         {
             Step.Idle when _found is null => true,
@@ -104,7 +105,7 @@ public sealed class UpdatesViewModel : ObservableObject
             + " Restart and update to install it now, or it installs the next time the app starts.",
         Step.Installing => $"Closing to install version {_found}.",
         _ when _ciBuild => "This is a test build from CI, so it does not look for updates.",
-        _ when !_services.Updates.Installed => "This copy was not installed with Setup.exe, so it cannot update itself. To get updates, install the app with Setup.exe from its GitHub releases page.",
+        _ when !_services.Updates.Installed => "This copy was not installed with the setup program, so it cannot update itself. To get updates, download and run ApexAnalogMapper-win-Setup.exe from the releases page.",
         _ when _found is not null && _downloadFailed => "The download failed." + (_workspace.SessionActive ? " Stop mapping, then press Update to try again."
             : " Press Update to try again."),
         _ when _found is not null => $"Version {_found} is available." + (_workspace.SessionActive ? " Stop mapping to update."
@@ -131,6 +132,16 @@ public sealed class UpdatesViewModel : ObservableObject
 
     /// <summary>Checks, downloads, or restarts to install, depending on how far the update got.</summary>
     public Command Act { get; }
+
+    /// <summary>A check, download or install is running, so the row shows a spinner where its button was.</summary>
+    public bool IsBusy => _step is Step.Checking or Step.Downloading or Step.Installing;
+
+    public const string Releases = Update.VelopackUpdates.Repository + "/releases";
+
+    /// <summary>A copy that was not installed gets the page with Setup.exe, since it cannot update itself.</summary>
+    public bool ShowsReleases => !_services.Updates.Installed && !_ciBuild;
+
+    public Command OpenReleases { get; }
 
     /// <summary>An installed copy that is not a CI build, which may look for updates and install them.</summary>
     public bool CanUpdate => _services.Updates.Installed && !_ciBuild;
@@ -286,6 +297,7 @@ public sealed class UpdatesViewModel : ObservableObject
         Raise(nameof(Text));
         Raise(nameof(Spoken));
         Raise(nameof(ActText));
+        Raise(nameof(IsBusy));
         Raise(nameof(Available));
         Act.Refresh();
     }

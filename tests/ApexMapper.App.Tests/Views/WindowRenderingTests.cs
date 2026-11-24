@@ -413,6 +413,27 @@ public sealed class WindowRenderingTests
             Ready(h);
             h.Updates.Newest = "0.6.0";
         }),
+        // The download held part way, so the row shows its spinner where the button was.
+        new("update-downloading", h =>
+        {
+            Ready(h);
+            h.Updates.Newest = "0.6.0";
+        }, (main, h) =>
+        {
+            h.Updates.Hold = new TaskCompletionSource();
+            main.Setup.Updates.Act.Execute(null);
+            h.Updates.Progress!(42);
+            return Task.CompletedTask;
+        }),
+        new("update-downloaded", h =>
+        {
+            Ready(h);
+            h.Updates.Newest = "0.6.0";
+        }, (main, _) =>
+        {
+            main.Setup.Updates.Act.Execute(null);
+            return Task.CompletedTask;
+        }),
         new("ci-build", h => h.Updates.Newest = "0.5.1-alpha", Version: "0.1.0-ci.137"),
         new("not-installed", h => h.Updates.Installed = false),
     ];
