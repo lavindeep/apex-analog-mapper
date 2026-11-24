@@ -24,7 +24,7 @@ body:
     id: firmware
     attributes:
       label: Firmware
-      description: As the keyboard card shows it. Leave it empty if the keyboard isn't in the list.
+      description: As the Keyboard page shows it. Leave it empty if the keyboard isn't in the list.
       placeholder: 1.2.0
   - type: dropdown
     id: connection
@@ -39,7 +39,7 @@ body:
   - type: dropdown
     id: card
     attributes:
-      label: What the keyboard card says
+      label: What the Keyboard page says
       options:
         - Not tested yet
         - Not supported
@@ -67,7 +67,7 @@ body:
     id: capture
     attributes:
       label: Capture
-      description: Drag in the file from Export a capture, and paste the exact message the card showed if the check failed. Anyone can read the file once you post it. The keyboard card lists what it holds, and it has no record of your typing.
+      description: Drag in the file from Export a capture, and paste the exact message the page showed if the check failed. Anyone can read the file once you post it. The Keyboard page lists what it holds, and it has no record of your typing.
   - type: textarea
     id: found
     attributes:

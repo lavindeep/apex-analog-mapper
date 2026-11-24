@@ -28,11 +28,33 @@ public sealed class GameViewModelTests : IDisposable
         var game = Create(AppHarness.Game);
 
         Assert.Equal(AppHarness.Game, game.Selected?.ImagePath);
-        Assert.Equal("ForzaHorizon6.exe, not running", game.Selected?.Detail);
-        Assert.Equal("ForzaHorizon6, not running", game.Summary);
+        Assert.Equal(("ForzaHorizon6.exe", "Not running"), (game.Selected?.Title, game.Selected?.Detail));
+        Assert.Equal("ForzaHorizon6.exe, not running", game.Summary);
         Assert.Equal(AppHarness.Game, _h.Workspace.GamePath);
         Assert.Equal(2, game.Games.Count);
         Assert.Null(game.Hint);
+    }
+
+    [Fact]
+    public void Only_a_game_in_a_steam_library_gets_the_steam_input_step()
+    {
+        const string Steam = @"C:\Program Files (x86)\Steam\steamapps\common\ForzaHorizon6\ForzaHorizon6.exe";
+        _h.Windows = [new GameWindow("Forza Horizon 6", Steam, Elevation.Visible)];
+
+        Assert.Null(Create(AppHarness.Game).Hint);
+        Assert.Equal("This game runs through Steam. Turn off Steam Input for it in Steam, or Steam may hide or remap the controller.", Create(Steam).Hint);
+    }
+
+    [Fact]
+    public void While_mapping_the_game_row_says_how_to_choose_another()
+    {
+        var game = Create(AppHarness.Game);
+        Assert.Equal("Mapping works while this game is in front", game.RowText);
+
+        _h.Workspace.Session = SessionState.Running;
+        Assert.False(game.CanChoose);
+        Assert.Equal("Stop mapping to choose a different game", game.RowText);
+        Assert.False(game.Refresh.CanExecute(null));
     }
 
     [Fact]
@@ -45,14 +67,11 @@ public sealed class GameViewModelTests : IDisposable
         ];
         var game = Create(null);
         Assert.Null(game.Selected);
-        Assert.NotNull(game.Hint);
-        var raised = new List<string?>();
-        game.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+        Assert.Null(game.Hint);
+        Assert.Equal("Launch your game, then choose its window from the list", game.RowText);
 
         game.Selected = game.Games[0];
 
-        Assert.Null(game.Hint);
-        Assert.Contains(nameof(game.Hint), raised);
         Assert.Equal(AppHarness.Game, _h.Workspace.GamePath);
         Assert.Equal(AppHarness.Game, _h.SavedSettings.GamePath);
         Assert.Equal("Forza Horizon 6", game.Summary);
@@ -76,7 +95,7 @@ public sealed class GameViewModelTests : IDisposable
     }
 
     [Fact]
-    public void The_list_is_scanned_again_until_the_remembered_game_runs()
+    public void The_list_is_scanned_again_until_the_remembered_game_runs_and_whenever_the_window_comes_back()
     {
         var game = Create(AppHarness.Game);
         Assert.Equal(1, _h.WindowScans);
@@ -96,8 +115,12 @@ public sealed class GameViewModelTests : IDisposable
         Assert.Equal(3, _h.WindowScans);
         Assert.Equal(AppHarness.Game, game.Selected?.ImagePath);
 
+        // Closed while this window was behind it.
+        _h.Windows = [];
         game.OnActivated();
-        Assert.Equal(3, _h.WindowScans);
+        Assert.Equal(4, _h.WindowScans);
+        Assert.Equal(AppHarness.Game, game.Selected?.ImagePath);
+        Assert.False(game.Selected?.Running);
     }
 
     [Fact]

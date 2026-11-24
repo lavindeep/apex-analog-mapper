@@ -1,0 +1,120 @@
+<UserControl x:Class="ApexMapper.App.Views.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
+             xmlns:views="clr-namespace:ApexMapper.App.Views"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:SetupViewModel}">
+  <StackPanel>
+    <!-- What the app needs from Windows: the driver that creates the virtual controller. -->
+    <ui:CardControl>
+      <ui:CardControl.Icon>
+        <ui:SymbolIcon>
+          <ui:SymbolIcon.Style>
+            <Style TargetType="ui:SymbolIcon">
+              <Setter Property="Symbol" Value="Warning24" />
+              <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+              <Style.Triggers>
+                <DataTrigger Binding="{Binding DriverReady}" Value="True">
+                  <Setter Property="Symbol" Value="XboxController24" />
+                  <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                </DataTrigger>
+              </Style.Triggers>
+            </Style>
+          </ui:SymbolIcon.Style>
+        </ui:SymbolIcon>
+      </ui:CardControl.Icon>
+      <ui:CardControl.Header>
+        <StackPanel>
+          <ui:TextBlock Text="Controller driver" />
+          <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding DriverText}" views:Live.Text="{Binding DriverText}" />
+        </StackPanel>
+      </ui:CardControl.Header>
+      <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Open24}" Content="Open ViGEmBus releases" Command="{Binding OpenDriverPage}"
+                 IsVisibleChanged="OnButtonVisibleChanged" Visibility="{Binding DriverMissing, Converter={StaticResource ShowWhenTrue}}" />
+    </ui:CardControl>
+
+    <!-- The app's own version, and how it looks for a newer one. -->
+    <StackPanel DataContext="{Binding Updates}">
+      <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Updates" />
+      <ui:CardControl Icon="{ui:SymbolIcon ArrowCircleUp24}">
+        <ui:CardControl.Header>
+          <StackPanel>
+            <ui:TextBlock Text="{Binding VersionText}" />
+            <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding Text}" views:Live.Text="{Binding Spoken}"
+                          Visibility="{Binding Text, Converter={StaticResource ShowWhenPresent}}" />
+          </StackPanel>
+        </ui:CardControl.Header>
+        <!-- The update button, a spinner while it works, or for a copy that cannot update itself, the page with the setup program. -->
+        <Grid>
+          <ui:Button x:Name="UpdateButton" Style="{StaticResource UpdateAction}" Content="{Binding ActText}" Command="{Binding Act}" IsVisibleChanged="OnButtonVisibleChanged"
+                     AutomationProperties.HelpText="{Binding Spoken, TargetNullValue=''}"
+                     Visibility="{Binding ActText, Converter={StaticResource ShowWhenPresent}}" />
+          <ui:ProgressRing Width="20" Height="20" HorizontalAlignment="Right" Style="{StaticResource Busy}"
+                           Visibility="{Binding IsBusy, Converter={StaticResource ShowWhenTrue}}" />
+          <ui:Button x:Name="ReleasesButton" Icon="{ui:SymbolIcon Open24}" Content="Open GitHub releases" Command="{Binding OpenReleases}"
+                     Visibility="{Binding ShowsReleases, Converter={StaticResource ShowWhenTrue}}" />
+        </Grid>
+      </ui:CardControl>
+      <ui:CardControl Margin="0,4,0,0" Icon="{ui:SymbolIcon Clock24}"
+                      Visibility="{Binding CanUpdate, Converter={StaticResource ShowWhenTrue}}">
+        <ui:CardControl.Header>
+          <StackPanel>
+            <ui:TextBlock Text="Look for updates when the app starts" />
+            <ui:TextBlock x:Name="LaunchText" Style="{StaticResource RowDescription}"
+                          Text="The app asks GitHub at most once every six hours. Nothing downloads until you press Update." />
+          </StackPanel>
+        </ui:CardControl.Header>
+        <ui:ToggleSwitch IsChecked="{Binding CheckOnLaunch}" AutomationProperties.Name="Look for updates when the app starts"
+                         AutomationProperties.HelpText="{Binding Text, ElementName=LaunchText}" />
+      </ui:CardControl>
+      <ui:CardControl Margin="0,4,0,0" Icon="{ui:SymbolIcon Beaker24}"
+                      Visibility="{Binding CanChoosePrereleases, Converter={StaticResource ShowWhenTrue}}">
+        <ui:CardControl.Header>
+          <StackPanel>
+            <ui:TextBlock Text="Offer test versions too" />
+            <ui:TextBlock x:Name="TestVersionsText" Style="{StaticResource RowDescription}"
+                          Text="Test versions try changes before a release and may have more bugs. Changing this looks for updates right away." />
+          </StackPanel>
+        </ui:CardControl.Header>
+        <ui:ToggleSwitch IsChecked="{Binding Prereleases}" AutomationProperties.Name="Offer test versions too"
+                         AutomationProperties.HelpText="{Binding Text, ElementName=TestVersionsText}" />
+      </ui:CardControl>
+    </StackPanel>
+
+    <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Files" />
+    <ui:CardControl Icon="{ui:SymbolIcon FolderOpen24}">
+      <ui:CardControl.Header>
+        <StackPanel>
+          <ui:TextBlock Text="Data folder" />
+          <ui:TextBlock Style="{StaticResource RowDescription}" Text="Profiles, calibration, settings and the log. They stay after an uninstall." />
+        </StackPanel>
+      </ui:CardControl.Header>
+      <ui:Button x:Name="FolderButton" Icon="{ui:SymbolIcon Open24}" Content="Open folder" Command="{Binding OpenDataFolder}" AutomationProperties.Name="Open folder: data folder" />
+    </ui:CardControl>
+
+    <!-- Two things outside the app that decide whether the game sees the controller. -->
+    <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Before you play" />
+    <ui:CardControl Icon="{ui:SymbolIcon Wrench24}">
+      <ui:CardControl.Header>
+        <StackPanel>
+          <ui:TextBlock Text="Turn off Steam Input for Steam games" />
+          <ui:TextBlock Style="{StaticResource RowDescription}"
+                        Text="If the game runs through Steam, turn off Steam Input in the game's controller settings in Steam. Otherwise Steam treats the virtual controller as its own and may remap or hide it." />
+        </StackPanel>
+      </ui:CardControl.Header>
+    </ui:CardControl>
+    <ui:CardControl Margin="0,4,0,0" Icon="{ui:SymbolIcon Lightbulb24}">
+      <ui:CardControl.Header>
+        <StackPanel>
+          <ui:TextBlock Text="When to start mapping" />
+          <ui:TextBlock Style="{StaticResource RowDescription}"
+                        Text="The first time, launch the game and choose it on Home. After that, press Start on Home before you open the game. Some games only look for controllers when they start, and the virtual controller appears only while mapping runs." />
+        </StackPanel>
+      </ui:CardControl.Header>
+    </ui:CardControl>
+  </StackPanel>
+</UserControl>

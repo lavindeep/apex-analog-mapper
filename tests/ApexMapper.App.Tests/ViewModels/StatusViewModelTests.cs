@@ -20,7 +20,7 @@ public sealed class StatusViewModelTests : IDisposable
 
     public void Dispose() => _h.Dispose();
 
-    private StatusViewModel Create() => new(_h.Services, _h.Workspace);
+    private StatusViewModel Create() => new(_h.Services, _h.Workspace, new GameViewModel(_h.Services, _h.Workspace, _h.Workspace.GamePath));
 
     private static bool MentionsOtherKeyboard(string warning) => warning.Contains("another keyboard", StringComparison.Ordinal);
 
@@ -29,22 +29,31 @@ public sealed class StatusViewModelTests : IDisposable
     {
         var status = Create();
         Assert.Equal("Plug in your Apex Pro keyboard.", status.Blocker);
+        Assert.Equal(("Keyboard not plugged in", StatusTone.NotReady, false), (status.StateText, status.Tone, status.BlockedByKeyboard));
         Assert.False(status.Start.CanExecute(null));
 
         _h.Keyboards.Refresh();
         status.Tick(_h.Now);
-        Assert.Equal("Choose your keyboard on the keyboard card.", status.Blocker);
+        Assert.Equal("Choose your keyboard.", status.Blocker);
+        Assert.True(status.BlockedByKeyboard);
         _h.Workspace.ReadingFirmware = true;
         Assert.Equal("Reading the keyboard's firmware.", status.Blocker);
+        Assert.False(status.BlockedByKeyboard);
         _h.Workspace.ReadingFirmware = false;
+
+        _h.Workspace.Board = new Board(AppHarness.Gen3Info, new FirmwareReading(null, null, "The device is busy."), Consented: false);
+        status.Tick(_h.Now);
+        Assert.Equal("The keyboard's firmware could not be read. The device is busy. Unplug the keyboard and plug it back in to try again.", status.Blocker);
 
         _h.Workspace.Board = new Board(AppHarness.Gen3Info, new FirmwareReading("1.0.0", null, null), Consented: false);
         status.Tick(_h.Now);
-        Assert.Equal("This keyboard has not been tested. Try it on the keyboard card first.", status.Blocker);
+        Assert.Equal("Check its sensors first, under Try this keyboard on the Keyboard page.", status.Blocker);
+        Assert.True(status.BlockedByKeyboard);
 
         _h.ChooseTkl();
         status.Tick(_h.Now);
-        Assert.Equal("Choose the game.", status.Blocker);
+        Assert.Equal("Launch your game, then choose it in the Game row below.", status.Blocker);
+        Assert.False(status.BlockedByKeyboard);
 
         _h.Workspace.GamePath = AppHarness.Game;
         _h.Workspace.ActiveProfile = DefaultProfiles.Forza();
@@ -59,7 +68,11 @@ public sealed class StatusViewModelTests : IDisposable
         Assert.Null(status.Blocker);
         Assert.False(status.BlockedByCalibration);
         Assert.True(status.Start.CanExecute(null));
-        Assert.Equal("Ready. Press Start. Mapping begins once the game is in front.", status.Reason);
+        Assert.Equal(("Ready", StatusTone.Ready), (status.StateText, status.Tone));
+        Assert.Equal("Press Start, then launch or switch to the game.", status.Reason);
+        _h.Workspace.ProfileUnsaved = true;
+        Assert.EndsWith("Start uses your saved bindings. To use your changes, save them in Edit profiles.", status.Reason);
+        _h.Workspace.ProfileUnsaved = false;
 
         _h.Session.NotStartable = SessionEnd.For(EndReason.DriverMissing);
         status.Tick(_h.Now);
@@ -74,7 +87,7 @@ public sealed class StatusViewModelTests : IDisposable
         var status = Create();
 
         _h.Workspace.Driver = DriverState.Missing;
-        Assert.Equal("Install the ViGEmBus controller driver first.", status.Blocker);
+        Assert.Equal($"Install the ViGEmBus controller driver first. Get version {SetupViewModel.DriverVersion} from its release page, run the installer, then come back to this window.", status.Blocker);
         Assert.True(status.BlockedByDriver);
         status.OpenDriverPage.Execute(null);
         Assert.Equal([SetupViewModel.DriverPage], _h.Opened);
@@ -103,6 +116,27 @@ public sealed class StatusViewModelTests : IDisposable
         Assert.Equal(SessionState.Idle, _h.Workspace.Session);
         Assert.True(status.Start.CanExecute(null));
         Assert.Contains(_h.Log, line => line.StartsWith("Start failed: System.InvalidOperationException: The pad could not be connected.", StringComparison.Ordinal));
+        Assert.Equal(("Couldn't start mapping", StatusTone.NotReady), (status.StateText, status.Tone));
+        Assert.Equal("Mapping could not start because of an unexpected error. Press Start to try again.", status.Reason);
+    }
+
+    [Fact]
+    public async Task A_refused_start_says_so_until_the_next_one_works()
+    {
+        _h.MakeReady();
+        var status = Create();
+        _h.Session.StartRefusal = new SessionEnd(EndReason.PadFailed, "The virtual controller could not be connected.");
+
+        await status.StartAsync();
+
+        Assert.Equal(("Couldn't start mapping", StatusTone.NotReady), (status.StateText, status.Tone));
+        Assert.Equal("The virtual controller could not be connected.", status.Reason);
+        Assert.True(status.Start.CanExecute(null));
+
+        _h.Session.StartRefusal = null;
+        await status.StartAsync();
+        await status.StopAsync();
+        Assert.Equal(("Ready", StatusTone.Ready), (status.StateText, status.Tone));
     }
 
     [Fact]
@@ -142,7 +176,7 @@ public sealed class StatusViewModelTests : IDisposable
         var status = Create();
 
         Assert.Null(status.Blocker);
-        Assert.Contains("The Apex Pro Gen 3 has not been tested with this app.", status.Warnings);
+        Assert.Contains("The Apex Pro Gen 3 is not on the tested list yet. If mapping acts oddly, stop it and report it on GitHub.", status.Warnings);
     }
 
     [Fact]
@@ -161,7 +195,7 @@ public sealed class StatusViewModelTests : IDisposable
     }
 
     [Fact]
-    public void The_calibration_link_asks_for_the_calibration_card()
+    public void The_calibration_link_asks_for_the_calibration_page()
     {
         var status = Create();
         var asked = 0;
@@ -187,7 +221,7 @@ public sealed class StatusViewModelTests : IDisposable
         Assert.Equal(new GroupSignature(0x1000), request.Signatures[3]);
         Assert.Equal(SessionState.Running, _h.Workspace.Session);
         Assert.Equal(ProfileJson.Serialize(DefaultProfiles.Forza()), _h.Workspace.RunningProfileText);
-        Assert.Equal("Mapping", status.StateText);
+        Assert.Equal(("Mapping", StatusTone.Mapping), (status.StateText, status.Tone));
         Assert.False(status.Start.CanExecute(null));
         Assert.True(status.Stop.CanExecute(null));
 
@@ -196,8 +230,8 @@ public sealed class StatusViewModelTests : IDisposable
         Assert.Equal([EndReason.UserStop], _h.Session.Stops);
         Assert.Equal(SessionState.Idle, _h.Workspace.Session);
         Assert.Null(_h.Workspace.RunningProfileText);
-        Assert.Equal("Stopped", status.StateText);
-        Assert.Equal("Ready. Press Start. Mapping begins once the game is in front.", status.Reason);
+        Assert.Equal("Ready", status.StateText);
+        Assert.Equal("Press Start, then launch or switch to the game.", status.Reason);
     }
 
     [Fact]
@@ -212,7 +246,7 @@ public sealed class StatusViewModelTests : IDisposable
             SensorProblem: "The keyboard stopped answering.", KeysAwaitingRelease: false, SubmitCount: 0, HookReinstalls: 0, RestartRequired: false);
         status.Tick(_h.Now);
 
-        const string Warning = "2 analog keys are on or off only, because the keyboard stopped sending how far keys are pressed. They go back to analog when readings return. " +
+        const string Warning = "2 analog keys are working as on/off keys because their readings are late or missing. They turn analog again when the readings return. " +
             "If this lasts, stop mapping, then unplug the keyboard and plug it back in.";
         Assert.Contains(Warning, status.Warnings);
         Assert.Contains("Warning: " + Warning, _h.Log);
@@ -248,10 +282,28 @@ public sealed class StatusViewModelTests : IDisposable
 
         Assert.Equal(Why, status.Reason);
         Assert.Contains("Session ended (EngineFault): " + Why, _h.Log);
+
+        _h.Workspace.ProfileUnsaved = true;
+        Assert.Equal(Why + " Start uses your saved bindings. To use your changes, save them in Edit profiles.", status.Reason);
     }
 
     [Fact]
-    public async Task While_the_game_is_not_running_the_state_says_mapping_waits_for_it()
+    public async Task A_session_end_says_to_press_start_again_only_while_start_is_available()
+    {
+        _h.MakeReady();
+        var status = Create();
+        await status.StartAsync();
+        _h.Session.LastEnd = SessionEnd.For(EndReason.SleepOrWake);
+        _h.Session.Move(SessionState.Idle);
+        Assert.Equal("Stopped because the PC went to sleep. Press Start to map again.", status.Reason);
+
+        _h.Workspace.GamePath = null;
+        Assert.Equal("Stopped because the PC went to sleep.", status.Reason);
+        Assert.NotNull(status.Blocker);
+    }
+
+    [Fact]
+    public async Task Until_the_game_runs_and_is_in_front_the_state_says_mapping_waits_for_it()
     {
         _h.MakeReady();
         var status = Create();
@@ -260,13 +312,49 @@ public sealed class StatusViewModelTests : IDisposable
         _h.Session.NextStatus = new SessionStatus(SessionState.Running, null, GameRunning: false, false, Elevation.Visible, 0, null, false, 0, 0, false);
         status.Tick(_h.Now);
         Assert.Equal("Mapping, waiting for the game", status.StateText);
+        Assert.Equal("Launch the game. The controller starts moving once it is in front.", status.Reason);
         Assert.Empty(status.Warnings);
 
         _h.Session.NextStatus = _h.Session.NextStatus with { GameRunning = true, KeysAwaitingRelease = true, HookReinstalls = 2 };
         status.Tick(_h.Now + StatusViewModel.RefreshMs);
+        Assert.Equal("Mapping, game in background", status.StateText);
+        Assert.Equal("Switch to the game. If it does not see the controller, press Stop, close the game, press Start, then open the game again.", status.Reason);
+
+        _h.Session.NextStatus = _h.Session.NextStatus with { GameHasFocus = true };
+        status.Tick(_h.Now + 2 * StatusViewModel.RefreshMs);
         Assert.Equal("Mapping", status.StateText);
-        Assert.Contains("A key that was already down stays off until you release it once.", status.Warnings);
-        Assert.Contains("Windows turned off key blocking 2 times, and the app turned it back on each time.", status.Warnings);
+        Assert.Contains("A key that was already down stays off until you release it once.", status.Notes);
+        Assert.Contains("Windows turned off key blocking 2 times, and the app turned it back on each time.", status.Notes);
+        Assert.Empty(status.Warnings);
+
+        // Only the note that changed is replaced.
+        var changes = new List<System.Collections.Specialized.NotifyCollectionChangedAction>();
+        status.Notes.CollectionChanged += (_, e) => changes.Add(e.Action);
+        _h.Session.NextStatus = _h.Session.NextStatus with { HookReinstalls = 3 };
+        status.Tick(_h.Now + 3 * StatusViewModel.RefreshMs);
+        Assert.Equal([System.Collections.Specialized.NotifyCollectionChangedAction.Remove, System.Collections.Specialized.NotifyCollectionChangedAction.Add], changes);
+        Assert.Contains("A key that was already down stays off until you release it once.", status.Notes);
+    }
+
+    [Fact]
+    public async Task Until_the_session_sees_the_game_the_card_goes_by_the_game_list()
+    {
+        _h.MakeReady();
+        _h.Workspace.GameElevation = Elevation.Elevated;
+        var status = Create();
+        var behind = new SessionStatus(SessionState.Running, null, GameRunning: true, GameHasFocus: false, Elevation.Visible, 0, null, false, 0, 0, false);
+        _h.Session.NextStatus = behind;
+        await status.StartAsync();
+        status.Tick(_h.Now);
+        Assert.Equal("Mapping, but the game runs as administrator", status.StateText);
+
+        // In front, the session's own reading wins and then holds.
+        _h.Session.NextStatus = behind with { GameHasFocus = true };
+        status.Tick(_h.Now + StatusViewModel.RefreshMs);
+        Assert.Equal("Mapping", status.StateText);
+        _h.Session.NextStatus = behind;
+        status.Tick(_h.Now + 2 * StatusViewModel.RefreshMs);
+        Assert.Equal("Mapping, game in background", status.StateText);
     }
 
     [Fact]
@@ -281,11 +369,27 @@ public sealed class StatusViewModelTests : IDisposable
         status.Tick(_h.Now);
         const string whatHappens = " Its keys reach it as plain key presses and the controller stays at rest. To map it, close this app, then right-click it and choose Run as administrator.";
         Assert.Contains("Because the game runs as administrator and this app does not, this app leaves it alone." + whatHappens, status.Warnings);
+        Assert.Equal(("Mapping, but the game runs as administrator", StatusTone.NotReady), (status.StateText, status.Tone));
+
+        // This window in front: the session no longer sees the game, but the cause still holds.
+        _h.Session.NextStatus = elevated with { GameElevation = Elevation.Visible, GameHasFocus = false };
+        status.Tick(_h.Now + StatusViewModel.RefreshMs / 2);
+        Assert.Equal("Mapping, but the game runs as administrator", status.StateText);
+        Assert.Contains(status.Warnings, w => w.StartsWith("Because the game runs as administrator", StringComparison.Ordinal));
 
         _h.Session.NextStatus = elevated with { GameElevation = Elevation.Unknown };
         status.Tick(_h.Now + StatusViewModel.RefreshMs);
         Assert.Contains("Windows would not say whether the game runs as administrator, so this app leaves it alone." + whatHappens, status.Warnings);
         Assert.DoesNotContain(status.Warnings, w => w.StartsWith("Because", StringComparison.Ordinal));
+        Assert.Equal("Mapping, but the game may run as administrator", status.StateText);
+
+        // A new copy of the game, not run as administrator.
+        _h.Session.NextStatus = elevated with { GameRunning = false, GameElevation = Elevation.Visible, GameHasFocus = false };
+        status.Tick(_h.Now + 2 * StatusViewModel.RefreshMs);
+        _h.Session.NextStatus = elevated with { GameElevation = Elevation.Visible, GameHasFocus = true };
+        status.Tick(_h.Now + 3 * StatusViewModel.RefreshMs);
+        Assert.Equal("Mapping", status.StateText);
+        Assert.DoesNotContain(status.Warnings, w => w.Contains("administrator", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -308,6 +412,21 @@ public sealed class StatusViewModelTests : IDisposable
         _h.Session.NextStatus = atLimit with { KeysAtLimit = [] };
         status.Tick(_h.Now + StatusViewModel.AtLimitWarningMs + 250);
         Assert.DoesNotContain(Warning, status.Warnings);
+
+        // After Stop, until W is calibrated again.
+        const string Reminder = "While mapping, W pressed deeper than when it was calibrated. Calibrate W again.";
+        await status.StopAsync();
+        Assert.Contains(Reminder, status.Warnings);
+        var calibration = _h.Workspace.Calibration!;
+        // Unplugged and back: the same readings return, so the reminder stays.
+        _h.Workspace.Calibration = null;
+        _h.Workspace.Calibration = calibration;
+        Assert.Contains(Reminder, status.Warnings);
+        _h.Workspace.Calibration = calibration with
+        {
+            Keys = new Dictionary<ScanCode, KeyCalibration>(calibration.Keys) { [DefaultProfiles.Key.W] = KeyCalibration.Create(850, 4095, 40, 16) },
+        };
+        Assert.DoesNotContain(Reminder, status.Warnings);
     }
 
     [Fact]
@@ -323,11 +442,12 @@ public sealed class StatusViewModelTests : IDisposable
         _h.Session.NextStatus = running with { SubmitCount = 1500 };
         status.Tick(_h.Now + 1000);
 
-        Assert.Equal($"Keyboard read every {1.2:0.0} ms ({2.5:0.0} ms for the slowest 1%). Controller updated 1000 times a second.", status.Timing);
+        Assert.Equal($"Keyboard read every {1.2:0.0} ms, and 99% of reads within {2.5:0.0} ms. Controller updated 1000 times a second.", status.Timing);
 
         _h.Session.Move(SessionState.Paused);
         status.Tick(_h.Now + 1250);
         Assert.Null(status.Timing);
+        Assert.Equal("Plug the same keyboard back in and mapping picks up again.", status.Reason);
     }
 
     [Fact]
@@ -346,6 +466,13 @@ public sealed class StatusViewModelTests : IDisposable
         // The stall's own message ends with "Press Start to try again", which a restart has to come before.
         Assert.Null(status.Reason);
         Assert.Empty(status.Warnings);
+
+        // A restart would lose edits the profile page has not saved.
+        _h.Workspace.ProfileUnsaved = true;
+        Assert.EndsWith("Save or discard your profile changes in Edit profiles first.", status.Blocker);
+        Assert.False(status.Restart.CanExecute(null));
+
+        _h.Workspace.ProfileUnsaved = false;
         status.Restart.Execute(null);
         Assert.Equal(1, _h.Restarts);
     }
@@ -361,16 +488,16 @@ public sealed class StatusViewModelTests : IDisposable
 
         status.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, true, 1, 0));
         status.OnKey(new RawKeyEvent(new ScanCode(0x25), true, 2, 0));
-        Assert.DoesNotContain(status.Warnings, MentionsOtherKeyboard);
+        Assert.DoesNotContain(status.Notes, MentionsOtherKeyboard);
 
         status.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, true, 2, 0));
-        Assert.Contains(status.Warnings, MentionsOtherKeyboard);
+        Assert.Contains(status.Notes, MentionsOtherKeyboard);
 
         await status.StopAsync();
-        Assert.DoesNotContain(status.Warnings, MentionsOtherKeyboard);
+        Assert.DoesNotContain(status.Notes, MentionsOtherKeyboard);
 
         await status.StartAsync();
         status.OnKey(new RawKeyEvent(DefaultProfiles.Key.W, true, 2, 0));
-        Assert.DoesNotContain(status.Warnings, MentionsOtherKeyboard);
+        Assert.DoesNotContain(status.Notes, MentionsOtherKeyboard);
     }
 }

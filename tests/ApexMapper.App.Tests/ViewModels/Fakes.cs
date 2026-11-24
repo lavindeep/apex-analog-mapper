@@ -42,6 +42,9 @@ internal sealed class FakeSession : IMappingSession
     /// <summary>When set, a start throws it and stays idle, as one that unwound after a fault.</summary>
     public Exception? StartFault { get; set; }
 
+    /// <summary>When set, a start returns it and stays idle, as one the session refused.</summary>
+    public SessionEnd? StartRefusal { get; set; }
+
     public Task<SessionEnd?> StartAsync(SessionRequest request)
     {
         Starts.Add(request);
@@ -49,6 +52,11 @@ internal sealed class FakeSession : IMappingSession
         if (StartFault is { } fault)
         {
             return Task.FromException<SessionEnd?>(fault);
+        }
+        if (StartRefusal is { } refusal)
+        {
+            LastEnd = refusal;
+            return Task.FromResult<SessionEnd?>(refusal);
         }
         Move(SessionState.Running);
         return Task.FromResult<SessionEnd?>(null);
@@ -338,16 +346,18 @@ internal sealed class AppHarness : IDisposable
     /// <summary>A path in the test's temp folder.</summary>
     public string File(string name) => _dir.File(name);
 
-    /// <summary>Saves a full calibration of W, S, A and D on the TKL, as the calibration card would.</summary>
-    public void CalibrateForza()
+    /// <summary>Saves a full calibration of W, S, A and D, on the TKL unless another board and firmware are named.</summary>
+    public void CalibrateForza(Guid? board = null, string? firmware = null)
     {
         var store = Services.Calibrations;
-        store.Put(Tkl, Firmware, DefaultProfiles.Key.W, KeyCalibration.Create(850, 3900, 40, 16));
-        store.Put(Tkl, Firmware, DefaultProfiles.Key.S, KeyCalibration.Create(850, 3900, 40, 30));
-        store.Put(Tkl, Firmware, DefaultProfiles.Key.A, KeyCalibration.Create(850, 3900, 40, 29));
-        store.Put(Tkl, Firmware, DefaultProfiles.Key.D, KeyCalibration.Create(850, 3900, 40, 31));
-        store.PutSignature(Tkl, Firmware, 2, new GroupSignature(0x2000));
-        store.PutSignature(Tkl, Firmware, 3, new GroupSignature(0x1000));
+        var id = board ?? Tkl;
+        var version = firmware ?? Firmware;
+        store.Put(id, version, DefaultProfiles.Key.W, KeyCalibration.Create(850, 3900, 40, 16));
+        store.Put(id, version, DefaultProfiles.Key.S, KeyCalibration.Create(850, 3900, 40, 30));
+        store.Put(id, version, DefaultProfiles.Key.A, KeyCalibration.Create(850, 3900, 40, 29));
+        store.Put(id, version, DefaultProfiles.Key.D, KeyCalibration.Create(850, 3900, 40, 31));
+        store.PutSignature(id, version, 2, new GroupSignature(0x2000));
+        store.PutSignature(id, version, 3, new GroupSignature(0x1000));
     }
 
     /// <summary>A chosen, readable board with its calibration loaded, as the keyboard and calibration cards leave the workspace.</summary>

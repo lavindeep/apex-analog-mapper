@@ -22,14 +22,14 @@ and how to report a vulnerability.
 - Capture files. The sensor check for an untested model keeps the keyboard's answers
   in memory. The app writes them to a file only when you press Export a capture and
   choose where to save it, and never uploads the file. It holds the app version, the
-  time, the keyboard's model, product ID, firmware, Windows container ID and report
+  file's format version, the time, the keyboard's model, product ID, firmware, Windows container ID and report
   sizes, its answer to the firmware query, the sensor readings from the last check
   with no key held and with one key held, and any answer the app couldn't read. It
   holds no record of typing. Each reading is a single moment and shows which keys were
   down right then.
 - Issue links. After you export a capture, Open a new issue opens GitHub's keyboard
   support form in your browser. The link carries the keyboard's model, product ID and
-  firmware, the card's status, the sensor check's result and the app version, so the
+  firmware, the keyboard's status, the sensor check's result and the app version, so the
   form arrives filled in. Your browser sends that link to GitHub when you press the
   button. The capture itself goes up only if you attach it, and nothing is posted until
   you submit the form.
@@ -40,7 +40,7 @@ and how to report a vulnerability.
 The app makes one kind of network request. It asks this repository's GitHub Releases
 whether there is a newer version when it starts, unless it had an answer in the last six
 hours, when you press Check for updates, and when you turn test versions on or off. The
-check on start can be turned off on the Setup card. The request carries no account,
+check on start can be turned off in Settings. The request carries no account,
 token or app version. There is no telemetry.
 
 A new version downloads only when you press Update. Velopack checks the download against

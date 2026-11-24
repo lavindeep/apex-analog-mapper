@@ -9,16 +9,22 @@ using ApexMapper.Windows.Input;
 
 namespace ApexMapper.App.ViewModels;
 
-/// <summary>One analog key on the calibration card.</summary>
+/// <summary>One analog key on the Calibration page.</summary>
 public sealed class CalibrationRowViewModel : ObservableObject
 {
+    private readonly CalibrationViewModel _owner;
+    private (int Reading, int Band, int Index)? _pendingRest;
     private int? _raw;
     private string? _message;
     private string _status = "";
+    private string _stateText = "";
     private bool _busy;
+    private bool _saved;
+    private bool _isExpanded;
 
     internal CalibrationRowViewModel(ScanCode key, string name, CalibrationViewModel owner)
     {
+        _owner = owner;
         Key = key;
         Name = name;
         Learn = new Command(() => owner.Begin(this, CalibrationStep.Learn), () => owner.CanStep(this, CalibrationStep.Learn));
@@ -33,6 +39,55 @@ public sealed class CalibrationRowViewModel : ObservableObject
 
     public string Name { get; }
 
+    /// <summary>The row is open in the list. The page keeps one row open at a time.</summary>
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set
+        {
+            if (value != _isExpanded && !_owner.CanToggle(this))
+            {
+                // Tell the expander the row stayed as it was.
+                Raise(nameof(IsExpanded));
+                return;
+            }
+            if (Set(ref _isExpanded, value))
+            {
+                if (value)
+                {
+                    _owner.Opened(this);
+                }
+                else
+                {
+                    IsSaved = false;
+                    Message = null;
+                }
+            }
+        }
+    }
+
+    /// <summary>The row's state in a few words, beside its bar, such as Calibrated, Not calibrated or Other firmware.</summary>
+    public string StateText
+    {
+        get => _stateText;
+        internal set
+        {
+            if (Set(ref _stateText, value))
+            {
+                Raise(nameof(Summary));
+            }
+        }
+    }
+
+    /// <summary>Saved, and on this sensor and firmware: what the page's summary counts.</summary>
+    public bool IsCalibrated { get; internal set; }
+
+    /// <summary>What a screen reader says for the row's header.</summary>
+    public string Summary => $"{Name}, {StateText}";
+
+    /// <summary>The app does not know which sensor this key reads, so the steps wait for Find sensor.</summary>
+    public bool NeedsSensor => SensorIndex is null;
+
     /// <summary>What is saved for this key on this board, any firmware.</summary>
     public KeyCalibration? Stored { get; internal set; }
 
@@ -40,7 +95,27 @@ public sealed class CalibrationRowViewModel : ObservableObject
     internal int? Learned { get; set; }
 
     /// <summary>A rest reading waiting for its full press, with its noise band.</summary>
-    internal (int Reading, int Band, int Index)? PendingRest { get; set; }
+    internal (int Reading, int Band, int Index)? PendingRest
+    {
+        get => _pendingRest;
+        set
+        {
+            _pendingRest = value;
+            Raise(nameof(PressedIsNext));
+            Raise(nameof(RestMark));
+            Raise(nameof(RestMarkText));
+            Raise(nameof(BarText));
+        }
+    }
+
+    /// <summary>Step 2 is the one to do now, so its button is the primary one; otherwise step 1's is.</summary>
+    public bool PressedIsNext => _pendingRest is not null;
+
+    /// <summary>The step the last result asks for next, when it names one, for the page to move the keyboard to its button.</summary>
+    public CalibrationStep? NextStep { get; internal set; }
+
+    /// <summary>The key to calibrate next, when the last result saved this one, for the page to move the keyboard to its header.</summary>
+    public CalibrationRowViewModel? NextKey { get; internal set; }
 
     /// <summary>The sensor this key reads, or null until the learn step finds it.</summary>
     public int? SensorIndex { get; internal set; }
@@ -54,22 +129,59 @@ public sealed class CalibrationRowViewModel : ObservableObject
             if (Set(ref _raw, value))
             {
                 Raise(nameof(Fill));
+                Raise(nameof(ReadingText));
+                Raise(nameof(BarText));
+                Raise(nameof(ShowsReading));
+                Raise(nameof(ShowsSensorHint));
+                Raise(nameof(ShowsWaiting));
+                Raise(nameof(WaitingText));
+                Raise(nameof(HasReading));
             }
         }
     }
 
-    /// <summary>The live reading as a fraction of the sensor's range, for the bar.</summary>
+    /// <summary>The live reading as a fraction of the sensor's range, for how far the bar fills.</summary>
     public double Fill => (_raw ?? 0) / (double)KeyCalibration.MaxCount;
 
-    public double? RestMark => Stored is { } s && s.SensorIndex == SensorIndex ? s.Rest / (double)KeyCalibration.MaxCount : null;
+    /// <summary>The reading now, for screen readers.</summary>
+    public string ReadingText => _raw is { } raw ? $"{raw} of {KeyCalibration.MaxCount}" : "No reading";
+
+    /// <summary>The released reading on the bar: one just taken and waiting for its full press, else the saved one.</summary>
+    public double? RestMark => _pendingRest is { } p && p.Index == SensorIndex ? p.Reading / (double)KeyCalibration.MaxCount
+        : Stored is { } s && s.SensorIndex == SensorIndex ? s.Rest / (double)KeyCalibration.MaxCount : null;
 
     public double? FullMark => Stored is { } s && s.SensorIndex == SensorIndex ? s.FullPress / (double)KeyCalibration.MaxCount : null;
+
+    /// <summary>The released mark's number, and whether it is saved yet.</summary>
+    public string? RestMarkText => _pendingRest is { } p && p.Index == SensorIndex ? $"Released {p.Reading}, saved after step 2."
+        : Stored is { } s && s.SensorIndex == SensorIndex ? $"Saved released reading: {s.Rest}." : null;
+
+    public string? FullMarkText => Stored is { } s && s.SensorIndex == SensorIndex ? $"Saved fully pressed reading: {s.FullPress}." : null;
+
+    /// <summary>The bar's tooltip: the reading now and what each mark is, since the 2 px marks are too thin to hover.</summary>
+    public string BarText => $"Reading now: {ReadingText}." + (RestMarkText is { } rest ? " " + rest : "") + (FullMarkText is { } full ? " " + full : "");
 
     public string Status
     {
         get => _status;
-        internal set => Set(ref _status, value);
+        internal set
+        {
+            if (Set(ref _status, value))
+            {
+                Raise(nameof(ShowsStatus));
+                Raise(nameof(StatusText));
+            }
+        }
     }
+
+    /// <summary>The saved readings show above the steps, and while a step runs too, so the open key keeps its size.</summary>
+    public bool ShowsStatus => _status.Length > 0 || _owner.SensorProblem is not null;
+
+    /// <summary>The saved readings, or while the readings stopped, that there are none yet, so the open key is not empty.</summary>
+    public string StatusText => _status.Length > 0 ? _status : "No saved readings yet.";
+
+    /// <summary>The reading now, which is also what to watch while a step runs.</summary>
+    public bool ShowsReading => _raw is not null;
 
     /// <summary>The current step's prompt, or how the last one ended.</summary>
     public string? Message
@@ -81,8 +193,53 @@ public sealed class CalibrationRowViewModel : ObservableObject
     public bool IsBusy
     {
         get => _busy;
-        internal set => Set(ref _busy, value);
+        internal set
+        {
+            if (Set(ref _busy, value))
+            {
+                Raise(nameof(ShowsSteps));
+                Raise(nameof(ShowsSensorStep));
+                Raise(nameof(ShowsSensorHint));
+                Raise(nameof(ShowsWaiting));
+                Raise(nameof(WaitingText));
+                Raise(nameof(ShowsStatus));
+                Raise(nameof(ShowsReading));
+            }
+        }
     }
+
+    /// <summary>
+    /// The key was just saved. Its steps stay folded under the result until the row is
+    /// closed and opened again, so the result and the next key stay in view.
+    /// </summary>
+    public bool IsSaved
+    {
+        get => _saved;
+        internal set
+        {
+            if (Set(ref _saved, value))
+            {
+                RefreshAll();
+            }
+        }
+    }
+
+    /// <summary>The two steps and the Find sensor note, with their buttons off while a step runs, so the open key keeps its size.</summary>
+    public bool ShowsSteps => !NeedsSensor && !_saved && _owner.SensorProblem is null;
+
+    /// <summary>The hint to find the sensor of a key whose bar does not move, once there is a reading to watch.</summary>
+    public bool ShowsSensorHint => ShowsSteps && _raw is not null;
+
+    public bool HasReading => _raw is not null;
+
+    /// <summary>The steps show, but no reading has come yet.</summary>
+    public bool ShowsWaiting => ShowsSteps && _raw is null;
+
+    /// <summary>What to wait for, except when the readings stopped with a reason, when the page's error says what to do instead.</summary>
+    public string? WaitingText => ShowsWaiting && _owner.SensorProblem is null ? "Waiting for the keyboard's readings. Choose a step when its button turns on." : null;
+
+    /// <summary>A key with no known sensor shows only Find sensor, except while it runs.</summary>
+    public bool ShowsSensorStep => NeedsSensor && _owner.SensorProblem is null;
 
     public Command Learn { get; }
 
@@ -93,8 +250,19 @@ public sealed class CalibrationRowViewModel : ObservableObject
     internal void RefreshAll()
     {
         Raise(nameof(SensorIndex));
+        Raise(nameof(NeedsSensor));
+        Raise(nameof(IsCalibrated));
+        Raise(nameof(ShowsSteps));
+        Raise(nameof(ShowsSensorStep));
+        Raise(nameof(ShowsSensorHint));
+        Raise(nameof(ShowsWaiting));
+        Raise(nameof(WaitingText));
+        Raise(nameof(ShowsStatus));
         Raise(nameof(RestMark));
         Raise(nameof(FullMark));
+        Raise(nameof(RestMarkText));
+        Raise(nameof(FullMarkText));
+        Raise(nameof(BarText));
         Learn.Refresh();
         SetReleased.Refresh();
         SetPressed.Refresh();
@@ -113,7 +281,7 @@ public enum CalibrationStep
 }
 
 /// <summary>
-/// The calibration card: one row per analog key of the active profile, with the live
+/// The Calibration page: one row per analog key of the active profile, with the live
 /// raw reading, Set released, Set fully pressed, the learn step and the noise at rest.
 /// A key is saved on its own once it has both readings. Set released also records each
 /// group's signature, which the session hands to its poller for the desync check. The
@@ -140,6 +308,7 @@ public sealed class CalibrationViewModel : ObservableObject
     private IReadOnlyList<CalibrationRowViewModel> _rows = [];
     private bool _isOpen;
     private string? _sensorProblem;
+    private string? _loggedProblem;
     private Run? _run;
     private readonly HashSet<ScanCode> _held = [];
 
@@ -168,6 +337,11 @@ public sealed class CalibrationViewModel : ObservableObject
         _services = services;
         _workspace = workspace;
         _workspace.PropertyChanged += OnWorkspaceChanged;
+        _services.Keyboards.Changed += _ => _services.Post(() =>
+        {
+            Raise(nameof(Summary));
+            Raise(nameof(Blocker));
+        });
         LoadCalibration();
         SyncRows();
     }
@@ -197,14 +371,35 @@ public sealed class CalibrationViewModel : ObservableObject
 
     /// <summary>Why calibration cannot run now, or null.</summary>
     public string? Blocker => _workspace.SessionActive ? "Stop mapping to calibrate."
-        : _workspace.Board is not { } board ? (_workspace.ReadingFirmware ? "Reading the keyboard's firmware." : "Plug in your Apex Pro and choose it on the keyboard card.")
-        : board.Firmware.Version is null ? "The keyboard's firmware could not be read, so its sensors are not read either."
-        : board.Unsupported ? "The app cannot read this keyboard's sensors."
-        : !board.CanReadSensors ? "Try this keyboard on the keyboard card first."
-        : _rows.Count == 0 ? "The active profile has no analog keys."
+        : _workspace.Board is not { } board ? (_workspace.ReadingFirmware ? "Reading the keyboard's firmware."
+            : !_services.Keyboards.Current.Any(k => k.Known) ? "Plug in your Apex Pro and choose it on the Keyboard page." : "Choose a keyboard on the Keyboard page.")
+        : board.Firmware.Version is null ? "The keyboard's firmware could not be read, so its sensors are not read either. Unplug the keyboard and plug it back in to try again."
+        : board.Unsupported ? "The app cannot read this keyboard's sensors. Choose another keyboard on the Keyboard page."
+        : !board.CanReadSensors ? "Try this keyboard on the Keyboard page first."
+        : _rows.Count == 0 ? NoAnalogKeys
         : null;
 
+    public const string NoAnalogKeys = "The active profile has no analog keys, so there is nothing to calibrate. Add a binding on the Profile page.";
+
+    /// <summary>The blocker sends the user to the Profile page, so the page offers a button to it.</summary>
+    public bool BlockerOpensProfile => Blocker == NoAnalogKeys;
+
     public bool CanCalibrate => Blocker is null;
+
+    /// <summary>The blocker sends the user to the Keyboard page, so the page offers a button to it.</summary>
+    public bool BlockerOpensKeyboard => !_workspace.SessionActive && (_workspace.Board is not { } board
+        ? !_workspace.ReadingFirmware
+        : board.Firmware.Version is not null && (board.Unsupported || !board.CanReadSensors));
+
+    /// <summary>The key list shows when there is something to calibrate, or while mapping holds the keyboard.</summary>
+    public bool ShowsKeys => _rows.Count > 0 && (CanCalibrate || _workspace.SessionActive);
+
+    /// <summary>How to use the list, or null while calibration can't run.</summary>
+    public string? KeysNote => !CanCalibrate || _sensorProblem is not null ? null
+        : _rows.All(r => r.IsCalibrated) ? "Every key is calibrated. Open a key to see its saved readings or calibrate it again."
+        : _rows.Any(r => r.NeedsSensor) ? "The app has not been tested with this keyboard, so it finds each key's sensor before it takes the key's readings. Keep the other keys up while a step runs."
+        : _rows.All(r => r.Stored is not null) ? "A key's bar fills as you press the key, and the marks show its released and fully pressed readings. Keep the other keys up while a step runs."
+        : "Calibrate each key with its two steps. A key's bar fills as you press the key, and the marks show its released and fully pressed readings. Keep the other keys up while a step runs.";
 
     /// <summary>The calibration file's problem, and keys to redo after a firmware change (A15).</summary>
     public string? Problem
@@ -214,25 +409,49 @@ public sealed class CalibrationViewModel : ObservableObject
             var calibration = _workspace.Calibration;
             var redo = _rows.Where(r => calibration?.FromOtherFirmware.Contains(r.Key) == true).Select(r => r.Name).ToList();
             var firmware = redo.Count == 0 ? null
-                : $"{Wording.List(redo)} {(redo.Count == 1 ? "was" : "were")} calibrated on other firmware. The readings are kept; calibrate {(redo.Count == 1 ? "it" : "them")} again to be sure.";
+                : $"{Wording.List(redo)} {(redo.Count == 1 ? "was" : "were")} calibrated on other firmware, and mapping still uses the readings. "
+                  + $"{(_rows.Any(r => r.Stored is null) ? "After the keys that are not calibrated, open" : "Open")} {(redo.Count == 1 ? "it" : "each")} and press Set released to check they still fit.";
             return string.Join(" ", new[] { calibration?.Problem, firmware }.Where(t => t is not null)) is { Length: > 0 } text ? text : null;
         }
     }
 
+    // Counts every key with saved readings, since mapping drives with them, so the count agrees with the keys Home asks to calibrate.
     public string Summary
     {
         get
         {
-            var done = _rows.Count(r => r.Stored is not null && _workspace.Calibration?.FromOtherFirmware.Contains(r.Key) != true);
-            return _rows.Count == 0 ? "No analog keys" : $"{done} of {_rows.Count} analog keys calibrated";
+            var done = _rows.Count(r => r.Stored is not null);
+            return _workspace.Board is not { } board ? (_workspace.ReadingFirmware ? "Reading the keyboard's firmware"
+                    : !_services.Keyboards.Current.Any(k => k.Known) ? "No keyboard plugged in" : "No keyboard chosen")
+                : board.Firmware.Version is null ? "Firmware could not be read"
+                : board.Unsupported ? "Unavailable for this keyboard"
+                : !board.CanReadSensors ? "Waiting for the keyboard check"
+                : _rows.Count == 0 ? "No analog keys"
+                : $"{done} of {_rows.Count} analog keys in this profile calibrated";
         }
     }
 
-    /// <summary>Why the live readings stopped, or null.</summary>
+    /// <summary>What the user sees when a step's result can't be written. The exception goes to the log.</summary>
+    public const string SaveFailed = "The calibration could not be saved. Try the step again. If it fails again, the log says why.";
+
+    /// <summary>What the user sees when the readings stop with a reason. The reason itself goes to the log.</summary>
+    public const string SensorTrouble = "The keyboard stopped sending readings the app can use. Unplug it and plug it back in.";
+
+    /// <summary>That the live readings stopped with a reason, in plain words, or null.</summary>
     public string? SensorProblem
     {
         get => _sensorProblem;
-        private set => Set(ref _sensorProblem, value);
+        private set
+        {
+            if (Set(ref _sensorProblem, value))
+            {
+                Raise(nameof(KeysNote));
+                foreach (var row in _rows)
+                {
+                    row.RefreshAll();
+                }
+            }
+        }
     }
 
     public bool IsBusy => _run is not null;
@@ -246,14 +465,27 @@ public sealed class CalibrationViewModel : ObservableObject
         }
         if (!_services.Sensor.TryRead(_raw))
         {
-            SensorProblem = _services.Sensor.Problem;
+            // The poller's reason is for the log and the maintainer, once per reason; the page says it plainly.
+            var problem = _services.Sensor.Problem;
+            if (problem is not null && problem != _loggedProblem)
+            {
+                _services.Log("Calibration sensor problem: " + problem);
+            }
+            _loggedProblem = problem;
+            SensorProblem = problem is null ? null : SensorTrouble;
+            // A fill left where the last reading put it would look like a key whose bar does not follow it.
+            foreach (var row in _rows)
+            {
+                row.Raw = null;
+            }
             if (_run is { } stalled && nowMs - stalled.LastReading > NoReadingMs)
             {
-                Finish(stalled, "No readings came from the keyboard, so this step stopped. " + _services.Sensor.Problem);
+                Finish(stalled, "No readings came from the keyboard, so this step stopped. Try the step again once the bar moves.");
             }
             return;
         }
         SensorProblem = null;
+        _loggedProblem = null;
         foreach (var row in _rows)
         {
             row.Raw = row.SensorIndex is { } index ? _raw[index] : null;
@@ -294,9 +526,27 @@ public sealed class CalibrationViewModel : ObservableObject
     private bool FromAnotherKeyboard(nint device) =>
         _services.KeyEvents.ContainerOf(device) is { } container && _workspace.Board is { } board && container != board.Id;
 
+    /// <summary>While a step runs, its row stays open and the others stay closed, so its prompt stays on screen.</summary>
+    internal bool CanToggle(CalibrationRowViewModel row) => _run is null;
+
+    /// <summary>The row whose step is running, for the page to keep its prompt in view.</summary>
+    public CalibrationRowViewModel? ActiveRow => _run?.Row;
+
+    /// <summary>Opening a row closes the others.</summary>
+    internal void Opened(CalibrationRowViewModel row)
+    {
+        foreach (var other in _rows)
+        {
+            if (other != row)
+            {
+                other.IsExpanded = false;
+            }
+        }
+    }
+
     internal bool CanStep(CalibrationRowViewModel row, CalibrationStep step) => CanCalibrate && _run is null && step switch
     {
-        CalibrationStep.Learn => true,
+        CalibrationStep.Learn => _sensorProblem is null,
         CalibrationStep.Released => row.SensorIndex is not null,
         _ => row.SensorIndex is { } index && RestFor(row, index) is not null,
     };
@@ -312,8 +562,8 @@ public sealed class CalibrationViewModel : ObservableObject
         row.Message = step switch
         {
             CalibrationStep.Learn => "Keep your hands off the keyboard for a moment.",
-            CalibrationStep.Released => $"Keep {row.Name} and the keys around it released.",
-            _ => $"Hold {row.Name} all the way down.",
+            CalibrationStep.Released => $"Step 1: keep {row.Name} and the keys around it released.",
+            _ => $"Step 2: hold {row.Name} all the way down until this message changes.",
         };
         RefreshSteps();
     }
@@ -330,7 +580,7 @@ public sealed class CalibrationViewModel : ObservableObject
                 }
                 run.Learn = new LearnStep(_raw);
                 run.Started = nowMs;
-                row.Message = $"Now press {row.Name} all the way down and hold it.";
+                row.Message = $"Now press {row.Name} all the way down and hold it until this message changes.";
                 break;
             case CalibrationStep.Learn:
                 run.Learn.Observe(_raw);
@@ -374,29 +624,31 @@ public sealed class CalibrationViewModel : ObservableObject
         var row = run.Row;
         if (result.Outcome == LearnOutcome.NothingMoved)
         {
-            Finish(run, $"Nothing moved. Press Learn again and hold {row.Name} all the way down.");
+            Finish(run, $"Nothing moved. Press Find sensor again and hold {row.Name} all the way down when asked.", CalibrationStep.Learn);
             return;
         }
         if (result.Outcome == LearnOutcome.Ambiguous)
         {
-            Finish(run, $"More than one sensor moved. Press Learn again and hold only {row.Name}.");
+            Finish(run, $"More than one sensor moved. Press Find sensor again and hold only {row.Name}.", CalibrationStep.Learn);
             return;
         }
         if (_rows.FirstOrDefault(r => r != row && r.SensorIndex == result.SensorIndex) is { } other)
         {
-            Finish(run, $"That sensor already belongs to {other.Name}. Press Learn again and hold only {row.Name}.");
+            Finish(run, $"That sensor already belongs to {other.Name}. Press Find sensor again and hold only {row.Name}.", CalibrationStep.Learn);
             return;
         }
         if (row.SensorIndex == result.SensorIndex)
         {
-            Finish(run, $"{row.Name} reads sensor {result.SensorIndex}, as expected.");
+            Finish(run, $"{row.Name} already reads the right sensor.");
             return;
         }
         row.Learned = result.SensorIndex;
         row.PendingRest = null;
         UpdateRow(row);
+        // The tick read the row before it had a sensor, so give it this tick's reading and the steps turn on at once.
+        row.Raw = _raw[result.SensorIndex];
         _services.Log($"Learn step: {row.Name} reads sensor {result.SensorIndex}.");
-        Finish(run, $"{row.Name} reads sensor {result.SensorIndex}. Now press Set released, then Set fully pressed.");
+        Finish(run, $"Found {row.Name}'s sensor. Now do steps 1 and 2.");
     }
 
     private void FinishReleased(Run run)
@@ -423,7 +675,8 @@ public sealed class CalibrationViewModel : ObservableObject
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            Finish(run, "The calibration could not be saved: " + e.Message);
+            _services.Log("Calibration could not be saved: " + e.Message);
+            Finish(run, SaveFailed);
             return;
         }
         // Saved alone only when it is close to the saved one: a rest that moved further may
@@ -431,13 +684,14 @@ public sealed class CalibrationViewModel : ObservableObject
         var full = row.Stored is { } stored && stored.SensorIndex == index && Math.Abs(rest - stored.Rest) <= band ? stored.FullPress : (int?)null;
         if (full is { } known && KeyCalibration.Validate(rest, known, band, index) is null)
         {
-            Save(run, new KeyCalibration(rest, known, band, index), $"Released {rest}, noise {noise} counts. Saved.");
+            Save(run, new KeyCalibration(rest, known, band, index), $"Released {rest}. Saved, keeping fully pressed {known}. Hold {row.Name} all the way down: if the bar stops short of the right mark, do step 2 too.");
             return;
         }
         row.PendingRest = (rest, band, index);
         Finish(run, row.Stored is { } saved && saved.SensorIndex == index && full is null
             ? $"Released {rest}, far from the saved {saved.Rest}. If {row.Name} was up, hold it all the way down and press Set fully pressed. If not, let go of it and press Set released again."
-            : $"Released {rest}, noise {noise} counts. Now hold {row.Name} all the way down and press Set fully pressed.");
+            : $"Released {rest}. Now do step 2.",
+            CalibrationStep.Pressed);
     }
 
     private void FinishPressed(Run run)
@@ -455,7 +709,7 @@ public sealed class CalibrationViewModel : ObservableObject
         }
         if (Math.Abs(full - rest) < band + KeyCalibration.MinimumSpanAboveBand)
         {
-            Finish(run, $"{row.Name} did not move far enough from rest. Hold it all the way down, then press Set fully pressed again.");
+            Finish(run, $"{row.Name} did not move far enough from rest. Hold it all the way down, then press Set fully pressed again.", CalibrationStep.Pressed);
             return;
         }
         Save(run, new KeyCalibration(rest, full, band, index), $"Fully pressed {full}. Saved.");
@@ -470,23 +724,35 @@ public sealed class CalibrationViewModel : ObservableObject
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            Finish(run, "The calibration could not be saved: " + e.Message);
+            _services.Log("Calibration could not be saved: " + e.Message);
+            Finish(run, SaveFailed);
             return;
         }
         run.Row.PendingRest = null;
         run.Row.Learned = null;
         _services.Log($"Calibrated {run.Row.Name}: rest {calibration.Rest}, full {calibration.FullPress}, band {calibration.NoiseBand}, sensor {calibration.SensorIndex}.");
-        Finish(run, done);
+        var next = FirstToCalibrate(_rows.Where(r => r != run.Row));
+        run.Row.IsSaved = run.Step == CalibrationStep.Pressed;
+        Finish(run, next is null ? done : $"{done} Open {next.Name} to calibrate it next.", nextKey: next);
         LoadCalibration();
     }
 
-    private void Finish(Run run, string message)
+    private void Finish(Run run, string message, CalibrationStep? next = null, CalibrationRowViewModel? nextKey = null)
     {
+        run.Row.NextKey = nextKey;
         _run = null;
         run.Row.IsBusy = false;
         run.Row.Message = message;
+        run.Row.NextStep = next;
         RefreshSteps();
     }
+
+    /// <summary>
+    /// The key to calibrate next: one with no readings first, since mapping waits for it,
+    /// then one whose readings came from other firmware and only need a check.
+    /// </summary>
+    private static CalibrationRowViewModel? FirstToCalibrate(IEnumerable<CalibrationRowViewModel> rows) =>
+        rows.FirstOrDefault(r => r.Stored is null) ?? rows.FirstOrDefault(r => !r.IsCalibrated);
 
     /// <summary>The rest reading a full press is measured from: the one just taken, or the saved one for this sensor.</summary>
     private static (int Reading, int Band)? RestFor(CalibrationRowViewModel row, int index) =>
@@ -524,10 +790,25 @@ public sealed class CalibrationViewModel : ObservableObject
             UpdateRow(row);
         }
         Rows = rows;
+        if (!CanCalibrate)
+        {
+            foreach (var row in rows)
+            {
+                row.IsExpanded = false;
+            }
+        }
+        else if (!rows.Any(r => r.IsExpanded) && FirstToCalibrate(rows) is { } next)
+        {
+            next.IsExpanded = true;
+        }
         Raise(nameof(Summary));
         Raise(nameof(Problem));
         Raise(nameof(Blocker));
+        Raise(nameof(BlockerOpensKeyboard));
+        Raise(nameof(BlockerOpensProfile));
         Raise(nameof(CanCalibrate));
+        Raise(nameof(KeysNote));
+        Raise(nameof(ShowsKeys));
         RefreshSteps();
         WantSensor();
     }
@@ -539,13 +820,21 @@ public sealed class CalibrationViewModel : ObservableObject
         var board = _workspace.Board;
         row.SensorIndex = row.Learned ?? row.Stored?.SensorIndex
             ?? (board is { Verified: true } && SensorMap.Default.TryGetSensorIndex(row.Key, out var index) ? index : null);
-        row.Status = row.Stored is not { } stored
-            ? (row.SensorIndex is null ? "Not calibrated. Press Learn to find its sensor first." : "Not calibrated. With the key up, press Set released.")
-            : row.Learned is not null ? "Learned a new sensor. Set released and fully pressed again."
-            : calibration!.FromOtherFirmware.Contains(row.Key) ? $"Calibrated on other firmware: released {stored.Rest}, fully pressed {stored.FullPress}."
-            : $"Calibrated: released {stored.Rest} (±{stored.NoiseBand}), fully pressed {stored.FullPress}." +
-              (stored.IsClipping ? $" {row.Name} reaches full output before it bottoms out; the last bit of travel does nothing." : "");
+        var again = row.Stored is not null && (row.Learned is not null || calibration!.FromOtherFirmware.Contains(row.Key));
+        row.IsCalibrated = row.Stored is not null && !again;
+        row.StateText = row.Stored is null ? (row.NeedsSensor ? "Sensor not found yet" : "Not calibrated")
+            : row.Learned is not null ? "Sensor changed"
+            : again ? "Other firmware"
+            : row.Stored.IsClipping ? "Full output early" : "Calibrated";
+        row.Status = row.Stored is not { } stored ? ""
+            : row.Learned is not null ? $"{row.Name} reads a different sensor now. Do both steps again."
+            : calibration!.FromOtherFirmware.Contains(row.Key) ? $"Saved on other firmware: released {stored.Rest}, fully pressed {stored.FullPress}."
+            : $"Saved readings: released {stored.Rest}, fully pressed {stored.FullPress}." +
+              (stored.IsClipping ? $" {row.Name} reaches full output before it bottoms out; the last bit of travel does nothing. That is how its sensor reads, so there is nothing to fix." : "");
         row.RefreshAll();
+        Raise(nameof(Summary));
+        Raise(nameof(Problem));
+        Raise(nameof(KeysNote));
     }
 
     private void OnWorkspaceChanged(object? sender, PropertyChangedEventArgs e)
@@ -553,15 +842,17 @@ public sealed class CalibrationViewModel : ObservableObject
         switch (e.PropertyName)
         {
             case nameof(Workspace.Board):
+                CancelRun();
+                SensorProblem = null;
                 foreach (var row in _rows)
                 {
                     row.Learned = null;
                     row.PendingRest = null;
                     row.Message = null;
+                    row.IsExpanded = false;
                 }
                 // An unplugged keyboard sends no key-up for the keys held on it.
                 _held.Clear();
-                CancelRun();
                 LoadCalibration();
                 SyncRows();
                 break;
@@ -571,6 +862,11 @@ public sealed class CalibrationViewModel : ObservableObject
                 break;
             case nameof(Workspace.ReadingFirmware):
                 Raise(nameof(Blocker));
+                Raise(nameof(BlockerOpensKeyboard));
+                Raise(nameof(BlockerOpensProfile));
+                Raise(nameof(KeysNote));
+                Raise(nameof(ShowsKeys));
+                Raise(nameof(Summary));
                 break;
             case nameof(Workspace.SessionActive):
                 CancelRun();
@@ -592,6 +888,7 @@ public sealed class CalibrationViewModel : ObservableObject
         _services.Sensor.Want(this, _isOpen && CanCalibrate);
         if (!_isOpen || !CanCalibrate)
         {
+            SensorProblem = null;
             foreach (var row in _rows)
             {
                 row.Raw = null;
@@ -602,6 +899,8 @@ public sealed class CalibrationViewModel : ObservableObject
     private void RefreshSteps()
     {
         Raise(nameof(IsBusy));
+        Raise(nameof(ActiveRow));
+        Raise(nameof(KeysNote));
         foreach (var row in _rows)
         {
             row.RefreshAll();

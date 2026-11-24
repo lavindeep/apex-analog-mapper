@@ -1,21 +1,34 @@
 using ApexMapper.App.Model;
+using ApexMapper.App.Mvvm;
 using ApexMapper.App.Storage;
 
 namespace ApexMapper.App.ViewModels;
 
+/// <summary>The window's pages. Home holds what a driver needs each time; the others hold the finer settings.</summary>
+public enum Page
+{
+    Home,
+    Keyboard,
+    Profile,
+    Calibration,
+    Settings,
+}
+
 /// <summary>
-/// The six cards, top to bottom, sharing one <see cref="Model.Workspace"/>. The window's
-/// timer calls <see cref="Tick"/>: fast while something shows live readings or waits for
-/// a key, slow otherwise, so a session in the background costs the UI thread little.
-/// Each tick drains Raw Input's key events for key capture and the other-keyboard notice.
+/// The window's view models, sharing one <see cref="Model.Workspace"/>, and which page
+/// shows. The window's timer calls <see cref="Tick"/>: fast while something shows live
+/// readings or waits for a key, slow otherwise, so a session in the background costs the
+/// UI thread little. Each tick drains Raw Input's key events for key capture and the
+/// other-keyboard notice.
 /// </summary>
-public sealed class MainViewModel
+public sealed class MainViewModel : ObservableObject
 {
     public const int FastTickMs = 33;
     public const int SlowTickMs = StatusViewModel.RefreshMs;
 
     private readonly AppServices _services;
     private long? _lastStatus;
+    private Page _page;
 
     public MainViewModel(AppServices services, Workspace workspace, AppSettings settings)
     {
@@ -25,19 +38,65 @@ public sealed class MainViewModel
         Game = new GameViewModel(services, workspace, settings.GamePath);
         Profile = new ProfileViewModel(services, workspace, settings.ActiveProfile);
         Calibration = new CalibrationViewModel(services, workspace);
-        Status = new StatusViewModel(services, workspace);
+        Status = new StatusViewModel(services, workspace, Game);
         Setup = new SetupViewModel(services, workspace, settings);
-        Status.CalibrationRequested += () =>
-        {
-            Calibration.IsOpen = true;
-            CardRequested?.Invoke(Calibration);
-        };
+        Status.CalibrationRequested += () => Page = Page.Calibration;
+        Status.KeyboardRequested += () => Page = Page.Keyboard;
+        OpenKeyboard = new Command(() => Page = Page.Keyboard);
+        OpenProfile = new Command(() => Page = Page.Profile);
+        OpenCalibration = new Command(() => Page = Page.Calibration);
+        OpenSettings = new Command(() => Page = Page.Settings);
+        GoHome = new Command(() => Page = Page.Home);
         Keyboard.OnKeyboards(services.Keyboards.Current);
         Game.Rescan();
     }
 
-    /// <summary>The window scrolls this card into view.</summary>
-    public event Action<object>? CardRequested;
+    /// <summary>
+    /// The page on show. The profile and calibration pages read the keyboard only while
+    /// they show, leaving the profile page ends a key capture, and leaving the keyboard
+    /// page ends a sensor check, whose prompt shows only there.
+    /// </summary>
+    public Page Page
+    {
+        get => _page;
+        set
+        {
+            if (!Set(ref _page, value))
+            {
+                return;
+            }
+            if (value != Page.Profile)
+            {
+                Profile.CancelCapture.Execute(null);
+            }
+            if (value != Page.Keyboard)
+            {
+                Keyboard.StopCheck("The check stopped when you left the Keyboard page. Run it again.");
+            }
+            Profile.IsOpen = value == Page.Profile;
+            Calibration.IsOpen = value == Page.Calibration;
+            Raise(nameof(PageTitle));
+        }
+    }
+
+    public string PageTitle => _page switch
+    {
+        Page.Keyboard => "Keyboard",
+        Page.Profile => "Profile",
+        Page.Calibration => "Calibration",
+        Page.Settings => "Settings",
+        _ => "Home",
+    };
+
+    public Command OpenKeyboard { get; }
+
+    public Command OpenProfile { get; }
+
+    public Command OpenCalibration { get; }
+
+    public Command OpenSettings { get; }
+
+    public Command GoHome { get; }
 
     public Workspace Workspace { get; }
 
@@ -64,6 +123,13 @@ public sealed class MainViewModel
         Game.OnActivated();
         Profile.ForgetHeldKeys();
         Calibration.ForgetHeldKeys();
+    }
+
+    /// <summary>Another window came to the front: what it types belongs to it, so a key capture and a sensor check end.</summary>
+    public void OnDeactivated()
+    {
+        Profile.CancelCapture.Execute(null);
+        Keyboard.StopCheck("The check stopped when you switched to another window. Run it again.");
     }
 
     public int TickIntervalMs => Calibration.IsOpen || Profile.IsOpen || Profile.IsCapturing || Keyboard.IsChecking ? FastTickMs : SlowTickMs;

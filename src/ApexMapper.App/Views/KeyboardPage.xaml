@@ -1,0 +1,368 @@
+<UserControl x:Class="ApexMapper.App.Views.KeyboardPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:ApexMapper.App.ViewModels"
+             xmlns:views="clr-namespace:ApexMapper.App.Views"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance vm:KeyboardViewModel}">
+  <UserControl.Resources>
+    <!-- A step after step 1: grey until step 1 is done, so one accent ring marks where to begin. -->
+    <Style x:Key="LaterStepNumber" TargetType="Border" BasedOn="{StaticResource StepNumber}">
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding NeedsConsent}" Value="True">
+          <Setter Property="BorderBrush" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="LaterStepNumberText" TargetType="ui:TextBlock" BasedOn="{StaticResource StepNumberText}">
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding NeedsConsent}" Value="True">
+          <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+    <!-- Step 2 greys once a capture is saved, since Open a new issue in step 3 is then the next step. -->
+    <Style x:Key="CheckStepNumber" TargetType="Border" BasedOn="{StaticResource LaterStepNumber}">
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Exported}" Value="True">
+          <Setter Property="BorderBrush" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="CheckStepNumberText" TargetType="ui:TextBlock" BasedOn="{StaticResource LaterStepNumberText}">
+      <Style.Triggers>
+        <DataTrigger Binding="{Binding Exported}" Value="True">
+          <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </DataTrigger>
+      </Style.Triggers>
+    </Style>
+    <!-- Step 3 greys while a check or calibration is the next step, or mapping runs, so one accent ring marks what to do.
+         A capture saved before step 1 makes step 3 the next step, so its accent comes back then. -->
+    <Style x:Key="ShareStepNumber" TargetType="Border" BasedOn="{StaticResource LaterStepNumber}">
+      <Style.Triggers>
+        <MultiDataTrigger>
+          <MultiDataTrigger.Conditions>
+            <Condition Binding="{Binding CheckNext}" Value="True" />
+            <Condition Binding="{Binding Exported}" Value="False" />
+          </MultiDataTrigger.Conditions>
+            <Setter Property="BorderBrush" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </MultiDataTrigger>
+        <MultiDataTrigger>
+          <MultiDataTrigger.Conditions>
+            <Condition Binding="{Binding CalibrateNext}" Value="True" />
+            <Condition Binding="{Binding Exported}" Value="False" />
+          </MultiDataTrigger.Conditions>
+          <Setter Property="BorderBrush" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </MultiDataTrigger>
+        <DataTrigger Binding="{Binding CanChoose}" Value="False">
+          <Setter Property="BorderBrush" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </DataTrigger>
+        <MultiDataTrigger>
+          <MultiDataTrigger.Conditions>
+            <Condition Binding="{Binding NeedsConsent}" Value="True" />
+            <Condition Binding="{Binding Exported}" Value="True" />
+          </MultiDataTrigger.Conditions>
+          <Setter Property="BorderBrush" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+        </MultiDataTrigger>
+      </Style.Triggers>
+    </Style>
+    <Style x:Key="ShareStepNumberText" TargetType="ui:TextBlock" BasedOn="{StaticResource LaterStepNumberText}">
+      <Style.Triggers>
+        <MultiDataTrigger>
+          <MultiDataTrigger.Conditions>
+            <Condition Binding="{Binding CheckNext}" Value="True" />
+            <Condition Binding="{Binding Exported}" Value="False" />
+          </MultiDataTrigger.Conditions>
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </MultiDataTrigger>
+        <MultiDataTrigger>
+          <MultiDataTrigger.Conditions>
+            <Condition Binding="{Binding CalibrateNext}" Value="True" />
+            <Condition Binding="{Binding Exported}" Value="False" />
+          </MultiDataTrigger.Conditions>
+          <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </MultiDataTrigger>
+        <DataTrigger Binding="{Binding CanChoose}" Value="False">
+          <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+        </DataTrigger>
+        <MultiDataTrigger>
+          <MultiDataTrigger.Conditions>
+            <Condition Binding="{Binding NeedsConsent}" Value="True" />
+            <Condition Binding="{Binding Exported}" Value="True" />
+          </MultiDataTrigger.Conditions>
+          <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+        </MultiDataTrigger>
+      </Style.Triggers>
+    </Style>
+    <!-- One line of a capture's contents. -->
+    <DataTemplate x:Key="Bullet">
+      <DockPanel Margin="0,0,0,4" MaxWidth="560" HorizontalAlignment="Left">
+        <ui:TextBlock DockPanel.Dock="Left" Margin="0,0,8,0" Text="•" />
+        <ui:TextBlock Text="{Binding}" TextWrapping="Wrap" />
+      </DockPanel>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <StackPanel>
+    <ui:CardControl Icon="{ui:SymbolIcon Keyboard24}">
+      <ui:CardControl.Header>
+        <StackPanel>
+          <ui:TextBlock Text="Keyboard" />
+          <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding ChoiceText}" views:Live.Text="{Binding ChoiceText}" />
+        </StackPanel>
+      </ui:CardControl.Header>
+      <Grid Visibility="{Binding ShowPicker, Converter={StaticResource ShowWhenTrue}}">
+      <!-- Tall enough for a chosen keyboard's two lines, so choosing one keeps the row's height. -->
+      <ComboBox MinHeight="56" ItemsSource="{Binding Boards}" SelectedItem="{Binding Selected}" IsEnabled="{Binding CanChoose}"
+                Width="300" AutomationProperties.Name="Keyboard">
+        <ComboBox.ItemTemplate>
+          <DataTemplate DataType="vm:BoardItem">
+            <StackPanel>
+              <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+              <ui:TextBlock Style="{StaticResource CardSummary}" Text="{Binding Detail}" />
+            </StackPanel>
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+      <ui:TextBlock Margin="12,0,36,0" VerticalAlignment="Center" IsHitTestVisible="False" Text="Choose a keyboard"
+                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                    Visibility="{Binding Selected, Converter={StaticResource ShowWhenAbsent}}" />
+      </Grid>
+    </ui:CardControl>
+    <StackPanel Margin="0,12,0,0" Visibility="{Binding NoBoards, Converter={StaticResource ShowWhenTrue}}">
+      <ui:TextBlock Margin="0,0,0,8" Style="{StaticResource Note}"
+                    Text="Already plugged in? The app lists only the Apex Pro models it knows. The guide shows how to add yours." />
+      <ui:Button Icon="{ui:SymbolIcon Open24}" Content="How to add a model" Command="{Binding OpenAddGuide}" />
+    </StackPanel>
+
+    <ui:CardControl Margin="0,4,0,0" Icon="{ui:SymbolIcon DeveloperBoard24}"
+                    Visibility="{Binding FirmwareText, Converter={StaticResource ShowWhenPresent}}">
+      <ui:CardControl.Header>
+        <StackPanel>
+          <ui:TextBlock Text="Firmware" />
+          <ui:TextBlock Style="{StaticResource RowDescription}" Text="{Binding FirmwareText}" views:Live.Text="{Binding FirmwareText}" />
+        </StackPanel>
+      </ui:CardControl.Header>
+    </ui:CardControl>
+    <ui:InfoBar Style="{StaticResource Warning}" Severity="Informational" Message="{Binding FirmwareWarning}" views:Live.Text="{Binding FirmwareWarning}"
+                Visibility="{Binding FirmwareWarning, Converter={StaticResource ShowWhenPresent}}" />
+    <StackPanel Visibility="{Binding IsUnsupported, Converter={StaticResource ShowWhenTrue}}">
+      <ui:InfoBar Style="{StaticResource Warning}" Title="Not supported" Message="{Binding UnsupportedNote}" views:Live.Text="{Binding UnsupportedNote}" />
+      <ui:Button Margin="0,8,0,0" Icon="{ui:SymbolIcon Open24}" Content="How to report this model" Command="{Binding OpenReportGuide}" />
+    </StackPanel>
+
+    <!-- The try-it flow for a model the app has not been tested on (H6), one step at a time. -->
+    <StackPanel Visibility="{Binding IsUnverified, Converter={StaticResource ShowWhenTrue}}">
+      <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Try this keyboard" />
+      <ui:TextBlock Margin="0,0,0,12" Style="{StaticResource Note}"
+                    Text="This model is not on the app's tested list yet. These steps check that its sensors answer on your keyboard. A capture you share on GitHub lets it join the list." />
+      <ui:InfoBar Style="{StaticResource Warning}" Margin="0,0,0,4" Severity="Informational" Message="{Binding CheckBlocked}" views:Live.Text="{Binding CheckBlocked}"
+                  Visibility="{Binding CheckBlocked, Converter={StaticResource ShowWhenPresent}}" />
+
+      <StackPanel Visibility="{Binding CheckBlocked, Converter={StaticResource ShowWhenAbsent}}">
+      <ui:Card Padding="20" VerticalContentAlignment="Top" AutomationProperties.Name="{Binding Step1Name}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <!-- Step 1 steps back once a capture is saved, since Open a new issue in step 3 is then the next step. -->
+          <Border Visibility="{Binding HasConsented, Converter={StaticResource ShowWhenAbsent}}">
+            <Border.Style>
+              <Style TargetType="Border" BasedOn="{StaticResource StepNumber}">
+                <Style.Triggers>
+                  <DataTrigger Binding="{Binding Exported}" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource TextFillColorDisabledBrush}" />
+                  </DataTrigger>
+                </Style.Triggers>
+              </Style>
+            </Border.Style>
+            <ui:TextBlock Text="1">
+              <ui:TextBlock.Style>
+                <Style TargetType="ui:TextBlock" BasedOn="{StaticResource StepNumberText}">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding Exported}" Value="True">
+                      <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </ui:TextBlock.Style>
+            </ui:TextBlock>
+          </Border>
+          <ui:SymbolIcon Style="{StaticResource StepDone}" Visibility="{Binding HasConsented, Converter={StaticResource ShowWhenTrue}}" />
+          <StackPanel Grid.Column="1" Margin="16,0,0,0">
+            <ui:TextBlock Style="{StaticResource StepTitle}" Text="Let the app read the sensors" />
+            <StackPanel Visibility="{Binding HasConsented, Converter={StaticResource ShowWhenAbsent}}">
+              <ui:TextBlock Style="{StaticResource Paragraph}" Text="{x:Static vm:KeyboardViewModel.ConsentText}" />
+              <ui:TextBlock Style="{StaticResource Paragraph}" FontWeight="SemiBold"
+                            Text="The app remembers this permission for this keyboard. Pressing the button starts the check in step 2. Take your hands off the keyboard right after." />
+              <ui:Button Content="Accept the risk and read the sensors" Command="{Binding Consent}">
+                <ui:Button.Style>
+                  <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                    <Setter Property="Appearance" Value="Primary" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding Exported}" Value="True">
+                        <Setter Property="Appearance" Value="Secondary" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ui:Button.Style>
+              </ui:Button>
+            </StackPanel>
+            <ui:TextBlock Margin="0" Style="{StaticResource Note}" Text="{Binding ConsentNote}" views:Live.Text="{Binding ConsentNote}"
+                          Visibility="{Binding ConsentNote, Converter={StaticResource ShowWhenPresent}}" />
+          </StackPanel>
+        </Grid>
+      </ui:Card>
+
+      <ui:Card x:Name="CheckStep" Margin="0,4,0,0" Padding="20" VerticalContentAlignment="Top" Focusable="True" IsTabStop="False"
+               AutomationProperties.Name="{Binding Step2Name}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border Style="{StaticResource CheckStepNumber}" Visibility="{Binding CalibrateNext, Converter={StaticResource ShowWhenAbsent}}">
+            <ui:TextBlock Style="{StaticResource CheckStepNumberText}" Text="2" />
+          </Border>
+          <!-- Done only once W's sensor moved: another sensor asks for another check. -->
+          <ui:SymbolIcon Style="{StaticResource StepDone}" Visibility="{Binding CalibrateNext, Converter={StaticResource ShowWhenTrue}}" />
+          <StackPanel Grid.Column="1" Margin="16,0,0,0">
+            <ui:TextBlock Style="{StaticResource StepTitle}" Text="Check the sensors" />
+            <!-- How the check goes, until it starts. From then on the line below says what to do now, then the result. -->
+            <ui:TextBlock Style="{StaticResource Paragraph}" Text="{Binding CheckHowTo}"
+                          Visibility="{Binding CheckText, Converter={StaticResource ShowWhenAbsent}}" />
+            <DockPanel Visibility="{Binding CheckText, Converter={StaticResource ShowWhenPresent}}">
+              <ui:ProgressRing DockPanel.Dock="Left" Margin="0,0,12,0" Width="20" Height="20" VerticalAlignment="Top" Style="{StaticResource Busy}"
+                               Visibility="{Binding IsChecking, Converter={StaticResource ShowWhenTrue}}" />
+              <ui:TextBlock Text="{Binding CheckText}" views:Live.Text="{Binding CheckText}">
+                <ui:TextBlock.Style>
+                  <Style TargetType="ui:TextBlock" BasedOn="{StaticResource Paragraph}">
+                    <Style.Triggers>
+                      <!-- While the check runs, this line is what to do right now. -->
+                      <!-- Then it is the card's last line, so it drops the gap kept for what follows a result. -->
+                      <DataTrigger Binding="{Binding IsChecking}" Value="True">
+                        <Setter Property="FontTypography" Value="BodyStrong" />
+                        <Setter Property="Margin" Value="0" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ui:TextBlock.Style>
+              </ui:TextBlock>
+            </DockPanel>
+            <ui:TextBlock Style="{StaticResource Paragraph}" Text="{Binding NextStep}" views:Live.Text="{Binding NextStep}"
+                          Visibility="{Binding NextStep, Converter={StaticResource ShowWhenPresent}}" />
+            <!-- Under the result, the step it leads to, first: calibration once W's sensor moved, another check otherwise. -->
+            <!-- Tab follows the columns, so it reaches the Primary button first whichever comes first. -->
+            <Grid HorizontalAlignment="Left" KeyboardNavigation.TabNavigation="Local">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <Grid.Style>
+                <Style TargetType="Grid">
+                  <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsChecking}" Value="True">
+                      <Setter Property="Visibility" Value="Collapsed" />
+                    </DataTrigger>
+                  </Style.Triggers>
+                </Style>
+              </Grid.Style>
+              <!-- Primary when W's sensor moved, until a capture is saved and Open a new issue in step 3 becomes the next step. -->
+              <ui:Button Margin="0,0,8,0" Icon="{ui:SymbolIcon Gauge24}" Content="Open Calibration"
+                         Command="{Binding DataContext.OpenCalibration, RelativeSource={RelativeSource AncestorType=Window}}"
+                         Visibility="{Binding CheckPassed, Converter={StaticResource ShowWhenTrue}}">
+                <ui:Button.Style>
+                  <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding CalibrateNext}" Value="False">
+                        <Setter Property="Grid.Column" Value="1" />
+                        <Setter Property="TabIndex" Value="1" />
+                      </DataTrigger>
+                      <MultiDataTrigger>
+                        <MultiDataTrigger.Conditions>
+                          <Condition Binding="{Binding CalibrateNext}" Value="True" />
+                          <Condition Binding="{Binding Exported}" Value="False" />
+                        </MultiDataTrigger.Conditions>
+                        <Setter Property="Appearance" Value="Primary" />
+                      </MultiDataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ui:Button.Style>
+              </ui:Button>
+              <!-- Primary while a check is the next step, the first or another, the same way. -->
+              <ui:Button Margin="0,0,8,0" Content="{Binding CheckLabel}" Icon="{ui:SymbolIcon Pulse24}" Command="{Binding Check}">
+                <ui:Button.Style>
+                  <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                    <Setter Property="Grid.Column" Value="1" />
+                    <Setter Property="TabIndex" Value="1" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding CalibrateNext}" Value="False">
+                        <Setter Property="Grid.Column" Value="0" />
+                        <Setter Property="TabIndex" Value="0" />
+                      </DataTrigger>
+                      <MultiDataTrigger>
+                        <MultiDataTrigger.Conditions>
+                          <Condition Binding="{Binding CheckNext}" Value="True" />
+                          <Condition Binding="{Binding Exported}" Value="False" />
+                        </MultiDataTrigger.Conditions>
+                        <Setter Property="Appearance" Value="Primary" />
+                      </MultiDataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ui:Button.Style>
+              </ui:Button>
+            </Grid>
+          </StackPanel>
+        </Grid>
+      </ui:Card>
+
+      </StackPanel>
+
+      <ui:Card Margin="0,4,0,0" Padding="20" VerticalContentAlignment="Top" AutomationProperties.Name="Step 3 of 3: share a capture (optional)">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+          <Border Style="{StaticResource ShareStepNumber}">
+            <ui:TextBlock Style="{StaticResource ShareStepNumberText}" Text="3" />
+          </Border>
+          <StackPanel Grid.Column="1" Margin="16,0,0,0">
+            <ui:TextBlock Style="{StaticResource StepTitle}" Text="Share a capture (optional)" />
+            <!-- Spelled out before Export so no one attaches a file without knowing what is in it. -->
+            <ui:TextBlock Style="{StaticResource Paragraph}" Text="A capture is a file that holds:" />
+            <ItemsControl Margin="8,0,0,0" ItemsSource="{x:Static vm:KeyboardViewModel.CaptureHolds}" Focusable="False"
+                          AutomationProperties.Name="What a capture holds" ItemTemplate="{StaticResource Bullet}" />
+            <ItemsControl Margin="32,0,0,4" ItemsSource="{x:Static vm:KeyboardViewModel.CheckHolds}" Focusable="False"
+                          AutomationProperties.Name="What a capture holds from the last check" ItemTemplate="{StaticResource Bullet}" />
+            <ui:TextBlock Style="{StaticResource Note}" Text="{x:Static vm:KeyboardViewModel.CaptureLimits}" />
+            <ui:TextBlock Style="{StaticResource Paragraph}" Text="{Binding ExportNote}" views:Live.Text="{Binding ExportNote}"
+                          Visibility="{Binding ExportNote, Converter={StaticResource ShowWhenPresent}}" />
+            <ui:Button Content="Export a capture" Icon="{ui:SymbolIcon Save24}" Command="{Binding Export}" />
+            <!-- Where the file went and what to do with it, right above the button that does it. -->
+            <ui:TextBlock Margin="0,12,0,8" Style="{StaticResource Paragraph}" Text="{Binding ExportText}" views:Live.Text="{Binding ExportText}"
+                          Visibility="{Binding ExportText, Converter={StaticResource ShowWhenPresent}}" />
+              <!-- The page's next step, but secondary while mapping, so the header's Stop mapping stays the one accent button. -->
+              <ui:Button x:Name="IssueButton" Icon="{ui:SymbolIcon Open24}" Content="Open a new issue" Command="{Binding OpenIssue}"
+                         Visibility="{Binding Exported, Converter={StaticResource ShowWhenTrue}}">
+                <ui:Button.Style>
+                  <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                    <Setter Property="Appearance" Value="Primary" />
+                    <Style.Triggers>
+                      <DataTrigger Binding="{Binding CanChoose}" Value="False">
+                        <Setter Property="Appearance" Value="Secondary" />
+                      </DataTrigger>
+                    </Style.Triggers>
+                  </Style>
+                </ui:Button.Style>
+              </ui:Button>
+          </StackPanel>
+        </Grid>
+      </ui:Card>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

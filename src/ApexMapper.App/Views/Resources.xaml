@@ -7,10 +7,44 @@
     <ui:ThemesDictionary Theme="Dark" />
     <ui:ControlsDictionary />
   </ResourceDictionary.MergedDictionaries>
+  <!-- Windows 11's own faces, Text for reading sizes and Display for titles. Windows 10 has neither and uses Segoe UI. -->
+  <FontFamily x:Key="ContentControlThemeFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
+  <FontFamily x:Key="DisplayFont">Segoe UI Variable Display, Segoe UI</FontFamily>
   <BooleanToVisibilityConverter x:Key="ShowWhenTrue" />
   <views:PresenceToVisibility x:Key="ShowWhenPresent" />
   <views:PresenceToVisibility x:Key="ShowWhenAbsent" Invert="True" />
   <views:FractionOfLength x:Key="FractionOfLength" />
+  <views:ExponentToPosition x:Key="ExponentToPosition" />
+  <views:PageToVisibility x:Key="ShowOnPage" />
+  <views:PageToVisibility x:Key="HideOnPage" Invert="True" />
+
+  <!-- A picker locked while mapping still shows what is chosen, so its value is secondary text rather than greyed out.
+       A style trigger, since it outranks the template's own. Based on WPF-UI's style by name, since this style takes the type as its key. -->
+  <Style TargetType="ComboBox" BasedOn="{StaticResource DefaultComboBoxStyle}">
+    <Style.Triggers>
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!-- A row is a button in WPF-UI. Rows here only hold text and their own controls, so Tab skips them.
+       Based on WPF-UI's style by name, since this style takes the type as its key. -->
+  <Style TargetType="ui:CardControl" BasedOn="{StaticResource DefaultUiCardControlStyle}">
+    <Setter Property="Focusable" Value="False" />
+  </Style>
+
+  <!-- A ring for work under way. With Windows' animation effects off it holds still, since storyboards then finish
+       at once (App.xaml.cs) and a ring that repeats forever would spin a thousand times too fast. -->
+  <Style x:Key="Busy" TargetType="ui:ProgressRing" BasedOn="{StaticResource {x:Type ui:ProgressRing}}">
+    <Setter Property="IsIndeterminate" Value="True" />
+    <Style.Triggers>
+      <DataTrigger Binding="{Binding Source={x:Static SystemParameters.ClientAreaAnimation}}" Value="False">
+        <Setter Property="IsIndeterminate" Value="False" />
+        <Setter Property="Progress" Value="25" />
+      </DataTrigger>
+    </Style.Triggers>
+  </Style>
 
   <!-- A card's second header line: what is chosen, or what is missing. -->
   <Style x:Key="CardSummary" TargetType="ui:TextBlock">
@@ -19,9 +53,19 @@
     <Setter Property="TextTrimming" Value="CharacterEllipsis" />
   </Style>
 
-  <!-- Body text that wraps, with room below it. -->
+  <!-- A row's second line, which wraps rather than cut off beside the row's controls, and no wider than reads easily. -->
+  <Style x:Key="RowDescription" TargetType="ui:TextBlock" BasedOn="{StaticResource CardSummary}">
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="TextTrimming" Value="None" />
+    <Setter Property="MaxWidth" Value="440" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+  </Style>
+
+  <!-- Body text that wraps at about 80 characters, with room below it. -->
   <Style x:Key="Paragraph" TargetType="ui:TextBlock">
     <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="MaxWidth" Value="560" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="Margin" Value="0,0,0,8" />
   </Style>
 
@@ -29,10 +73,75 @@
     <Setter Property="Appearance" Value="Secondary" />
   </Style>
 
+  <!-- The app's update button on Home and Settings: a download for the steps that install, the update row's arrows for a check,
+       and the restart arrow once the update waits for a restart.
+       Not shared, so each button gets its own icon element. -->
+  <Style x:Key="UpdateAction" x:Shared="False" TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+    <Setter Property="Icon" Value="{ui:SymbolIcon ArrowDownload24}" />
+    <Style.Triggers>
+      <DataTrigger Binding="{Binding ActText}" Value="Check for updates">
+        <Setter Property="Icon" Value="{ui:SymbolIcon ArrowSync24}" />
+      </DataTrigger>
+      <DataTrigger Binding="{Binding ActText}" Value="Restart and update">
+        <Setter Property="Icon" Value="{ui:SymbolIcon ArrowClockwise24}" />
+      </DataTrigger>
+    </Style.Triggers>
+  </Style>
+
+  <!-- A heading over a group of cards. -->
+  <Style x:Key="SectionTitle" TargetType="ui:TextBlock">
+    <Setter Property="FontTypography" Value="BodyStrong" />
+    <Setter Property="Margin" Value="0,24,0,8" />
+  </Style>
+
   <!-- A label above a control in the editors. -->
   <Style x:Key="FieldLabel" TargetType="ui:TextBlock">
-    <Setter Property="FontTypography" Value="BodyStrong" />
+    <Setter Property="FontTypography" Value="Body" />
     <Setter Property="Margin" Value="0,12,0,4" />
+  </Style>
+
+  <!-- A key as it looks on the keyboard. -->
+  <Style x:Key="Keycap" TargetType="Border">
+    <Setter Property="MinWidth" Value="32" />
+    <Setter Property="Padding" Value="8,2" />
+    <Setter Property="Margin" Value="0,0,6,0" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="BorderThickness" Value="1,1,1,2" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+    <Setter Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="KeycapText" TargetType="ui:TextBlock">
+    <Setter Property="FontTypography" Value="BodyStrong" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+  </Style>
+
+  <!-- A numbered step's marker, and its title. -->
+  <Style x:Key="StepNumber" TargetType="Border">
+    <Setter Property="Width" Value="28" />
+    <Setter Property="Height" Value="28" />
+    <Setter Property="CornerRadius" Value="14" />
+    <Setter Property="BorderThickness" Value="1.5" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <!-- A step that is done: a check mark in place of its number. -->
+  <Style x:Key="StepDone" TargetType="ui:SymbolIcon">
+    <Setter Property="Symbol" Value="CheckmarkCircle24" />
+    <Setter Property="Filled" Value="True" />
+    <Setter Property="FontSize" Value="28" />
+    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+    <Setter Property="VerticalAlignment" Value="Top" />
+  </Style>
+  <Style x:Key="StepNumberText" TargetType="ui:TextBlock">
+    <Setter Property="FontTypography" Value="BodyStrong" />
+    <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style x:Key="StepTitle" TargetType="ui:TextBlock">
+    <Setter Property="FontTypography" Value="BodyStrong" />
+    <Setter Property="Margin" Value="0,4,0,8" />
   </Style>
 
   <!-- A warning that stays until its cause goes: no close button. -->

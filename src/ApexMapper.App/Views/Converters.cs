@@ -25,6 +25,17 @@ public sealed class PresenceToVisibility : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
+/// <summary>Visible on the page given as the parameter. <see cref="Invert"/> shows it on every other page instead.</summary>
+public sealed class PageToVisibility : IValueConverter
+{
+    public bool Invert { get; set; }
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        Equals(value, parameter) != Invert ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
 /// <summary>A fraction of a length: the first value is the fraction, the second the length, such as a bar's width.</summary>
 public sealed class FractionOfLength : IMultiValueConverter
 {
@@ -32,4 +43,17 @@ public sealed class FractionOfLength : IMultiValueConverter
         values is [double fraction, double length] ? fraction * length : 0d;
 
     public object[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+}
+
+/// <summary>
+/// A curve's exponent as a slider position: 0 is straight, and each step either way doubles
+/// or halves it, so eager and gentle get the same length of track. Back to two decimals.
+/// </summary>
+public sealed class ExponentToPosition : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is double exponent && exponent > 0 ? Math.Log2(exponent) : 0d;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is double position ? Math.Round(Math.Pow(2, position), 2) : 1d;
 }

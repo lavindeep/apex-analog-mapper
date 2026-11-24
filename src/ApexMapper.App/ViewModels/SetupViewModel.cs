@@ -6,10 +6,10 @@ using ApexMapper.Windows.Output;
 namespace ApexMapper.App.ViewModels;
 
 /// <summary>
-/// The setup card: whether the ViGEmBus driver is installed and running, with a button
+/// The Settings page: whether the ViGEmBus driver is installed and running, with a button
 /// to its official release page when it is missing, checked again whenever the window
 /// comes back to the front. The app never downloads or runs the installer (O11). The
-/// card also holds the app's own updates.
+/// page also holds the app's own updates and the data folder.
 /// </summary>
 public sealed class SetupViewModel : ObservableObject
 {
@@ -19,20 +19,12 @@ public sealed class SetupViewModel : ObservableObject
     private readonly AppServices _services;
     private readonly Workspace _workspace;
     private DriverState _driver;
-    private bool _isOpen;
 
     public SetupViewModel(AppServices services, Workspace workspace, AppSettings settings)
     {
         _services = services;
         _workspace = workspace;
         Updates = new UpdatesViewModel(services, workspace, settings);
-        Updates.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(UpdatesViewModel.Available))
-            {
-                Raise(nameof(Summary));
-            }
-        };
         OpenDriverPage = new Command(() => _services.Open(DriverPage));
         OpenDataFolder = new Command(() => _services.Open(_services.DataFolder));
         Recheck();
@@ -41,25 +33,17 @@ public sealed class SetupViewModel : ObservableObject
     public string DriverText => _driver switch
     {
         DriverState.Running => "ViGEmBus is installed and running.",
-        DriverState.NotStarted => "ViGEmBus is installed but not running. Restart the PC to finish installing it.",
-        DriverState.Missing => $"ViGEmBus is not installed. The app needs it to create the virtual controller. Install version {DriverVersion} from its release page, then come back to this window.",
+        DriverState.NotStarted => "ViGEmBus is installed but not running. Restart the PC to start it.",
+        DriverState.Missing => $"ViGEmBus is not installed. The app needs it to create the virtual controller. Run the {DriverVersion} installer from its release page, then come back to this window.",
         _ => "Windows would not say whether ViGEmBus is installed. Start will find out.",
     };
 
     public bool DriverMissing => _driver == DriverState.Missing;
 
-    /// <summary>The card is expanded. It opens by itself while the driver is missing or not running, since nothing works without it.</summary>
-    public bool IsOpen
-    {
-        get => _isOpen;
-        set => Set(ref _isOpen, value);
-    }
-
     public string Summary => _driver switch
     {
         DriverState.Missing => "The controller driver is not installed",
         DriverState.NotStarted => "The controller driver is not running yet",
-        _ when Updates.Available is { } version => $"Version {version} is available",
         _ => "Controller driver, Steam, updates, and where the app keeps its files",
     };
 
@@ -89,10 +73,6 @@ public sealed class SetupViewModel : ObservableObject
             Raise(nameof(DriverMissing));
             Raise(nameof(DriverReady));
             Raise(nameof(Summary));
-            if (state is DriverState.Missing or DriverState.NotStarted)
-            {
-                IsOpen = true;
-            }
         }
         _workspace.Driver = state;
     }

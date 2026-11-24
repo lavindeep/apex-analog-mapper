@@ -108,7 +108,7 @@ public sealed class ProfileViewModelTests : IDisposable
         profile.AddKey.Execute(null);
 
         profile.OnKey(Down(DefaultProfiles.Key.W));
-        Assert.Equal("W is already bound to Right trigger. Press another key, or Esc to cancel.", profile.Prompt);
+        Assert.Equal("W is already bound to Right trigger. Press the key to add. Esc cancels.", profile.Prompt);
         profile.OnKey(Down(new ScanCode(0xE11D)));
         Assert.StartsWith("0xE11D cannot be mapped", profile.Prompt);
         profile.OnKey(Down(new ScanCode(0x45)));
@@ -120,7 +120,7 @@ public sealed class ProfileViewModelTests : IDisposable
         profile.SelectedRow = profile.Rows.First(r => r.IsAxis);
         profile.CaptureNegativeKey.Execute(null);
         profile.OnKey(Down(profile.SelectedRow.Key));
-        Assert.Equal("The two directions need different keys. Press another key, or Esc to cancel.", profile.Prompt);
+        Assert.Equal("The two directions need different keys. Press the key for left. Esc cancels.", profile.Prompt);
         profile.OnKey(Down(profile.SelectedRow.NegativeKey));
         Assert.False(profile.IsCapturing);
         Assert.False(profile.IsDirty);
@@ -148,8 +148,12 @@ public sealed class ProfileViewModelTests : IDisposable
         var profile = Create();
         _h.Workspace.RunningProfileText = ProfileJson.Serialize(_h.Workspace.ActiveProfile!);
         _h.Workspace.Session = SessionState.Running;
+        profile.Name = "Forza edited!";
+        Assert.Equal("Saving stops mapping. Press Start on Home again to use the changes.", profile.SaveNote);
+        // Putting the running settings back means the save leaves mapping alone.
+        profile.Name = "Forza";
+        Assert.Null(profile.SaveNote);
         profile.Name = "Forza edited";
-        Assert.Equal("Saving stops mapping. Press Start again to use the changes.", profile.SaveNote);
         _h.Session.StopGate = new TaskCompletionSource();
 
         var saving = profile.SaveAsync();
@@ -173,13 +177,22 @@ public sealed class ProfileViewModelTests : IDisposable
         w.Deadzone = 0.5;
         w.Saturation = 0.4;
         await profile.SaveAsync();
-        Assert.Equal("W: the dead zone must be less than Full output at.", profile.Message);
+        Assert.Equal("W: The dead zone has to end before full output.", profile.Message);
+        Assert.Equal("The dead zone has to end before full output.", w.DeadzoneProblem);
+
+        profile.Name = " ";
+        Assert.Equal("Enter a profile name.", profile.Message);
+        profile.Name = "Forza";
 
         w.Saturation = 1;
         w.Target = RowOf(profile, DefaultProfiles.Key.S).Target;
         await profile.SaveAsync();
-        Assert.Equal("Left trigger is used by more than one binding. Choose another for one of them.", profile.Message);
+        Assert.Equal("Left trigger is used by \"W\" and \"S\". Choose another for one of them.", profile.Message);
         Assert.True(profile.IsDirty);
+
+        // Fixing the edits clears the error.
+        RowOf(profile, DefaultProfiles.Key.W).Target = PadTarget.RightTrigger;
+        Assert.Null(profile.Message);
     }
 
     [Fact]
@@ -190,16 +203,40 @@ public sealed class ProfileViewModelTests : IDisposable
         Assert.False(_h.Sensor.Wanted);
         profile.IsOpen = true;
         profile.SelectedRow = RowOf(profile, DefaultProfiles.Key.W);
+        // The preview shows with a Custom preset's settings.
+        Assert.False(_h.Sensor.Wanted);
+        profile.SelectedRow.Preset = ResponsePreset.Custom;
         Assert.True(_h.Sensor.Wanted);
 
         profile.Tick();
         Assert.Null(profile.Marker);
-        Assert.Equal("Waiting for the keyboard's readings.", profile.PreviewText);
+        Assert.Equal("Waiting for the keyboard's readings.", profile.PreviewNote);
+        var tkl = _h.Workspace.Board;
+        _h.Workspace.Board = null;
+        profile.Tick();
+        Assert.Equal("Plug in your Apex Pro and choose it on the Keyboard page to see where the key is on the curve.", profile.PreviewNote);
+        _h.Workspace.Board = tkl;
 
         _h.Sensor.Reading = AppHarness.Holding(16, 2375);
         profile.Tick();
         Assert.Null(profile.Marker);
-        Assert.Equal("W: 2375 counts. Calibrate W to see its depth here.", profile.PreviewText);
+        Assert.Equal(("W: 2375 counts.", "Calibrate W to see its depth here."), (profile.PreviewText, profile.PreviewNote));
+        // An edit leaves the note in place rather than blanking it until the next reading.
+        profile.SelectedRow.Deadzone = 0.05;
+        Assert.Equal("Calibrate W to see its depth here.", profile.PreviewNote);
+        profile.SelectedRow.Deadzone = 0;
+
+        // A stick names both keys.
+        profile.SelectedRow = profile.Rows.First(r => r.Target == PadTarget.LeftStickX);
+        profile.SelectedRow.Preset = ResponsePreset.Custom;
+        profile.Tick();
+        Assert.Equal("Calibrate A and D to see their depth here.", profile.PreviewNote);
+        profile.SelectedRow = profile.Rows.First(r => r.Target == PadTarget.RightStickX);
+        profile.SelectedRow.Preset = ResponsePreset.Custom;
+        profile.Tick();
+        Assert.Equal("Left and Right have no sensors, so they are on or off.", profile.PreviewNote);
+        profile.SelectedRow = RowOf(profile, DefaultProfiles.Key.W);
+        profile.SelectedRow.Preset = ResponsePreset.Custom;
 
         _h.CalibrateForza();
         _h.ChooseTkl();
@@ -208,7 +245,8 @@ public sealed class ProfileViewModelTests : IDisposable
         var output = profile.SelectedRow.CurrentResponse.Map(depth);
         Assert.Equal(depth * ProfileViewModel.PreviewWidth, profile.Marker!.Value.X, 6);
         Assert.Equal((1 - output) * ProfileViewModel.PreviewHeight, profile.Marker.Value.Y, 6);
-        Assert.StartsWith("W: 2375 counts, ", profile.PreviewText);
+        Assert.Equal($"W: {depth:P0} pressed, output {output:P0}.", profile.PreviewText);
+        Assert.Null(profile.PreviewNote);
         Assert.Equal(51, profile.Curve.Count);
         Assert.Equal(new Point(0, ProfileViewModel.PreviewHeight), profile.Curve[0]);
         Assert.Equal(new Point(ProfileViewModel.PreviewWidth, 0), profile.Curve[^1]);
@@ -216,6 +254,8 @@ public sealed class ProfileViewModelTests : IDisposable
         _h.Workspace.Session = SessionState.Starting;
         Assert.False(_h.Sensor.Wanted);
         Assert.Null(profile.Marker);
+        Assert.Equal("Stop mapping to see where the key is on the curve.", profile.PreviewNote);
+        Assert.Null(profile.PreviewText);
 
         _h.Workspace.Session = SessionState.Idle;
         Assert.True(_h.Sensor.Wanted);
@@ -231,8 +271,11 @@ public sealed class ProfileViewModelTests : IDisposable
 
         w.Deadzone = 0.1;
         Assert.True(profile.IsDirty);
+        Assert.True(_h.Workspace.ProfileUnsaved);
         Assert.True(profile.Save.CanExecute(null));
         Assert.False(profile.CanSwitch);
+        // The buttons an edit turns off say why.
+        Assert.Equal(("Save or discard your changes to start a new profile", "Save or discard your changes to reset the bindings"), (profile.NewHint, profile.ResetHint));
         Assert.Equal(ResponsePreset.Custom, w.Preset);
 
         w.Preset = ResponsePreset.Default;
@@ -262,6 +305,113 @@ public sealed class ProfileViewModelTests : IDisposable
         w.Preset = ResponsePreset.Default;
         Assert.False(w.IsCustom);
         Assert.Equal(CoreResponse.Default, w.CurrentResponse);
+    }
+
+    [Fact]
+    public void The_default_preset_puts_back_every_setting_of_a_stick()
+    {
+        var profile = Create();
+        var axis = profile.Rows.First(r => r.IsAxis);
+        Assert.Equal(ResponsePreset.Default, axis.Preset);
+
+        axis.Mode = AxisMode.Rate;
+        axis.RateMs = 300;
+        axis.Conflict = ConflictRule.Neutral;
+        axis.PressRampMs = 50;
+        Assert.Equal(ResponsePreset.Custom, axis.Preset);
+        Assert.Equal("Custom", axis.CustomTag);
+        Assert.EndsWith(", Custom", axis.Summary);
+
+        axis.Preset = ResponsePreset.Default;
+        Assert.Equal((AxisMode.Position, ConflictRule.LastInputWins, AxisBinding.DefaultRateMs, 0.0),
+            (axis.Mode, axis.Conflict, axis.RateMs, axis.PressRampMs));
+        Assert.Null(axis.CustomTag);
+    }
+
+    [Fact]
+    public async Task A_saved_stick_setting_opens_as_custom()
+    {
+        var profile = Create();
+        profile.Rows.First(r => r.IsAxis).ReleaseRampMs = 80;
+        await profile.SaveAsync();
+
+        Assert.Equal(ResponsePreset.Custom, profile.Rows.First(r => r.IsAxis).Preset);
+        Assert.Equal(ResponsePreset.Default, RowOf(profile, DefaultProfiles.Key.W).Preset);
+    }
+
+    [Fact]
+    public void A_stick_prompt_names_the_direction_its_axis_moves()
+    {
+        var profile = Create();
+        profile.AddAxis.Execute(null);
+        Assert.Equal("New binding: Left stick, down and up. Press the key for down. Esc cancels.", profile.Prompt);
+        profile.OnKey(Down(J));
+        Assert.Equal("Now press the key for up. Esc cancels.", profile.Prompt);
+        profile.OnKey(Down(DefaultProfiles.Key.W));
+        Assert.Equal("W is already bound to Right trigger. Press the key for up. Esc cancels.", profile.Prompt);
+        profile.CancelCapture.Execute(null);
+
+        profile.SelectedRow = profile.Rows.First(r => r.Target == PadTarget.LeftStickX);
+        profile.CaptureNegativeKey.Execute(null);
+        Assert.Equal("Press the key for left. Esc cancels.", profile.Prompt);
+        Assert.Equal("The key for left", profile.SelectedRow.NegativeKeyHint);
+    }
+
+    [Fact]
+    public async Task A_button_drops_a_hidden_response_that_would_not_save_and_adding_stops_when_every_input_is_bound()
+    {
+        var profile = Create();
+        var w = RowOf(profile, DefaultProfiles.Key.W);
+        w.Deadzone = 0.1;
+        w.Saturation = 0.05;
+        w.Target = PadTarget.ButtonA;
+        RowOf(profile, DefaultProfiles.Key.Space).Target = PadTarget.RightTrigger;
+        await profile.SaveAsync();
+        Assert.Null(profile.Message);
+
+        // The Forza profile binds three of the four stick axes.
+        Assert.True(profile.AddAxis.CanExecute(null));
+        profile.AddAxis.Execute(null);
+        profile.OnKey(Down(J));
+        profile.OnKey(Down(K));
+        Assert.False(profile.AddAxis.CanExecute(null));
+        Assert.Equal("Every stick direction has a binding. Open one to change its keys.", profile.AddAxisHint);
+    }
+
+    [Fact]
+    public void One_binding_is_open_at_a_time_and_opening_another_ends_a_capture()
+    {
+        var profile = Create();
+        Assert.Null(profile.SelectedRow);
+        var w = RowOf(profile, DefaultProfiles.Key.W);
+        var s = RowOf(profile, DefaultProfiles.Key.S);
+
+        w.IsExpanded = true;
+        Assert.Same(w, profile.SelectedRow);
+        profile.CaptureKey.Execute(null);
+        Assert.True(w.IsCapturing);
+
+        s.IsExpanded = true;
+        Assert.Same(s, profile.SelectedRow);
+        Assert.False(w.IsExpanded);
+        Assert.False(w.IsCapturing);
+        Assert.False(profile.IsCapturing);
+
+        s.IsExpanded = false;
+        Assert.Null(profile.SelectedRow);
+
+        // Custom with nothing changed is Default again once the row closes.
+        s.IsExpanded = true;
+        s.Preset = ResponsePreset.Custom;
+        s.IsExpanded = false;
+        Assert.Equal(ResponsePreset.Default, s.Preset);
+        Assert.Null(s.CustomTag);
+
+        // Adding closes the open binding, and its prompt shows by the add buttons.
+        w.IsExpanded = true;
+        profile.AddKey.Execute(null);
+        Assert.False(w.IsExpanded);
+        Assert.True(profile.IsAdding);
     }
 
     [Fact]
@@ -356,6 +506,7 @@ public sealed class ProfileViewModelTests : IDisposable
         Assert.Equal("profile-2", profile.Selected!.Id);
         Assert.False(profile.CanSwitch);
         Assert.False(profile.New.CanExecute(null));
+        Assert.Equal("Stop mapping to start a new profile", profile.NewHint);
     }
 
     [Fact]

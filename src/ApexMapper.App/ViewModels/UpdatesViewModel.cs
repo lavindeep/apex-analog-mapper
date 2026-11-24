@@ -7,7 +7,7 @@ using Velopack;
 namespace ApexMapper.App.ViewModels;
 
 /// <summary>
-/// The setup card's updates (U1, E7). At launch it asks GitHub for a newer version unless
+/// The Settings page's updates, and Home's update row (U1, E7). At launch it asks GitHub for a newer version unless
 /// it had an answer in the last six hours, which the settings keep, or the user turned the
 /// launch check off, or the settings that would say so could not be read; a launch check
 /// that fails is only logged. Test versions are offered while this copy is one, or when
@@ -33,9 +33,11 @@ public sealed class UpdatesViewModel : ObservableObject
     private bool _checkOnLaunch;
     private Step _step;
     private bool _checked;
+    private bool _offered;
     private string? _found;
     private int _percent;
     private string? _problem;
+    private bool _downloadFailed;
 
     private enum Step
     {
@@ -54,13 +56,23 @@ public sealed class UpdatesViewModel : ObservableObject
         _ciBuild = _current.ReleaseLabels.FirstOrDefault() == "ci";
         _prereleases = settings.Prereleases;
         _checkOnLaunch = settings.CheckForUpdates;
+        OpenReleases = new Command(() => _services.Open(Releases));
         Act = new Command(OnAct, () => _step switch
         {
             Step.Idle when _found is null => true,
-            Step.Idle or Step.Ready => !_workspace.SessionActive,
+            Step.Idle => !_workspace.SessionActive,
+            Step.Ready => !_workspace.SessionActive && !_workspace.ProfileUnsaved,
             _ => false,
         });
         workspace.PropertyChanged += OnWorkspaceChanged;
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Text))
+            {
+                Raise(nameof(Notice));
+                Raise(nameof(NoticeSpoken));
+            }
+        };
         if (!CanUpdate || !_checkOnLaunch || workspace.SettingsUnread)
         {
             return;
@@ -70,6 +82,7 @@ public sealed class UpdatesViewModel : ObservableObject
         {
             _checked = true;
             _found = Newer(settings.UpdateFound);
+            _offered = _found is not null;
         }
         else
         {
@@ -86,18 +99,28 @@ public sealed class UpdatesViewModel : ObservableObject
     {
         Step.Checking => "Looking for a newer version.",
         Step.Downloading => $"Downloading version {_found}: {_percent}%.",
-        Step.Ready => $"Version {_found} is downloaded. Restart the app to install it, or it installs the next time the app starts."
-            + (_workspace.SessionActive ? " Stop mapping first." : ""),
+        Step.Ready => $"Version {_found} is downloaded. "
+            + (_workspace.SessionActive ? (_workspace.ProfileUnsaved ? "Stop mapping and save or discard your profile changes, then press" : "Stop mapping, then press")
+                : _workspace.ProfileUnsaved ? "Save or discard your profile changes, then press" : "Press")
+            + " Restart and update to install it now, or it installs the next time the app starts.",
         Step.Installing => $"Closing to install version {_found}.",
         _ when _ciBuild => "This is a test build from CI, so it does not look for updates.",
-        _ when !_services.Updates.Installed => "This copy was not installed with Setup.exe, so it cannot update itself.",
-        _ when _found is not null => $"Version {_found} is available." + (_workspace.SessionActive ? " Stop mapping to update." : ""),
+        _ when !_services.Updates.Installed => "This copy was not installed with the setup program, so it cannot update itself. To get updates, download and run ApexAnalogMapper-win-Setup.exe from the releases page.",
+        _ when _found is not null && _downloadFailed => "The download failed." + (_workspace.SessionActive ? " Stop mapping, then press Update to try again."
+            : " Press Update to try again."),
+        _ when _found is not null => $"Version {_found} is available." + (_workspace.SessionActive ? " Stop mapping to update."
+            : " Update downloads it, and it installs when you restart the app."),
         _ when _checked => "This is the newest version.",
         _ => null,
     };
 
     /// <summary>What a screen reader announces: the text without the percent, which changes all through a download.</summary>
     public string? Spoken => _step is Step.Downloading ? $"Downloading version {_found}." : Text;
+
+    /// <summary>Home's line from the first time a newer version is offered, so what happens to it later shows there too; else null.</summary>
+    public string? Notice => CanUpdate && _offered ? Text : null;
+
+    public string? NoticeSpoken => Notice is null ? null : Spoken;
 
     /// <summary>The button's label, or null when it is hidden.</summary>
     public string? ActText => _step switch
@@ -109,6 +132,16 @@ public sealed class UpdatesViewModel : ObservableObject
 
     /// <summary>Checks, downloads, or restarts to install, depending on how far the update got.</summary>
     public Command Act { get; }
+
+    /// <summary>A check, download or install is running, so the row shows a spinner where its button was.</summary>
+    public bool IsBusy => _step is Step.Checking or Step.Downloading or Step.Installing;
+
+    public const string Releases = Update.VelopackUpdates.Repository + "/releases";
+
+    /// <summary>A copy that was not installed gets the page with Setup.exe, since it cannot update itself.</summary>
+    public bool ShowsReleases => !_services.Updates.Installed && !_ciBuild;
+
+    public Command OpenReleases { get; }
 
     /// <summary>An installed copy that is not a CI build, which may look for updates and install them.</summary>
     public bool CanUpdate => _services.Updates.Installed && !_ciBuild;
@@ -168,6 +201,7 @@ public sealed class UpdatesViewModel : ObservableObject
     private async Task CheckAsync(bool byUser)
     {
         _problem = null;
+        _downloadFailed = false;
         Move(Step.Checking);
         try
         {
@@ -189,7 +223,7 @@ public sealed class UpdatesViewModel : ObservableObject
             _services.Log("Update check failed: " + e.Message);
             if (byUser)
             {
-                _problem = "Could not reach GitHub to look for a newer version: " + e.Message;
+                _problem = "Could not reach GitHub to look for a newer version. Check the connection and press Check for updates again.";
             }
         }
         Move(Step.Idle);
@@ -198,17 +232,22 @@ public sealed class UpdatesViewModel : ObservableObject
     private async Task DownloadAsync()
     {
         _problem = null;
+        _downloadFailed = false;
         _percent = 0;
         Move(Step.Downloading);
         try
         {
             _found = Newer(await _services.Updates.DownloadAsync(OfferPrereleases, OnProgress));
+            if (_found is null)
+            {
+                _problem = "That version is no longer available. This is the newest version.";
+            }
             Move(_found is null ? Step.Idle : Step.Ready);
         }
         catch (Exception e)
         {
             _services.Log("Update download failed: " + e);
-            _problem = "The download failed: " + e.Message;
+            _downloadFailed = true;
             Move(Step.Idle);
         }
     }
@@ -224,7 +263,7 @@ public sealed class UpdatesViewModel : ObservableObject
 
     private void InstallAndRestart()
     {
-        if (_workspace.SessionActive)
+        if (_workspace.SessionActive || _workspace.ProfileUnsaved)
         {
             return;
         }
@@ -235,7 +274,7 @@ public sealed class UpdatesViewModel : ObservableObject
         catch (Exception e)
         {
             _services.Log("Starting the updater failed: " + e);
-            _problem = "The update could not start: " + e.Message;
+            _problem = "The update could not start. Close the app and open it again to install it. The log says why it failed.";
             Raise(nameof(Text));
             Raise(nameof(Spoken));
             return;
@@ -254,16 +293,18 @@ public sealed class UpdatesViewModel : ObservableObject
     private void Move(Step step)
     {
         _step = step;
+        _offered |= _found is not null;
         Raise(nameof(Text));
         Raise(nameof(Spoken));
         Raise(nameof(ActText));
+        Raise(nameof(IsBusy));
         Raise(nameof(Available));
         Act.Refresh();
     }
 
     private void OnWorkspaceChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(Workspace.SessionActive))
+        if (e.PropertyName is nameof(Workspace.SessionActive) or nameof(Workspace.ProfileUnsaved))
         {
             Raise(nameof(Text));
             Raise(nameof(Spoken));

@@ -10,12 +10,14 @@
                  d:DataContext="{d:DesignInstance vm:MainViewModel}"
                  Title="Apex Analog Mapper"
                  Icon="pack://application:,,,/ApexAnalogMapper;component/Assets/app.ico"
-                 Width="900" Height="900" MinWidth="640" MinHeight="480"
+                 Width="900" Height="820" MinWidth="640" MinHeight="480"
                  WindowStartupLocation="CenterScreen"
                  ExtendsContentIntoTitleBar="True"
-                 WindowBackdropType="Mica">
+                 WindowBackdropType="Mica"
+                 FontFamily="{DynamicResource ContentControlThemeFontFamily}">
   <Grid>
     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
@@ -24,14 +26,73 @@
         <ui:ImageIcon Source="pack://application:,,,/ApexAnalogMapper;component/Assets/app.ico" />
       </ui:TitleBar.Icon>
     </ui:TitleBar>
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-      <StackPanel Margin="24,4,24,24" MaxWidth="920">
-        <views:StatusCard DataContext="{Binding Status}" />
-        <views:KeyboardCard DataContext="{Binding Keyboard}" Margin="0,12,0,0" />
-        <views:GameCard DataContext="{Binding Game}" Margin="0,8,0,0" />
-        <views:ProfileCard DataContext="{Binding Profile}" Margin="0,8,0,0" />
-        <views:CalibrationCard x:Name="CalibrationCard" DataContext="{Binding Calibration}" Margin="0,8,0,0" />
-        <views:SetupCard DataContext="{Binding Setup}" Margin="0,8,0,0" />
+    <!--
+      Every page but Home has its name and a way back, Stop while mapping, and on the
+      Profile page Save while there are changes, which stay put while the page scrolls.
+    -->
+    <Grid Grid.Row="1" Margin="24,4,24,12" MaxWidth="920"
+          Visibility="{Binding Page, Converter={StaticResource HideOnPage}, ConverterParameter={x:Static vm:Page.Home}}">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <ui:Button x:Name="BackButton" Margin="11,0,0,0" Appearance="Transparent" BorderThickness="0" Icon="{ui:SymbolIcon ArrowLeft24}" Command="{Binding GoHome}" Padding="9" VerticalAlignment="Center"
+                 ToolTip="Back to Home" AutomationProperties.Name="Back to Home" />
+      <ui:TextBlock Grid.Column="1" Margin="9,0,12,0" VerticalAlignment="Center" FontTypography="Title" FontFamily="{StaticResource DisplayFont}" Text="{Binding PageTitle}" views:Live.Text="{Binding PageTitle}" />
+      <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
+                  Visibility="{Binding Page, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Profile}}">
+        <StackPanel Orientation="Horizontal" Visibility="{Binding Profile.IsDirty, Converter={StaticResource ShowWhenTrue}}" IsVisibleChanged="OnHeaderActionHidden">
+          <ui:Button Margin="0,0,8,0" Icon="{ui:SymbolIcon ArrowUndo24}" Content="Discard" Command="{Binding Profile.Discard}"
+                     ToolTip="Put back the profile as it was last saved" />
+          <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Save24}" Content="Save" Command="{Binding Profile.Save}" />
+        </StackPanel>
+      </StackPanel>
+      <ui:Button x:Name="StopButton" Grid.Column="3" Icon="{ui:SymbolIcon Stop24}" Content="Stop mapping" VerticalAlignment="Center"
+                 Command="{Binding Status.Stop}" Visibility="{Binding Status.CanStop, Converter={StaticResource ShowWhenTrue}}"
+                 IsVisibleChanged="OnHeaderActionHidden">
+        <ui:Button.Style>
+          <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="Appearance" Value="Primary" />
+            <Setter Property="Margin" Value="8,0,0,0" />
+            <Style.Triggers>
+              <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                  <Condition Binding="{Binding Page}" Value="{x:Static vm:Page.Profile}" />
+                  <Condition Binding="{Binding Profile.IsDirty}" Value="True" />
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Appearance" Value="Secondary" />
+                <Setter Property="Margin" Value="24,0,0,0" />
+              </MultiDataTrigger>
+            </Style.Triggers>
+          </Style>
+        </ui:Button.Style>
+      </ui:Button>
+      <!-- What saving does, and why a save, delete or reset failed. -->
+      <StackPanel Grid.Row="1" Grid.ColumnSpan="4"
+                  Visibility="{Binding Page, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Profile}}">
+        <ui:TextBlock Margin="0,8,0,0" HorizontalAlignment="Right" Style="{StaticResource RowDescription}" Text="{Binding Profile.SaveNote}"
+                      views:Live.Text="{Binding Profile.SaveNote}" Visibility="{Binding Profile.SaveNote, Converter={StaticResource ShowWhenPresent}}" />
+        <ui:InfoBar Style="{StaticResource Warning}" Severity="Error" Message="{Binding Profile.Message}" views:Live.Text="{Binding Profile.Message}"
+                    Visibility="{Binding Profile.Message, Converter={StaticResource ShowWhenPresent}}" />
+      </StackPanel>
+    </Grid>
+    <ScrollViewer Grid.Row="2" x:Name="Scroller" VerticalScrollBarVisibility="Auto">
+      <StackPanel x:Name="Column" Margin="24,4,24,24" MaxWidth="920">
+        <views:HomePage x:Name="Home" Visibility="{Binding Page, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Home}}" />
+        <views:KeyboardPage DataContext="{Binding Keyboard}"
+                            Visibility="{Binding DataContext.Page, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Keyboard}}" />
+        <views:ProfilePage DataContext="{Binding Profile}"
+                           Visibility="{Binding DataContext.Page, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Profile}}" />
+        <views:CalibrationPage DataContext="{Binding Calibration}"
+                               Visibility="{Binding DataContext.Page, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Calibration}}" />
+        <views:SettingsPage DataContext="{Binding Setup}"
+                            Visibility="{Binding DataContext.Page, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Settings}}" />
       </StackPanel>
     </ScrollViewer>
   </Grid>

@@ -5,6 +5,7 @@ using ApexMapper.Core.Profiles;
 using ApexMapper.Core.Sensors;
 using ApexMapper.Windows.Devices;
 using ApexMapper.Windows.Hid;
+using ApexMapper.Windows.Input;
 using ApexMapper.Windows.Output;
 using ApexMapper.Windows.Session;
 
@@ -41,6 +42,7 @@ public sealed class Workspace : ObservableObject
     private Board? _board;
     private KeyboardCalibration? _calibration;
     private string? _gamePath;
+    private Elevation _gameElevation = Elevation.Visible;
     private Profile? _activeProfile;
     private SessionState _session;
     private string? _runningProfileText;
@@ -48,6 +50,7 @@ public sealed class Workspace : ObservableObject
     private string? _saveProblem;
     private DriverState _driver = DriverState.Unknown;
     private bool _readingFirmware;
+    private bool _profileUnsaved;
 
     /// <summary>The chosen keyboard while it is connected and its firmware was asked; null otherwise. Set by the keyboard card.</summary>
     public Board? Board
@@ -81,6 +84,13 @@ public sealed class Workspace : ObservableObject
         set => Set(ref _readingFirmware, value);
     }
 
+    /// <summary>The profile editor holds edits not yet saved, which a restart would lose. Set by the Profile page.</summary>
+    public bool ProfileUnsaved
+    {
+        get => _profileUnsaved;
+        set => Set(ref _profileUnsaved, value);
+    }
+
     /// <summary>The ViGEmBus driver as last checked. Set by the setup card.</summary>
     public DriverState Driver
     {
@@ -93,6 +103,13 @@ public sealed class Workspace : ObservableObject
     {
         get => _gamePath;
         set => Set(ref _gamePath, value);
+    }
+
+    /// <summary>Whether the chosen game ran as administrator when the game list last looked. Set by the game card.</summary>
+    public Elevation GameElevation
+    {
+        get => _gameElevation;
+        set => Set(ref _gameElevation, value);
     }
 
     /// <summary>The active profile as saved; what Start compiles. Set by the profile card.</summary>

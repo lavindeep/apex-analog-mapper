@@ -26,18 +26,17 @@ public sealed class UpdatesViewModelTests : IDisposable
 
         var updates = Create();
 
-        Assert.Equal("Version 0.5.1 is available.", updates.Text);
+        Assert.Equal("Version 0.5.1 is available. Update downloads it, and it installs when you restart the app.", updates.Text);
         Assert.Equal("Update", updates.ActText);
         Assert.Equal((_h.Clock, "0.5.1"), (_h.SavedSettings.UpdateCheckedAt, _h.SavedSettings.UpdateFound));
-        Assert.Equal("Version 0.5.1 is available", new SetupViewModel(_h.Services, _h.Workspace, _h.SavedSettings).Summary);
 
         _h.Clock += UpdatesViewModel.CacheFor - TimeSpan.FromMinutes(1);
         _h.Updates.Newest = "0.5.2";
-        Assert.Equal("Version 0.5.1 is available.", Create().Text);
+        Assert.Equal("Version 0.5.1 is available. Update downloads it, and it installs when you restart the app.", Create().Text);
         Assert.Single(_h.Updates.Asked);
 
         _h.Clock += TimeSpan.FromMinutes(1);
-        Assert.Equal("Version 0.5.2 is available.", Create().Text);
+        Assert.Equal("Version 0.5.2 is available. Update downloads it, and it installs when you restart the app.", Create().Text);
         Assert.Equal(2, _h.Updates.Asked.Count);
     }
 
@@ -57,9 +56,8 @@ public sealed class UpdatesViewModelTests : IDisposable
 
         _h.Updates.Hold.SetResult();
 
-        Assert.Equal("Version 0.5.1 is available", setup.Summary);
         Assert.Equal("Update", updates.ActText);
-        Assert.Contains(nameof(setup.Summary), raised);
+        Assert.Equal("Version 0.5.1 is available. Update downloads it, and it installs when you restart the app.", updates.Notice);
         Assert.Contains(nameof(updates.Text), raised);
         Assert.Contains(nameof(updates.Spoken), raised);
         Assert.Contains(nameof(updates.ActText), raised);
@@ -100,7 +98,7 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.Null(_h.SavedSettings.UpdateCheckedAt);
 
         updates.Act.Execute(null);
-        Assert.Equal("Could not reach GitHub to look for a newer version: No such host is known.", updates.Text);
+        Assert.Equal("Could not reach GitHub to look for a newer version. Check the connection and press Check for updates again.", updates.Text);
 
         _h.Updates.Fault = null;
         updates.Act.Execute(null);
@@ -113,6 +111,7 @@ public sealed class UpdatesViewModelTests : IDisposable
         _h.Updates.Newest = "0.5.1";
         var updates = Create();
         _h.Updates.Hold = new TaskCompletionSource();
+        Assert.Equal("Version 0.5.1 is available. Update downloads it, and it installs when you restart the app.", updates.Notice);
 
         updates.Act.Execute(null);
         var raised = new List<string?>();
@@ -120,16 +119,25 @@ public sealed class UpdatesViewModelTests : IDisposable
         _h.Updates.Progress!(42);
         Assert.Equal("Downloading version 0.5.1: 42%.", updates.Text);
         Assert.Contains(nameof(updates.Text), raised);
+        Assert.Contains(nameof(updates.Notice), raised);
+        Assert.Equal("Downloading version 0.5.1: 42%.", updates.Notice);
         Assert.Equal("Downloading version 0.5.1.", updates.Spoken);
+        Assert.Equal(updates.Spoken, updates.NoticeSpoken);
         Assert.Null(updates.ActText);
         _h.Workspace.Session = SessionState.Running;
         _h.Updates.Hold.SetResult();
 
         Assert.Equal("Restart and update", updates.ActText);
-        Assert.EndsWith("installs the next time the app starts. Stop mapping first.", updates.Text);
+        Assert.Equal("Version 0.5.1 is downloaded. Stop mapping, then press Restart and update to install it now, or it installs the next time the app starts.", updates.Text);
         Assert.False(updates.Act.CanExecute(null));
 
+        _h.Workspace.ProfileUnsaved = true;
+        Assert.StartsWith("Version 0.5.1 is downloaded. Stop mapping and save or discard your profile changes, then press Restart and update", updates.Text);
         _h.Workspace.Session = SessionState.Idle;
+        Assert.StartsWith("Version 0.5.1 is downloaded. Save or discard your profile changes, then press Restart and update", updates.Text);
+        Assert.False(updates.Act.CanExecute(null));
+
+        _h.Workspace.ProfileUnsaved = false;
         updates.Act.Execute(null);
         Assert.Equal((1, 1), (_h.Updates.Installs, _h.Closes));
         Assert.Equal("Closing to install version 0.5.1.", updates.Text);
@@ -156,9 +164,12 @@ public sealed class UpdatesViewModelTests : IDisposable
 
         _h.Updates.Fault = new HttpRequestException("The connection was reset.");
         updates.Act.Execute(null);
-        Assert.Equal("The download failed: The connection was reset.", updates.Text);
+        Assert.Equal("The download failed. Press Update to try again.", updates.Text);
         Assert.Equal("Update", updates.ActText);
         Assert.Equal(0, _h.Updates.Installs);
+        _h.Workspace.Session = SessionState.Running;
+        Assert.Equal("The download failed. Stop mapping, then press Update to try again.", updates.Text);
+        _h.Workspace.Session = SessionState.Idle;
 
         _h.Updates.Fault = null;
         updates.Act.Execute(null);
@@ -177,7 +188,7 @@ public sealed class UpdatesViewModelTests : IDisposable
 
         updates.Act.Execute(null);
 
-        Assert.Equal("The update could not start: Update.exe was not found.", updates.Text);
+        Assert.Equal("The update could not start. Close the app and open it again to install it. The log says why it failed.", updates.Text);
         Assert.Contains(nameof(updates.Text), raised);
         Assert.Contains(nameof(updates.Spoken), raised);
         Assert.Equal("Restart and update", updates.ActText);
@@ -198,8 +209,13 @@ public sealed class UpdatesViewModelTests : IDisposable
 
         updates.Act.Execute(null);
 
-        Assert.Equal("This is the newest version.", updates.Text);
+        Assert.Equal("That version is no longer available. This is the newest version.", updates.Text);
+        Assert.Equal(updates.Text, updates.Notice);
         Assert.Equal("Check for updates", updates.ActText);
+
+        updates.Act.Execute(null);
+        Assert.Equal("This is the newest version.", updates.Text);
+        Assert.Equal(updates.Text, updates.Notice);
     }
 
     [Fact]
@@ -252,7 +268,7 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.Null(updates.Text);
 
         updates.Act.Execute(null);
-        Assert.Equal("Version 0.5.1 is available.", updates.Text);
+        Assert.Equal("Version 0.5.1 is available. Update downloads it, and it installs when you restart the app.", updates.Text);
     }
 
     [Fact]
@@ -276,7 +292,8 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.Empty(_h.Updates.Asked);
         Assert.Null(updates.ActText);
         Assert.False(updates.CanChoosePrereleases);
-        Assert.Equal("This copy was not installed with Setup.exe, so it cannot update itself.", updates.Text);
+        Assert.Equal("This copy was not installed with the setup program, so it cannot update itself. To get updates, download and run ApexAnalogMapper-win-Setup.exe from the releases page.", updates.Text);
+        Assert.True(updates.ShowsReleases);
     }
 
     /// <summary>A CI build shares the installed release's settings, so it can find that release's saved answer too.</summary>
@@ -293,6 +310,7 @@ public sealed class UpdatesViewModelTests : IDisposable
         Assert.Null(updates.Available);
         Assert.Null(updates.ActText);
         Assert.False(updates.CanUpdate);
+        Assert.Null(updates.Notice);
         Assert.Equal("This is a test build from CI, so it does not look for updates.", updates.Text);
     }
 }

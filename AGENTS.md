@@ -48,7 +48,7 @@ instructions win over it.
 - **sensor group** means one reply to the sensor read, which covers 14 sensors. Five
   groups cover 70. A raw reading runs from 0 to 4095. A key reads about 850 at rest, and a slot
   with no key reads under 50.
-- **capture** means the JSON file the keyboard card exports for an untested model.
+- **capture** means the JSON file the Keyboard page exports for an untested model.
 - **session** means mapping is running: the keyboard hook, the sensor poller and the pad.
 
 ## The other docs
@@ -91,14 +91,15 @@ Read the doc that matches the task before you start it.
 A change that works where you tested it is usually missing somewhere else. Before you
 call a change done, walk this list:
 
-- **Cards.** The status, keyboard, game, profile, calibration and setup cards each react
-  to board and session state. A new state needs a decision on each card. The order of
-  checks in `StatusViewModel.FindBlocker` decides which message the status card shows.
+- **Pages.** Home's status card and rows, and the Keyboard, Profile, Calibration and
+  Settings pages, each react to board and session state. A new state needs a decision on
+  each. The order of checks in `StatusViewModel.FindBlocker` decides which message the
+  status card shows.
 - **The HID layer.** What reaches the keyboard is enforced in `HidVendorDevices` and
-  `SensorRequest`, not only in the cards.
+  `SensorRequest`, not only in the pages.
 - **Screen readers.** Text that changes uses `views:Live.Text`, and a button without
   text content gets `AutomationProperties.Name`. `WindowRenderingTests` checks both.
-- **Light and dark.** `WindowRenderingTests` renders every card in both themes and fails
+- **Light and dark.** `WindowRenderingTests` renders every page in both themes and fails
   on any binding error. Add a scenario for a new window state.
 - **Documented promises.** The docs in [The other docs](#the-other-docs) describe
   behavior. Update the ones your change makes wrong.
@@ -118,7 +119,9 @@ The .NET 10 SDK from `global.json` builds the app, on Windows only.
   `dotnet test --project tests\ApexMapper.App.Tests -c Release --filter-class "*KeyboardViewModelTests"`.
   `--filter-method "<namespace>.<class>.<method>"` takes a full name and can repeat.
 - To see the window, set `APEX_SCREENSHOTS` to a folder and run `WindowRenderingTests`.
-  It saves every card in light and dark.
+  It saves every page in light and dark.
+  CI does this on every run and keeps the images in the artifact
+  `window-screenshots-<run number>`.
 - CI packs every PR with Velopack. The artifact `apex-analog-mapper-ci-<run number>`
   holds `ApexAnalogMapper-win-Portable.zip`. Extract it into a new, empty folder and run
   `current\ApexAnalogMapper.exe`. The CI version is `0.1.0-ci.<run number>`, and a
@@ -129,7 +132,7 @@ The .NET 10 SDK from `global.json` builds the app, on Windows only.
 These five read the keyboard and touch nothing else. Get the contributor's agreement,
 then check that the app is closed, that exactly one Apex Pro is plugged in, and that
 nobody touches the keyboard for the ten seconds they run. On a "Not tested yet" model
-they send the same sensor read the keyboard card asks consent for, so tell the
+they send the same sensor read the Keyboard page asks consent for, so tell the
 contributor that. On a "Not supported" model the three sensor tests fail without
 sending it.
 
@@ -155,8 +158,8 @@ contributor asks for it by name.
 
 Besides the five tests, you can start a build and read its window through Windows UI
 Automation from PowerShell (`Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes`).
-Every card's text and every control's name are there, so you can confirm what the
-keyboard and calibration cards say. You can't press keys. A capture and a clip need the
+Every page's text and every control's name are there, so you can confirm what the
+Keyboard and Calibration pages say. You can't press keys. A capture and a clip need the
 contributor's hands, so ask them for those, and leave the buttons that read sensors or
 save calibration to them.
 

@@ -59,9 +59,9 @@ public sealed record SessionEnd(EndReason Reason, string Message)
         EndReason.HookFailed => "Stopped because Windows turned off key blocking and it could not be turned back on. Press Start to try again.",
         EndReason.SafetyFault => "Stopped because one of the app's safety checks stopped working.",
         EndReason.KeyboardMissing => "The selected keyboard is not connected.",
-        EndReason.RestartRequired => "The last virtual controller could not be removed. Restart the app to clear it, then press Start.",
+        EndReason.RestartRequired => "The last virtual controller could not be removed. Restart the app to clear it.",
         EndReason.DriverMissing => "The ViGEmBus driver is not installed.",
-        EndReason.DriverNotStarted => "The ViGEmBus driver is installed but not running. Restart the PC to finish installing it.",
+        EndReason.DriverNotStarted => "The ViGEmBus driver is installed but not running. Restart the PC to start it.",
         EndReason.PadFailed => "The virtual controller could not be connected.",
         _ => "The session could not start.",
     });
