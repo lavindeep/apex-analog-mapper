@@ -46,11 +46,11 @@
         </ui:SymbolIcon>
 
         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-          <ui:TextBlock FontTypography="Subtitle" TextWrapping="Wrap" Text="{Binding StateText}" views:Live.Text="{Binding StateText}" />
-          <ui:TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Text="{Binding Reason}" views:Live.Text="{Binding Reason}"
+          <ui:TextBlock FontTypography="Subtitle" FontFamily="{StaticResource DisplayFont}" TextWrapping="Wrap" Text="{Binding StateText}" views:Live.Text="{Binding StateText}" />
+          <ui:TextBlock Margin="0,4,0,0" Style="{StaticResource Paragraph}" Text="{Binding Reason}" views:Live.Text="{Binding Reason}"
                         Visibility="{Binding Reason, Converter={StaticResource ShowWhenPresent}}" />
           <!-- Why Start is unavailable, and the way to fix it when there is one. -->
-          <ui:TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Text="{Binding Blocker}" views:Live.Text="{Binding Blocker}"
+          <ui:TextBlock Margin="0,4,0,0" Style="{StaticResource Paragraph}" Text="{Binding Blocker}" views:Live.Text="{Binding Blocker}"
                         Visibility="{Binding Blocker, Converter={StaticResource ShowWhenPresent}}" />
           <WrapPanel Margin="0,4,0,0">
             <ui:Button Margin="0,8,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Keyboard24}" Content="Open the keyboard page" Command="{Binding GoToKeyboard}"

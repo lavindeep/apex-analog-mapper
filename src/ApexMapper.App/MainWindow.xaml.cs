@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using ApexMapper.App.ViewModels;
 using ApexMapper.App.Views;
@@ -62,6 +64,15 @@ public partial class MainWindow : FluentWindow
     private void OnPageChanged(Page page)
     {
         Scroller.ScrollToTop();
+        if (page == Page.Home)
+        {
+            Column.BeginAnimation(OpacityProperty, null);
+            Column.RenderTransform = null;
+        }
+        else
+        {
+            Enter();
+        }
         IInputElement? target;
         if (page == Page.Home)
         {
@@ -81,6 +92,26 @@ public partial class MainWindow : FluentWindow
                 Home.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
             }
         });
+    }
+
+    /// <summary>
+    /// The page that opens rises a little into place, as pages do in Windows, so the change
+    /// reads as moving somewhere. The header stays still, since focus is already on its back
+    /// arrow, and Home comes back still, even mid-entrance, so focus returns to a control
+    /// that isn't moving.
+    /// Nothing moves when Windows has animation effects off.
+    /// </summary>
+    private void Enter()
+    {
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            return;
+        }
+        var shift = new TranslateTransform();
+        Column.RenderTransform = shift;
+        shift.BeginAnimation(TranslateTransform.YProperty,
+            new DoubleAnimation(24, 0, TimeSpan.FromMilliseconds(320)) { EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut, Exponent = 6 } });
+        Column.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160)));
     }
 
     /// <summary>

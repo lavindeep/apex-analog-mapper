@@ -7,6 +7,9 @@
     <ui:ThemesDictionary Theme="Dark" />
     <ui:ControlsDictionary />
   </ResourceDictionary.MergedDictionaries>
+  <!-- Windows 11's own faces, Text for reading sizes and Display for titles. Windows 10 has neither and uses Segoe UI. -->
+  <FontFamily x:Key="ContentControlThemeFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
+  <FontFamily x:Key="DisplayFont">Segoe UI Variable Display, Segoe UI</FontFamily>
   <BooleanToVisibilityConverter x:Key="ShowWhenTrue" />
   <views:PresenceToVisibility x:Key="ShowWhenPresent" />
   <views:PresenceToVisibility x:Key="ShowWhenAbsent" Invert="True" />
@@ -15,28 +18,54 @@
   <views:PageToVisibility x:Key="ShowOnPage" />
   <views:PageToVisibility x:Key="HideOnPage" Invert="True" />
 
+  <!-- A picker locked while mapping still shows what is chosen, so its value is secondary text rather than greyed out.
+       A style trigger, since it outranks the template's own. Based on WPF-UI's style by name, since this style takes the type as its key. -->
+  <Style TargetType="ComboBox" BasedOn="{StaticResource DefaultComboBoxStyle}">
+    <Style.Triggers>
+      <Trigger Property="IsEnabled" Value="False">
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+      </Trigger>
+    </Style.Triggers>
+  </Style>
+
+  <!-- A row is a button in WPF-UI. Rows here only hold text and their own controls, so Tab skips them.
+       Based on WPF-UI's style by name, since this style takes the type as its key. -->
+  <Style TargetType="ui:CardControl" BasedOn="{StaticResource DefaultUiCardControlStyle}">
+    <Setter Property="Focusable" Value="False" />
+  </Style>
+
+  <!-- A ring for work under way. With Windows' animation effects off it holds still, since storyboards then finish
+       at once (App.xaml.cs) and a ring that repeats forever would spin a thousand times too fast. -->
+  <Style x:Key="Busy" TargetType="ui:ProgressRing" BasedOn="{StaticResource {x:Type ui:ProgressRing}}">
+    <Setter Property="IsIndeterminate" Value="True" />
+    <Style.Triggers>
+      <DataTrigger Binding="{Binding Source={x:Static SystemParameters.ClientAreaAnimation}}" Value="False">
+        <Setter Property="IsIndeterminate" Value="False" />
+        <Setter Property="Progress" Value="25" />
+      </DataTrigger>
+    </Style.Triggers>
+  </Style>
+
   <!-- A card's second header line: what is chosen, or what is missing. -->
   <Style x:Key="CardSummary" TargetType="ui:TextBlock">
     <Setter Property="FontTypography" Value="Caption" />
     <Setter Property="Appearance" Value="Secondary" />
     <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-    <Style.Triggers>
-      <!-- Inside a disabled picker, so the line under the name never stands out more than the name. -->
-      <Trigger Property="IsEnabled" Value="False">
-        <Setter Property="Appearance" Value="Disabled" />
-      </Trigger>
-    </Style.Triggers>
   </Style>
 
-  <!-- A row's second line on Home, which wraps rather than cut off beside the row's controls. -->
+  <!-- A row's second line, which wraps rather than cut off beside the row's controls, and no wider than reads easily. -->
   <Style x:Key="RowDescription" TargetType="ui:TextBlock" BasedOn="{StaticResource CardSummary}">
     <Setter Property="TextWrapping" Value="Wrap" />
     <Setter Property="TextTrimming" Value="None" />
+    <Setter Property="MaxWidth" Value="440" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
   </Style>
 
-  <!-- Body text that wraps, with room below it. -->
+  <!-- Body text that wraps at about 80 characters, with room below it. -->
   <Style x:Key="Paragraph" TargetType="ui:TextBlock">
     <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="MaxWidth" Value="560" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="Margin" Value="0,0,0,8" />
   </Style>
 
@@ -58,12 +87,12 @@
   <!-- A heading over a group of cards. -->
   <Style x:Key="SectionTitle" TargetType="ui:TextBlock">
     <Setter Property="FontTypography" Value="BodyStrong" />
-    <Setter Property="Margin" Value="4,28,0,8" />
+    <Setter Property="Margin" Value="0,24,0,8" />
   </Style>
 
   <!-- A label above a control in the editors. -->
   <Style x:Key="FieldLabel" TargetType="ui:TextBlock">
-    <Setter Property="FontTypography" Value="BodyStrong" />
+    <Setter Property="FontTypography" Value="Body" />
     <Setter Property="Margin" Value="0,12,0,4" />
   </Style>
 

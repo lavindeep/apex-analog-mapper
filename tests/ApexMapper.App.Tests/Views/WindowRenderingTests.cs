@@ -40,9 +40,10 @@ public sealed class WindowRenderingTests
 
     /// <param name="Act">Runs before the window shows. It may leave the window on a page other than Home.</param>
     /// <param name="Narrow">Shown at the window's minimum width.</param>
+    /// <param name="Wide">Shown as wide as a maximized window on a 1600-pixel screen.</param>
     /// <param name="Version">The app's version, when it is not the harness's.</param>
     /// <param name="Game">The game saved from an earlier run, or null for none.</param>
-    private sealed record Scenario(string Name, Action<AppHarness> Arrange, Func<MainViewModel, AppHarness, Task>? Act = null, bool Narrow = false, string? Version = null,
+    private sealed record Scenario(string Name, Action<AppHarness> Arrange, Func<MainViewModel, AppHarness, Task>? Act = null, bool Narrow = false, bool Wide = false, string? Version = null,
         string? Game = AppHarness.Game);
 
     private const string SteamGame = @"C:\Program Files (x86)\Steam\steamapps\common\ForzaHorizon6\ForzaHorizon6.exe";
@@ -77,6 +78,7 @@ public sealed class WindowRenderingTests
         new("no-game", h => h.CalibrateForza(), Game: null),
         new("ready", Ready),
         new("ready-narrow", Ready, Narrow: true),
+        new("ready-wide", Ready, Wide: true),
         new("steam-game", h =>
         {
             h.Windows = [new GameWindow("Forza Horizon 6", SteamGame, Elevation.Visible)];
@@ -335,6 +337,17 @@ public sealed class WindowRenderingTests
             main.Profile.Tick();
             return Task.CompletedTask;
         }),
+        new("custom-response-wide", h => h.CalibrateForza(), (main, h) =>
+        {
+            main.Page = Page.Profile;
+            var row = main.Profile.Rows.First(r => r.Key == DefaultProfiles.Key.W);
+            main.Profile.SelectedRow = row;
+            row.Preset = ResponsePreset.Custom;
+            row.Deadzone = 0.1;
+            h.Sensor.Reading = AppHarness.Holding(16, 2375);
+            main.Profile.Tick();
+            return Task.CompletedTask;
+        }, Wide: true),
         new("custom-stick-uncalibrated", _ => { }, (main, h) =>
         {
             main.Page = Page.Profile;
@@ -446,6 +459,10 @@ public sealed class WindowRenderingTests
         if (scenario.Narrow)
         {
             window.Width = window.MinWidth;
+        }
+        else if (scenario.Wide)
+        {
+            window.Width = 1600;
         }
         window.Show(main);
         try

@@ -71,8 +71,8 @@
     </WrapPanel>
 
     <!-- The bindings, one open at a time. A binding's settings show only for a Custom preset. -->
-    <ui:TextBlock Style="{StaticResource SectionTitle}" Margin="4,20,0,8" Text="Bindings" />
-    <ui:TextBlock Margin="4,0,0,12" Style="{StaticResource Note}"
+    <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Bindings" />
+    <ui:TextBlock Margin="0,0,0,12" Style="{StaticResource Note}"
                   Text="Open a binding to change its keys or what they press. Triggers and sticks use the Default preset until you choose Custom." />
     <WrapPanel>
       <ui:Button x:Name="AddKeyButton" Margin="0,0,8,8" Icon="{ui:SymbolIcon Add24}" Content="Add a key" Command="{Binding AddKey}"

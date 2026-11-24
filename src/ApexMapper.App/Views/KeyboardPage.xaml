@@ -34,7 +34,7 @@
     </Style>
     <!-- One line of a capture's contents. -->
     <DataTemplate x:Key="Bullet">
-      <DockPanel Margin="0,0,0,4">
+      <DockPanel Margin="0,0,0,4" MaxWidth="560" HorizontalAlignment="Left">
         <ui:TextBlock DockPanel.Dock="Left" Margin="0,0,8,0" Text="•" />
         <ui:TextBlock Text="{Binding}" TextWrapping="Wrap" />
       </DockPanel>
@@ -67,7 +67,7 @@
       </Grid>
     </ui:CardControl>
     <StackPanel Margin="0,12,0,0" Visibility="{Binding NoBoards, Converter={StaticResource ShowWhenTrue}}">
-      <ui:TextBlock Margin="4,0,0,8" Style="{StaticResource Note}"
+      <ui:TextBlock Margin="0,0,0,8" Style="{StaticResource Note}"
                     Text="Already plugged in? The app lists only the Apex Pro models it knows. The guide shows how to add yours." />
       <ui:Button Icon="{ui:SymbolIcon Open24}" Content="How to add a model" Command="{Binding OpenAddGuide}" />
     </StackPanel>
@@ -91,7 +91,7 @@
     <!-- The try-it flow for a model the app has not been tested on (H6), one step at a time. -->
     <StackPanel Visibility="{Binding IsUnverified, Converter={StaticResource ShowWhenTrue}}">
       <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Try this keyboard" />
-      <ui:TextBlock Margin="4,0,0,12" Style="{StaticResource Note}"
+      <ui:TextBlock Margin="0,0,0,12" Style="{StaticResource Note}"
                     Text="This model is not on the app's tested list yet. These steps check that its sensors answer on your keyboard. A capture you share on GitHub lets it join the list." />
       <ui:InfoBar Style="{StaticResource Warning}" Margin="0,0,0,4" Severity="Informational" Message="{Binding CheckBlocked}" views:Live.Text="{Binding CheckBlocked}"
                   Visibility="{Binding CheckBlocked, Converter={StaticResource ShowWhenPresent}}" />
@@ -138,13 +138,13 @@
                           Text="{Binding CheckHowTo}" />
             <StackPanel Orientation="Horizontal">
               <ui:Button Content="{Binding CheckLabel}" Icon="{ui:SymbolIcon Pulse24}" Command="{Binding Check}" />
-              <ui:ProgressRing Margin="12,0,0,0" Width="20" Height="20" IsIndeterminate="True"
+              <ui:ProgressRing Margin="12,0,0,0" Width="20" Height="20" Style="{StaticResource Busy}"
                                Visibility="{Binding IsChecking, Converter={StaticResource ShowWhenTrue}}" />
             </StackPanel>
-            <ui:TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding CheckText}" views:Live.Text="{Binding CheckText}"
+            <ui:TextBlock Margin="0,8,0,0" Text="{Binding CheckText}" views:Live.Text="{Binding CheckText}"
                           Visibility="{Binding CheckText, Converter={StaticResource ShowWhenPresent}}">
               <ui:TextBlock.Style>
-                <Style TargetType="ui:TextBlock">
+                <Style TargetType="ui:TextBlock" BasedOn="{StaticResource Paragraph}">
                   <Style.Triggers>
                     <!-- While the check runs, this line is what to do right now. -->
                     <DataTrigger Binding="{Binding IsChecking}" Value="True">
@@ -154,7 +154,7 @@
                 </Style>
               </ui:TextBlock.Style>
             </ui:TextBlock>
-            <ui:TextBlock Margin="0,8,0,0" TextWrapping="Wrap" FontWeight="SemiBold" Text="{Binding NextStep}" views:Live.Text="{Binding NextStep}"
+            <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Paragraph}" FontWeight="SemiBold" Text="{Binding NextStep}" views:Live.Text="{Binding NextStep}"
                           Visibility="{Binding NextStep, Converter={StaticResource ShowWhenPresent}}" />
             <ui:Button Margin="0,8,0,0" Icon="{ui:SymbolIcon Gauge24}" Content="Open Calibration"
                        Command="{Binding DataContext.OpenCalibration, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -183,14 +183,14 @@
             <ItemsControl Margin="32,0,0,4" ItemsSource="{x:Static vm:KeyboardViewModel.CheckHolds}" Focusable="False"
                           AutomationProperties.Name="What a capture holds from the last check" ItemTemplate="{StaticResource Bullet}" />
             <ui:TextBlock Style="{StaticResource Note}" Text="{x:Static vm:KeyboardViewModel.CaptureLimits}" />
-            <ui:TextBlock Margin="0,0,0,4" TextWrapping="Wrap" FontWeight="SemiBold" Text="{Binding ExportNote}" views:Live.Text="{Binding ExportNote}"
+            <ui:TextBlock Margin="0,0,0,4" Style="{StaticResource Paragraph}" FontWeight="SemiBold" Text="{Binding ExportNote}" views:Live.Text="{Binding ExportNote}"
                           Visibility="{Binding ExportNote, Converter={StaticResource ShowWhenPresent}}" />
             <WrapPanel>
               <ui:Button Margin="0,4,8,0" Content="Export a capture" Icon="{ui:SymbolIcon Save24}" Command="{Binding Export}" />
               <ui:Button Margin="0,4,8,0" Appearance="Primary" Icon="{ui:SymbolIcon Open24}" Content="Open a new issue" Command="{Binding OpenIssue}"
                          Visibility="{Binding Exported, Converter={StaticResource ShowWhenTrue}}" />
             </WrapPanel>
-            <ui:TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding ExportText}" views:Live.Text="{Binding ExportText}"
+            <ui:TextBlock Margin="0,8,0,0" Style="{StaticResource Paragraph}" Text="{Binding ExportText}" views:Live.Text="{Binding ExportText}"
                           Visibility="{Binding ExportText, Converter={StaticResource ShowWhenPresent}}" />
           </StackPanel>
         </Grid>

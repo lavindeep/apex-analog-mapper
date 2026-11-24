@@ -8,12 +8,6 @@
              xmlns:views="clr-namespace:ApexMapper.App.Views"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance vm:SetupViewModel}">
-  <UserControl.Resources>
-    <!-- A row is a button in WPF-UI. Here the rows only hold text and their own controls, so Tab skips them. -->
-    <Style TargetType="ui:CardControl" BasedOn="{StaticResource {x:Type ui:CardControl}}">
-      <Setter Property="Focusable" Value="False" />
-    </Style>
-  </UserControl.Resources>
   <StackPanel>
     <!-- What the app needs from Windows: the driver that creates the virtual controller. -->
     <ui:CardControl>
@@ -45,7 +39,7 @@
 
     <!-- The app's own version, and how it looks for a newer one. -->
     <StackPanel DataContext="{Binding Updates}">
-      <ui:TextBlock Style="{StaticResource SectionTitle}" Margin="4,20,0,8" Text="Updates" />
+      <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Updates" />
       <ui:CardControl Icon="{ui:SymbolIcon Info24}">
         <ui:CardControl.Header>
           <StackPanel>
@@ -84,7 +78,7 @@
       </ui:CardControl>
     </StackPanel>
 
-    <ui:TextBlock Style="{StaticResource SectionTitle}" Margin="4,20,0,8" Text="Files" />
+    <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Files" />
     <ui:CardControl Icon="{ui:SymbolIcon FolderOpen24}">
       <ui:CardControl.Header>
         <StackPanel>
@@ -96,7 +90,7 @@
     </ui:CardControl>
 
     <!-- Two things outside the app that decide whether the game sees the controller. -->
-    <ui:TextBlock Style="{StaticResource SectionTitle}" Margin="4,20,0,8" Text="Before you play" />
+    <ui:TextBlock Style="{StaticResource SectionTitle}" Text="Before you play" />
     <ui:CardControl Icon="{ui:SymbolIcon Wrench24}">
       <ui:CardControl.Header>
         <StackPanel>

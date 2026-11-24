@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using ApexMapper.App.Logging;
 using ApexMapper.App.Model;
@@ -35,6 +36,19 @@ public partial class App : Application
     private bool _failed;
 
     public App(SingleInstance instance) => _instance = instance;
+
+    /// <summary>
+    /// With Windows' animation effects off, every storyboard, such as WPF-UI's expanders
+    /// opening, ends as it starts. Before anything builds a storyboard, since WPF fixes a
+    /// type's defaults on first use.
+    /// </summary>
+    static App()
+    {
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            Timeline.SpeedRatioProperty.OverrideMetadata(typeof(Storyboard), new PropertyMetadata(1000d));
+        }
+    }
 
     protected override void OnStartup(StartupEventArgs e)
     {

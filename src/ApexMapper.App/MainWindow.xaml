@@ -13,7 +13,8 @@
                  Width="900" Height="820" MinWidth="640" MinHeight="480"
                  WindowStartupLocation="CenterScreen"
                  ExtendsContentIntoTitleBar="True"
-                 WindowBackdropType="Mica">
+                 WindowBackdropType="Mica"
+                 FontFamily="{DynamicResource ContentControlThemeFontFamily}">
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -41,9 +42,9 @@
         <RowDefinition Height="Auto" />
         <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
-      <ui:Button x:Name="BackButton" Appearance="Transparent" Icon="{ui:SymbolIcon ArrowLeft24}" Command="{Binding GoHome}" Padding="8" VerticalAlignment="Center"
+      <ui:Button x:Name="BackButton" Margin="11,0,0,0" Appearance="Transparent" BorderThickness="0" Icon="{ui:SymbolIcon ArrowLeft24}" Command="{Binding GoHome}" Padding="9" VerticalAlignment="Center"
                  ToolTip="Back to Home" AutomationProperties.Name="Back to Home" />
-      <ui:TextBlock Grid.Column="1" Margin="12,0,12,0" VerticalAlignment="Center" FontTypography="Title" Text="{Binding PageTitle}" views:Live.Text="{Binding PageTitle}" />
+      <ui:TextBlock Grid.Column="1" Margin="9,0,12,0" VerticalAlignment="Center" FontTypography="Title" FontFamily="{StaticResource DisplayFont}" Text="{Binding PageTitle}" views:Live.Text="{Binding PageTitle}" />
       <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
                   Visibility="{Binding Page, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Profile}}">
         <StackPanel Orientation="Horizontal" Visibility="{Binding Profile.IsDirty, Converter={StaticResource ShowWhenTrue}}" IsVisibleChanged="OnHeaderActionHidden">
@@ -82,7 +83,7 @@
       </StackPanel>
     </Grid>
     <ScrollViewer Grid.Row="2" x:Name="Scroller" VerticalScrollBarVisibility="Auto">
-      <StackPanel Margin="24,4,24,24" MaxWidth="920">
+      <StackPanel x:Name="Column" Margin="24,4,24,24" MaxWidth="920">
         <views:HomePage x:Name="Home" Visibility="{Binding Page, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Home}}" />
         <views:KeyboardPage DataContext="{Binding Keyboard}"
                             Visibility="{Binding DataContext.Page, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource ShowOnPage}, ConverterParameter={x:Static vm:Page.Keyboard}}" />
